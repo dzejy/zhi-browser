@@ -3,6 +3,19 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
+function isFocusAddressBarShortcut(input: {
+  type?: string
+  key?: string
+  control?: boolean
+  meta?: boolean
+}): boolean {
+  return (
+    input.type === 'keyDown' &&
+    (input.control === true || input.meta === true) &&
+    input.key?.toLowerCase() === 'l'
+  )
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -25,6 +38,22 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (isFocusAddressBarShortcut(input)) {
+      event.preventDefault()
+      mainWindow.webContents.send('browser:focus-address-bar')
+    }
+  })
+
+  mainWindow.webContents.on('did-attach-webview', (_event, webContents) => {
+    webContents.on('before-input-event', (event, input) => {
+      if (isFocusAddressBarShortcut(input)) {
+        event.preventDefault()
+        mainWindow.webContents.send('browser:focus-address-bar')
+      }
+    })
   })
 
   // HMR for renderer base on electron-vite cli.
