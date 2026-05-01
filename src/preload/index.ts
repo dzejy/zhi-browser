@@ -1,88 +1,125 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type {
-  BookmarkItem,
-  BrowserState,
-  DownloadItem,
-  HistoryItem,
-  ZoomAction
-} from '../shared/types'
-
-type Unsubscribe = () => void
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+import { contextBridge, ipcRenderer } from 'electron'
+import type { BrowserLayout, SidePanelType } from '../shared/types'
 
 const api = {
-  createTab: (url?: string): void => {
-    ipcRenderer.send('tab:create', { url })
-  },
-  closeTab: (tabId: string): void => {
-    ipcRenderer.send('tab:close', { tabId })
-  },
-  switchTab: (tabId: string): void => {
-    ipcRenderer.send('tab:switch', { tabId })
-  },
-  loadUrl: (tabId: string, url: string): void => {
-    ipcRenderer.send('tab:load-url', { tabId, url })
-  },
-  goBack: (tabId: string): void => {
-    ipcRenderer.send('tab:back', { tabId })
-  },
-  goForward: (tabId: string): void => {
-    ipcRenderer.send('tab:forward', { tabId })
-  },
-  reload: (tabId: string): void => {
-    ipcRenderer.send('tab:reload', { tabId })
-  },
-  stop: (tabId: string): void => {
-    ipcRenderer.send('tab:stop', { tabId })
-  },
-  zoom: (tabId: string, action: ZoomAction): void => {
-    ipcRenderer.send('tab:zoom', { tabId, action })
-  },
-  requestState: (): void => {
-    ipcRenderer.send('browser:request-state')
-  },
-  addBookmark: (bookmark: Omit<BookmarkItem, 'createdAt'>): Promise<BookmarkItem | null> => {
-    return ipcRenderer.invoke('bookmark:add', bookmark)
-  },
-  removeBookmark: (url: string): Promise<boolean> => {
-    return ipcRenderer.invoke('bookmark:remove', { url })
-  },
-  listBookmarks: (): Promise<BookmarkItem[]> => {
-    return ipcRenderer.invoke('bookmark:list')
-  },
-  listHistory: (limit?: number): Promise<HistoryItem[]> => {
-    return ipcRenderer.invoke('history:list', { limit })
-  },
-  clearHistory: (): Promise<boolean> => {
-    return ipcRenderer.invoke('history:clear')
-  },
-  onBrowserState: (callback: (state: BrowserState) => void): Unsubscribe => {
-    return subscribe('browser:state', callback)
-  },
-  onFocusAddressBar: (callback: () => void): Unsubscribe => {
-    const listener = (): void => {
-      callback()
-    }
+  // ===== Tab commands =====
+  createTab: (url?: string) => ipcRenderer.send('tab:create', { url }),
+  closeTab: (tabId: string) => ipcRenderer.send('tab:close', { tabId }),
+  switchTab: (tabId: string) => ipcRenderer.send('tab:switch', { tabId }),
+  loadUrl: (tabId: string, url: string) => ipcRenderer.send('tab:load-url', { tabId, url }),
+  goBack: (tabId: string) => ipcRenderer.send('tab:back', { tabId }),
+  goForward: (tabId: string) => ipcRenderer.send('tab:forward', { tabId }),
+  reload: (tabId: string) => ipcRenderer.send('tab:reload', { tabId }),
+  stop: (tabId: string) => ipcRenderer.send('tab:stop', { tabId }),
+  retryLoad: (tabId: string) => ipcRenderer.send('tab:retry', { tabId }),
+  zoomIn: (tabId: string) => ipcRenderer.send('tab:zoom', { tabId, action: 'in' }),
+  zoomOut: (tabId: string) => ipcRenderer.send('tab:zoom', { tabId, action: 'out' }),
+  zoomReset: (tabId: string) => ipcRenderer.send('tab:zoom', { tabId, action: 'reset' }),
+  togglePin: (tabId: string) => ipcRenderer.send('tab:toggle-pin', { tabId }),
+  restoreClosed: () => ipcRenderer.send('tab:restore-closed'),
+  moveTab: (tabId: string, toIndex: number) => ipcRenderer.send('tab:move', { tabId, toIndex }),
+  openUrl: (url: string, newTab?: boolean) => ipcRenderer.send('tab:open-url', { url, newTab }),
 
-    ipcRenderer.on('browser:focus-address-bar', listener)
+  // ===== Layout =====
+  setUiHeight: (height: number) => ipcRenderer.send('ui:set-height', height),
+  setLayout: (layout: BrowserLayout) => ipcRenderer.send('ui:set-layout', layout),
+  showPanel: (type: SidePanelType) => ipcRenderer.send('panel:show', { type }),
+  hidePanel: () => ipcRenderer.send('panel:hide'),
 
-    return () => {
-      ipcRenderer.removeListener('browser:focus-address-bar', listener)
-    }
+  // ===== Find =====
+  findStart: (tabId: string, text: string, options?: { forward?: boolean; matchCase?: boolean }) =>
+    ipcRenderer.send('find:start', { tabId, text, options }),
+  findNext: (tabId: string, forward: boolean) => ipcRenderer.send('find:next', { tabId, forward }),
+  findStop: (tabId: string, action: 'clearSelection' | 'keepSelection') =>
+    ipcRenderer.send('find:stop', { tabId, action }),
+
+  // ===== Bookmarks =====
+  addBookmark: (url: string, title: string, favicon: string) =>
+    ipcRenderer.invoke('bookmark:add-current', { url, title, favicon }),
+  removeBookmark: (url: string) => ipcRenderer.invoke('bookmark:remove', { url }),
+  getBookmarks: () => ipcRenderer.invoke('bookmark:list'),
+
+  // ===== History =====
+  getHistory: (limit?: number, query?: string) =>
+    ipcRenderer.invoke('history:list', { limit, query }),
+  clearHistory: () => ipcRenderer.invoke('history:clear'),
+
+  // ===== Downloads =====
+  openDownloadFile: (downloadId: string) => ipcRenderer.send('download:open-file', { downloadId }),
+  showInFolder: (downloadId: string) => ipcRenderer.send('download:show-in-folder', { downloadId }),
+
+  // ===== Settings =====
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateSettings: (settings: Record<string, unknown>) =>
+    ipcRenderer.invoke('settings:update', settings),
+
+  // ===== Browser state =====
+  getBrowserState: () => ipcRenderer.invoke('browser:get-state'),
+
+  // ===== Listeners (Main → Renderer) =====
+  onBrowserState: (callback: (state: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, state: unknown) => callback(state)
+    ipcRenderer.on('browser:state', handler)
+    return () => ipcRenderer.removeListener('browser:state', handler)
   },
-  onDownloadUpdate: (callback: (download: DownloadItem) => void): Unsubscribe => {
-    return subscribe('browser:download-update', callback)
-  }
-}
-
-function subscribe<T>(channel: string, callback: (value: T) => void): Unsubscribe {
-  const listener = (_event: IpcRendererEvent, value: T): void => {
-    callback(value)
-  }
-
-  ipcRenderer.on(channel, listener)
-
-  return () => {
-    ipcRenderer.removeListener(channel, listener)
+  onFocusAddressBar: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:focus-address-bar', handler)
+    return () => ipcRenderer.removeListener('browser:focus-address-bar', handler)
+  },
+  onFocusFind: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:focus-find', handler)
+    return () => ipcRenderer.removeListener('browser:focus-find', handler)
+  },
+  onToggleBookmark: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:toggle-bookmark', handler)
+    return () => ipcRenderer.removeListener('browser:toggle-bookmark', handler)
+  },
+  onFindResult: (
+    callback: (result: { activeMatchOrdinal: number; matches: number }) => void
+  ): (() => void) => {
+    const handler = (_event: unknown, result: { activeMatchOrdinal: number; matches: number }) =>
+      callback(result)
+    ipcRenderer.on('browser:find-result', handler)
+    return () => ipcRenderer.removeListener('browser:find-result', handler)
+  },
+  onDownloadUpdate: (callback: (item: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, item: unknown): void => callback(item)
+    ipcRenderer.on('browser:download-update', handler)
+    return () => ipcRenderer.removeListener('browser:download-update', handler)
+  },
+  onToast: (callback: (msg: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, msg: unknown) => callback(msg)
+    ipcRenderer.on('browser:toast', handler)
+    return () => ipcRenderer.removeListener('browser:toast', handler)
+  },
+  onSettings: (callback: (settings: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, settings: unknown) => callback(settings)
+    ipcRenderer.on('browser:settings', handler)
+    return () => ipcRenderer.removeListener('browser:settings', handler)
+  },
+  onOpenHistoryPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-history-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-history-panel', handler)
+  },
+  onOpenDownloadsPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-downloads-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-downloads-panel', handler)
+  },
+  onPanelType: (callback: (type: SidePanelType) => void): (() => void) => {
+    const handler = (_event: unknown, type: SidePanelType) => callback(type)
+    ipcRenderer.on('browser:panel-type', handler)
+    return () => ipcRenderer.removeListener('browser:panel-type', handler)
+  },
+  onPanelClosed: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:panel-closed', handler)
+    return () => ipcRenderer.removeListener('browser:panel-closed', handler)
   }
 }
 
@@ -90,9 +127,9 @@ if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
-    console.error(error)
+    console.error('Failed to expose API:', error)
   }
 } else {
-  // @ts-ignore (define in dts)
+  // @ts-ignore: Expose API to window for fallback usage
   window.api = api
 }

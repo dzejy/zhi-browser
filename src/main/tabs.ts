@@ -1,30 +1,16 @@
-import { clipboard, Menu, WebContentsView, type BaseWindow } from 'electron'
-import { randomUUID } from 'crypto'
-import type {
+import { WebContentsView, BaseWindow, Menu, MenuItemConstructorOptions, clipboard } from 'electron'
+import type { Input, Event } from 'electron'
+import {
+  TabState,
   BrowserState,
   LoadError,
-  PersistedSession,
-  TabState,
-  ZoomAction
+  FindState,
+  RecentlyClosedTab,
+  BrowserLayout
 } from '../shared/types'
-import type { BrowserStorage } from './storage'
-import {
-  BLANK_PAGE_URL,
-  classifyInput,
-  getDisplayTitle,
-  getWwwFallbackUrl,
-  isBlankUrl,
-  isNameNotResolvedError,
-  NEW_TAB_URL,
-  shouldRecordHistory,
-  toVisibleUrl
-} from './navigation'
-
-const ERR_ABORTED = -3
-const DEFAULT_ZOOM_FACTOR = 1
-const MIN_ZOOM_FACTOR = 0.25
-const MAX_ZOOM_FACTOR = 3
-const ZOOM_STEP = 0.1
+import { classifyInput, getWwwFallbackUrl } from './navigation'
+import { addHistory } from './history'
+import { getDownloads } from './downloads'
 
 interface ManagedTab {
   id: string
@@ -36,42 +22,80 @@ interface ManagedTab {
   canGoBack: boolean
   canGoForward: boolean
   error: LoadError | null
+  isPinned: boolean
   zoomFactor: number
-  attemptedWwwFallbacks: Set<string>
-}
-
-export interface TabManagerOptions {
-  window: BaseWindow
-  uiView: WebContentsView
-  uiHeight: number
-  storage: BrowserStorage
-  focusAddressBar: () => void
-  updateWindowTitle: (title: string) => void
+  isNewTab: boolean
+  wwwFallbackAttempted: boolean
 }
 
 export class TabManager {
-  private readonly window: BaseWindow
-  private readonly uiView: WebContentsView
-  private readonly uiHeight: number
-  private readonly storage: BrowserStorage
-  private readonly focusAddressBar: () => void
-  private readonly updateWindowTitle: (title: string) => void
-  private readonly tabs = new Map<string, ManagedTab>()
-  private readonly tabOrder: string[] = []
-  private activeTabId = ''
-  private saveSessionTimer: ReturnType<typeof setTimeout> | null = null
+  private tabs: Map<string, ManagedTab> = new Map()
+  private tabOrder: string[] = []
+  private activeTabId: string = ''
+  private win: BaseWindow
+  private uiView: WebContentsView
+  private uiViewHeight: number = 74
+  private pageTop: number = 74
+  private findState: FindState | null = null
+  private recentlyClosed: RecentlyClosedTab[] = []
+  private onStateChange: () => void
 
-  constructor(options: TabManagerOptions) {
-    this.window = options.window
-    this.uiView = options.uiView
-    this.uiHeight = options.uiHeight
-    this.storage = options.storage
-    this.focusAddressBar = options.focusAddressBar
-    this.updateWindowTitle = options.updateWindowTitle
+  constructor(win: BaseWindow, uiView: WebContentsView, onStateChange: () => void) {
+    this.win = win
+    this.uiView = uiView
+    this.onStateChange = onStateChange
   }
 
-  createTab(url = NEW_TAB_URL, activate = true, openerTabId?: string): string {
-    const id = randomUUID()
+  // ===== State aggregation =====
+
+  getBrowserState(): BrowserState {
+    const tabs: TabState[] = this.tabOrder.map((id) => {
+      const tab = this.tabs.get(id)!
+      return {
+        id: tab.id,
+        url: tab.url,
+        title: tab.title,
+        favicon: tab.favicon,
+        isLoading: tab.isLoading,
+        canGoBack: tab.canGoBack,
+        canGoForward: tab.canGoForward,
+        error: tab.error,
+        isPinned: tab.isPinned,
+        zoomFactor: tab.zoomFactor,
+        isNewTab: tab.isNewTab
+      }
+    })
+    return {
+      tabs,
+      activeTabId: this.activeTabId,
+      findState: this.findState,
+      downloads: getDownloads(),
+      recentlyClosed: this.recentlyClosed.slice(0, 10)
+    }
+  }
+
+  getActiveTabId(): string {
+    return this.activeTabId
+  }
+
+  getActiveTab(): ManagedTab | undefined {
+    return this.tabs.get(this.activeTabId)
+  }
+
+  getTabOrder(): string[] {
+    return [...this.tabOrder]
+  }
+
+  getTab(tabId: string): ManagedTab | undefined {
+    return this.tabs.get(tabId)
+  }
+
+  // ===== Tab creation =====
+
+  createTab(url?: string): string {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const isNewTab = !url || url === 'about:blank'
+
     const view = new WebContentsView({
       webPreferences: {
         contextIsolation: true,
@@ -80,688 +104,670 @@ export class TabManager {
       }
     })
 
-    view.setBackgroundColor('#ffffff')
-
     const tab: ManagedTab = {
       id,
       view,
-      url: '',
-      title: 'New Tab',
+      url: url || 'about:blank',
+      title: isNewTab ? 'New Tab' : '',
       favicon: '',
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
       error: null,
-      zoomFactor: DEFAULT_ZOOM_FACTOR,
-      attemptedWwwFallbacks: new Set<string>()
+      isPinned: false,
+      zoomFactor: 1.0,
+      isNewTab,
+      wwwFallbackAttempted: false
     }
 
     this.tabs.set(id, tab)
-    this.insertTabId(id, openerTabId)
-    this.bindTabEvents(tab)
 
-    if (activate || !this.activeTabId) {
-      this.switchTab(id)
-    } else {
-      this.pushState()
+    const activeIndex = this.tabOrder.indexOf(this.activeTabId)
+    const insertIndex = activeIndex === -1 ? this.tabOrder.length : activeIndex + 1
+    this.tabOrder.splice(insertIndex, 0, id)
+
+    this.bindWebContentsEvents(tab)
+    this.setupWindowOpenHandler(tab)
+    this.setupContextMenu(tab)
+
+    if (!isNewTab && url) {
+      view.webContents.loadURL(url)
     }
 
-    if (!isBlankUrl(url)) {
-      this.loadUrl(id, url)
-    } else {
-      this.loadBlank(tab)
-    }
-
+    this.switchTab(id)
     return id
   }
 
+  // ===== Tab closing =====
+
   closeTab(tabId: string): void {
     const tab = this.tabs.get(tabId)
+    if (!tab) return
 
-    if (!tab) {
-      return
+    // Record to recently closed
+    if (tab.url && tab.url !== 'about:blank') {
+      this.recentlyClosed.unshift({
+        url: tab.url,
+        title: tab.title,
+        favicon: tab.favicon,
+        closedAt: Date.now()
+      })
+      if (this.recentlyClosed.length > 20) {
+        this.recentlyClosed.length = 20
+      }
     }
 
-    const wasActive = tabId === this.activeTabId
-    const closedIndex = this.tabOrder.indexOf(tabId)
-
-    if (wasActive) {
-      this.removeActiveView(tab)
-      this.activeTabId = ''
+    // If this is the last tab, create a new one first
+    if (this.tabOrder.length <= 1) {
+      this.createTab()
+      // createTab already switched active, now close the old one
+    } else if (tabId === this.activeTabId) {
+      // Switch to adjacent tab
+      const idx = this.tabOrder.indexOf(tabId)
+      const nextIdx = idx === this.tabOrder.length - 1 ? idx - 1 : idx + 1
+      this.switchTab(this.tabOrder[nextIdx])
     }
 
-    if (!tab.view.webContents.isDestroyed()) {
-      tab.view.webContents.close({ waitForBeforeUnload: false })
+    try {
+      this.win.contentView.removeChildView(tab.view)
+    } catch {
+      // may not be attached
+    }
+
+    try {
+      tab.view.webContents.close()
+    } catch {
+      // already closed
     }
 
     this.tabs.delete(tabId)
-    this.removeTabId(tabId)
-
-    if (this.tabOrder.length === 0) {
-      this.createTab(NEW_TAB_URL, true)
-      return
-    }
-
-    if (wasActive) {
-      const nextIndex = Math.min(Math.max(closedIndex, 0), this.tabOrder.length - 1)
-      this.switchTab(this.tabOrder[nextIndex])
-      return
-    }
+    this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
 
     this.pushState()
   }
+
+  // ===== Tab switching =====
 
   switchTab(tabId: string): void {
-    const nextTab = this.tabs.get(tabId)
+    if (!this.tabs.has(tabId)) return
 
-    if (!nextTab) {
-      return
+    const oldTab = this.tabs.get(this.activeTabId)
+    if (oldTab) {
+      try {
+        this.win.contentView.removeChildView(oldTab.view)
+      } catch {
+        // not attached
+      }
     }
 
-    const previousTab = this.getActiveTab()
+    this.activeTabId = tabId
+    const newTab = this.tabs.get(tabId)!
 
-    if (previousTab && previousTab.id !== nextTab.id) {
-      this.removeActiveView(previousTab)
+    this.win.contentView.addChildView(newTab.view)
+    this.updateLayout()
+
+    if (this.findState && this.findState.tabId !== tabId) {
+      this.findState = null
     }
 
-    this.activeTabId = nextTab.id
-
-    if (!previousTab || previousTab.id !== nextTab.id) {
-      this.window.contentView.addChildView(nextTab.view)
-    }
-
-    this.updateTabNavigationState(nextTab)
-    this.updateBounds()
     this.pushState()
   }
 
-  loadUrl(tabId: string, rawInput: string): void {
+  // ===== Navigation =====
+
+  loadUrl(tabId: string, input: string): void {
     const tab = this.tabs.get(tabId)
+    if (!tab) return
 
-    if (!tab) {
+    const classified = classifyInput(input)
+
+    if (classified.type === 'newtab') {
+      tab.isNewTab = true
+      tab.url = 'about:blank'
+      tab.title = 'New Tab'
+      tab.error = null
+      this.pushState()
       return
     }
 
-    const classifiedInput = classifyInput(rawInput)
-
-    if (classifiedInput.kind === 'blank') {
-      this.loadBlank(tab)
-      return
-    }
-
-    tab.attemptedWwwFallbacks.clear()
-    tab.url = classifiedInput.url
-    tab.title = getDisplayTitle(classifiedInput.url)
-    tab.favicon = ''
+    tab.isNewTab = false
     tab.error = null
-    tab.isLoading = true
+    tab.wwwFallbackAttempted = false
+    tab.url = classified.value
+    tab.view.webContents.loadURL(classified.value)
     this.pushState()
-
-    void tab.view.webContents.loadURL(classifiedInput.url).catch((error: Error) => {
-      this.applyLoadError(tab, {
-        url: classifiedInput.url,
-        errorCode: 0,
-        errorDescription: error.message || 'Failed to load URL'
-      })
-    })
   }
 
   goBack(tabId: string): void {
     const tab = this.tabs.get(tabId)
-
-    if (tab?.view.webContents.navigationHistory.canGoBack()) {
+    if (tab && tab.view.webContents.navigationHistory.canGoBack()) {
       tab.view.webContents.navigationHistory.goBack()
     }
   }
 
   goForward(tabId: string): void {
     const tab = this.tabs.get(tabId)
-
-    if (tab?.view.webContents.navigationHistory.canGoForward()) {
+    if (tab && tab.view.webContents.navigationHistory.canGoForward()) {
       tab.view.webContents.navigationHistory.goForward()
     }
   }
 
   reload(tabId: string): void {
     const tab = this.tabs.get(tabId)
-
-    if (!tab) {
-      return
-    }
-
-    if (tab.url) {
+    if (tab) {
       tab.error = null
+      tab.wwwFallbackAttempted = false
       tab.view.webContents.reload()
-    } else {
-      this.loadBlank(tab)
+      this.pushState()
     }
   }
 
   stop(tabId: string): void {
     const tab = this.tabs.get(tabId)
-
     if (tab) {
       tab.view.webContents.stop()
-      tab.isLoading = false
-      this.pushState()
     }
   }
 
-  moveTab(fromIndex: number, toIndex: number): void {
-    if (
-      fromIndex === toIndex ||
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= this.tabOrder.length ||
-      toIndex >= this.tabOrder.length
-    ) {
-      return
-    }
-
-    const [tabId] = this.tabOrder.splice(fromIndex, 1)
-    this.tabOrder.splice(toIndex, 0, tabId)
+  retryLoad(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || !tab.error) return
+    const url = tab.error.url || tab.url
+    tab.error = null
+    tab.wwwFallbackAttempted = false
+    tab.view.webContents.loadURL(url)
     this.pushState()
   }
 
-  zoom(tabId: string, action: ZoomAction): void {
+  // ===== Zoom =====
+
+  zoomIn(tabId: string): void {
     const tab = this.tabs.get(tabId)
-
-    if (!tab) {
-      return
-    }
-
-    const nextZoomFactor =
-      action === 'reset'
-        ? DEFAULT_ZOOM_FACTOR
-        : clampZoomFactor(tab.zoomFactor + (action === 'in' ? ZOOM_STEP : -ZOOM_STEP))
-
-    tab.zoomFactor = Number(nextZoomFactor.toFixed(2))
+    if (!tab) return
+    tab.zoomFactor = Math.min(tab.zoomFactor + 0.1, 3.0)
     tab.view.webContents.setZoomFactor(tab.zoomFactor)
     this.pushState()
   }
 
-  handleKeyboardInput(event: Electron.Event, input: Electron.Input): void {
-    if (input.type !== 'keyDown') {
-      return
+  zoomOut(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.zoomFactor = Math.max(tab.zoomFactor - 0.1, 0.3)
+    tab.view.webContents.setZoomFactor(tab.zoomFactor)
+    this.pushState()
+  }
+
+  zoomReset(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.zoomFactor = 1.0
+    tab.view.webContents.setZoomFactor(1.0)
+    this.pushState()
+  }
+
+  // ===== Pin =====
+
+  togglePin(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    tab.isPinned = !tab.isPinned
+
+    this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
+    if (tab.isPinned) {
+      const lastPinnedIdx = this.tabOrder.findIndex((id) => {
+        const t = this.tabs.get(id)
+        return t && !t.isPinned
+      })
+      this.tabOrder.splice(lastPinnedIdx === -1 ? this.tabOrder.length : lastPinnedIdx, 0, tabId)
+    } else {
+      const lastPinnedIdx = this.tabOrder.findIndex((id) => {
+        const t = this.tabs.get(id)
+        return t && !t.isPinned
+      })
+      this.tabOrder.splice(lastPinnedIdx === -1 ? this.tabOrder.length : lastPinnedIdx, 0, tabId)
     }
 
-    const activeTabId = this.getActiveTabId()
+    this.pushState()
+  }
+
+  // ===== Move (drag reorder) =====
+
+  moveTab(tabId: string, toIndex: number): void {
+    const fromIndex = this.tabOrder.indexOf(tabId)
+    if (fromIndex === -1) return
+    this.tabOrder.splice(fromIndex, 1)
+    this.tabOrder.splice(toIndex, 0, tabId)
+    this.pushState()
+  }
+
+  // ===== Restore closed =====
+
+  restoreClosed(): void {
+    if (this.recentlyClosed.length === 0) return
+    const item = this.recentlyClosed.shift()!
+    this.createTab(item.url)
+  }
+
+  // ===== Find in page =====
+
+  findStart(
+    tabId: string,
+    text: string,
+    options?: { forward?: boolean; matchCase?: boolean }
+  ): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || !text) return
+
+    this.findState = {
+      tabId,
+      text,
+      activeMatchOrdinal: 0,
+      matches: 0
+    }
+
+    tab.view.webContents.findInPage(text, {
+      forward: options?.forward !== false,
+      matchCase: options?.matchCase || false
+    })
+  }
+
+  findNext(tabId: string, forward: boolean): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || !this.findState) return
+
+    tab.view.webContents.findInPage(this.findState.text, {
+      forward,
+      findNext: true
+    })
+  }
+
+  findStop(tabId: string, action: 'clearSelection' | 'keepSelection'): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+
+    tab.view.webContents.stopFindInPage(action)
+    this.findState = null
+    this.pushState()
+  }
+
+  // ===== Layout =====
+
+  setUiHeight(height: number): void {
+    this.setLayout({ uiViewHeight: height, pageTop: height })
+  }
+
+  setLayout(layout: BrowserLayout): void {
+    if (this.uiViewHeight === layout.uiViewHeight && this.pageTop === layout.pageTop) return
+    this.uiViewHeight = layout.uiViewHeight
+    this.pageTop = layout.pageTop
+    this.updateLayout()
+  }
+
+  updateLayout(): void {
+    const { width, height } = this.win.getContentBounds()
+    this.uiView.setBounds({
+      x: 0,
+      y: 0,
+      width,
+      height: Math.max(0, Math.min(height, this.uiViewHeight))
+    })
+
+    const activeTab = this.tabs.get(this.activeTabId)
+    if (activeTab) {
+      activeTab.view.setBounds({
+        x: 0,
+        y: this.pageTop,
+        width,
+        height: Math.max(0, height - this.pageTop)
+      })
+    }
+  }
+
+  // ===== Cleanup =====
+
+  destroyAll(): void {
+    for (const [, tab] of this.tabs) {
+      try {
+        this.win.contentView.removeChildView(tab.view)
+      } catch {
+        /* ignore */
+      }
+      try {
+        tab.view.webContents.close()
+      } catch {
+        /* ignore */
+      }
+    }
+    this.tabs.clear()
+    this.tabOrder = []
+  }
+
+  // ===== Session data for persistence =====
+
+  getSessionData(): {
+    tabs: { url: string; title: string; isPinned: boolean }[]
+    activeIndex: number
+  } {
+    const tabs = this.tabOrder
+      .map((id) => this.tabs.get(id)!)
+      .filter((t) => !t.isNewTab && t.url !== 'about:blank')
+      .map((t) => ({ url: t.url, title: t.title, isPinned: t.isPinned }))
+
+    const activeIndex = Math.max(
+      0,
+      tabs.findIndex((t) => {
+        const activeTab = this.tabs.get(this.activeTabId)
+        return activeTab && t.url === activeTab.url
+      })
+    )
+
+    return { tabs, activeIndex }
+  }
+
+  // ===== Private: event binding =====
+
+  private bindWebContentsEvents(tab: ManagedTab): void {
+    const wc = tab.view.webContents
+
+    wc.on('did-start-loading', () => {
+      tab.isLoading = true
+      tab.isNewTab = false
+      this.pushState()
+    })
+
+    wc.on('did-stop-loading', () => {
+      tab.isLoading = false
+      tab.canGoBack = wc.navigationHistory.canGoBack()
+      tab.canGoForward = wc.navigationHistory.canGoForward()
+      this.pushState()
+    })
+
+    wc.on('did-navigate', (_event, url) => {
+      tab.url = url
+      tab.error = null
+      tab.canGoBack = wc.navigationHistory.canGoBack()
+      tab.canGoForward = wc.navigationHistory.canGoForward()
+      tab.isNewTab = url === 'about:blank'
+      this.pushState()
+
+      if (url !== 'about:blank') {
+        addHistory(url, tab.title)
+      }
+    })
+
+    wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      if (isMainFrame) {
+        tab.url = url
+        tab.canGoBack = wc.navigationHistory.canGoBack()
+        tab.canGoForward = wc.navigationHistory.canGoForward()
+        this.pushState()
+      }
+    })
+
+    wc.on('page-title-updated', (_event, title) => {
+      tab.title = title || tab.title
+      this.pushState()
+
+      if (tab.url && tab.url !== 'about:blank') {
+        addHistory(tab.url, tab.title)
+      }
+    })
+
+    wc.on('page-favicon-updated', (_event, favicons) => {
+      if (favicons && favicons.length > 0) {
+        tab.favicon = favicons[0]
+        this.pushState()
+      }
+    })
+
+    wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3) return
+
+      if (!tab.wwwFallbackAttempted) {
+        const fallbackUrl = getWwwFallbackUrl(validatedURL)
+        if (fallbackUrl) {
+          tab.wwwFallbackAttempted = true
+          wc.loadURL(fallbackUrl)
+          return
+        }
+      }
+
+      tab.error = {
+        url: validatedURL,
+        errorCode,
+        errorDescription
+      }
+      tab.isLoading = false
+      this.pushState()
+    })
+
+    wc.on('found-in-page', (_event, result) => {
+      if (this.findState && this.findState.tabId === tab.id) {
+        this.findState.activeMatchOrdinal = result.activeMatchOrdinal
+        this.findState.matches = result.matches
+        this.uiView.webContents.send('browser:find-result', {
+          activeMatchOrdinal: result.activeMatchOrdinal,
+          matches: result.matches
+        })
+        this.pushState()
+      }
+    })
+
+    wc.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      if (this.handlePageKeyboard(event, input)) {
+        event.preventDefault()
+      }
+    })
+  }
+
+  private setupWindowOpenHandler(tab: ManagedTab): void {
+    tab.view.webContents.setWindowOpenHandler(({ url }) => {
+      if (url && url !== 'about:blank') {
+        this.createTab(url)
+      }
+      return { action: 'deny' }
+    })
+  }
+
+  private setupContextMenu(tab: ManagedTab): void {
+    tab.view.webContents.on('context-menu', (_event, params) => {
+      const menuItems: MenuItemConstructorOptions[] = []
+
+      menuItems.push(
+        {
+          label: 'Back',
+          enabled: tab.view.webContents.navigationHistory.canGoBack(),
+          click: () => this.goBack(tab.id)
+        },
+        {
+          label: 'Forward',
+          enabled: tab.view.webContents.navigationHistory.canGoForward(),
+          click: () => this.goForward(tab.id)
+        },
+        { label: 'Reload', click: () => this.reload(tab.id) },
+        { type: 'separator' }
+      )
+
+      if (params.linkURL) {
+        menuItems.push(
+          { label: 'Open link in new tab', click: () => this.createTab(params.linkURL) },
+          {
+            label: 'Copy link address',
+            click: () => {
+              clipboard.writeText(params.linkURL)
+            }
+          },
+          { type: 'separator' }
+        )
+      }
+
+      if (params.selectionText) {
+        menuItems.push({ label: 'Copy', role: 'copy' }, { type: 'separator' })
+      }
+
+      if (params.isEditable) {
+        menuItems.push(
+          { label: 'Cut', role: 'cut' },
+          { label: 'Copy', role: 'copy' },
+          { label: 'Paste', role: 'paste' },
+          { type: 'separator' }
+        )
+      }
+
+      menuItems.push({
+        label: 'Inspect Element',
+        click: () => {
+          tab.view.webContents.inspectElement(params.x, params.y)
+        }
+      })
+
+      const menu = Menu.buildFromTemplate(menuItems)
+      menu.popup()
+    })
+  }
+
+  private handlePageKeyboard(_event: Event, input: Input): boolean {
+    const ctrl = input.control || input.meta
+    const shift = input.shift
+    const alt = input.alt
     const key = input.key.toLowerCase()
-    const isCtrl = input.control === true || input.meta === true
-    const isShift = input.shift === true
-    const isAlt = input.alt === true
 
-    if (isCtrl && key === 'l') {
-      event.preventDefault()
-      this.focusAddressBar()
-      return
+    if (ctrl && key === 'l') {
+      this.uiView.webContents.send('browser:focus-address-bar')
+      return true
     }
 
-    if (isCtrl && key === 't') {
-      event.preventDefault()
-      this.createTab(NEW_TAB_URL, true)
-      this.focusAddressBar()
-      return
+    if (ctrl && !shift && key === 't') {
+      this.createTab()
+      this.uiView.webContents.send('browser:focus-address-bar')
+      return true
     }
 
-    if (isCtrl && key === 'w') {
-      event.preventDefault()
-      this.closeTab(activeTabId)
-      return
+    if (ctrl && key === 'w') {
+      this.closeTab(this.activeTabId)
+      return true
     }
 
-    if ((isCtrl && key === 'r') || key === 'f5') {
-      event.preventDefault()
-      this.reload(activeTabId)
-      return
+    if ((ctrl && key === 'r') || key === 'f5') {
+      this.reload(this.activeTabId)
+      return true
     }
 
     if (key === 'escape') {
-      event.preventDefault()
-      this.stop(activeTabId)
-      return
-    }
-
-    if (isAlt && key === 'left') {
-      event.preventDefault()
-      this.goBack(activeTabId)
-      return
-    }
-
-    if (isAlt && key === 'right') {
-      event.preventDefault()
-      this.goForward(activeTabId)
-      return
-    }
-
-    if (isCtrl && key === 'tab') {
-      event.preventDefault()
-      this.switchRelativeTab(isShift ? -1 : 1)
-      return
-    }
-
-    if (isCtrl && isShift && key === 'tab') {
-      event.preventDefault()
-      this.switchRelativeTab(-1)
-      return
-    }
-
-    if (isCtrl && /^[1-9]$/.test(key)) {
-      event.preventDefault()
-      this.switchTabByNumber(Number(key))
-      return
-    }
-
-    if (isCtrl && (key === '+' || key === '=')) {
-      event.preventDefault()
-      this.zoom(activeTabId, 'in')
-      return
-    }
-
-    if (isCtrl && key === '-') {
-      event.preventDefault()
-      this.zoom(activeTabId, 'out')
-      return
-    }
-
-    if (isCtrl && key === '0') {
-      event.preventDefault()
-      this.zoom(activeTabId, 'reset')
-    }
-  }
-
-  getBrowserState(): BrowserState {
-    return {
-      tabs: this.tabOrder
-        .map((tabId) => this.tabs.get(tabId))
-        .filter((tab): tab is ManagedTab => Boolean(tab))
-        .map((tab) => this.toTabState(tab)),
-      activeTabId: this.activeTabId
-    }
-  }
-
-  getActiveTabId(): string {
-    return this.activeTabId
-  }
-
-  pushState(): void {
-    const state = this.getBrowserState()
-
-    this.updateWindowTitle(this.getActiveTabTitle())
-
-    if (!this.uiView.webContents.isDestroyed()) {
-      this.uiView.webContents.send('browser:state', state)
-    }
-
-    this.scheduleSessionSave()
-  }
-
-  updateBounds(): void {
-    if (this.window.isDestroyed()) {
-      return
-    }
-
-    const { width, height } = this.window.getContentBounds()
-    const pageHeight = Math.max(0, height - this.uiHeight)
-
-    this.uiView.setBounds({ x: 0, y: 0, width, height: this.uiHeight })
-
-    const activeTab = this.getActiveTab()
-
-    if (activeTab && !activeTab.view.webContents.isDestroyed()) {
-      activeTab.view.setBounds({ x: 0, y: this.uiHeight, width, height: pageHeight })
-    }
-  }
-
-  restoreSession(session: PersistedSession): void {
-    const urls = session.tabs.map((tab) => tab.url).filter((url) => typeof url === 'string')
-
-    if (urls.length === 0) {
-      this.createTab(NEW_TAB_URL, true)
-      return
-    }
-
-    const activeIndex = Math.min(Math.max(session.activeIndex, 0), urls.length - 1)
-
-    urls.forEach((url, index) => {
-      this.createTab(url || NEW_TAB_URL, index === activeIndex)
-    })
-  }
-
-  saveSessionNow(): void {
-    if (this.saveSessionTimer) {
-      clearTimeout(this.saveSessionTimer)
-      this.saveSessionTimer = null
-    }
-
-    this.storage.saveSession(this.getPersistedSession())
-  }
-
-  cleanup(): void {
-    this.saveSessionNow()
-
-    const activeTab = this.getActiveTab()
-
-    if (activeTab) {
-      this.removeActiveView(activeTab)
-    }
-
-    this.tabs.forEach((tab) => {
-      if (!tab.view.webContents.isDestroyed()) {
-        tab.view.webContents.close({ waitForBeforeUnload: false })
+      if (this.findState) {
+        this.findStop(this.activeTabId, 'clearSelection')
+      } else {
+        this.stop(this.activeTabId)
       }
-    })
+      return true
+    }
 
-    this.tabs.clear()
-    this.tabOrder.splice(0)
-    this.activeTabId = ''
-  }
+    if (alt && key === 'arrowleft') {
+      this.goBack(this.activeTabId)
+      return true
+    }
 
-  private bindTabEvents(tab: ManagedTab): void {
-    const { webContents } = tab.view
+    if (alt && key === 'arrowright') {
+      this.goForward(this.activeTabId)
+      return true
+    }
 
-    webContents.setWindowOpenHandler((details) => {
-      this.createTab(details.url || NEW_TAB_URL, true, tab.id)
-      return { action: 'deny' }
-    })
-
-    webContents.on('before-input-event', (event, input) => {
-      this.handleKeyboardInput(event, input)
-    })
-
-    webContents.on('context-menu', (_event, params) => {
-      this.showContextMenu(tab, params)
-    })
-
-    webContents.on('did-start-loading', () => {
-      tab.isLoading = true
-      tab.error = null
-      this.updateTabNavigationState(tab)
-      this.pushState()
-    })
-
-    webContents.on('did-stop-loading', () => {
-      tab.isLoading = false
-      this.updateTabNavigationState(tab)
-      this.pushState()
-    })
-
-    webContents.on('did-finish-load', () => {
-      tab.isLoading = false
-      tab.url = toVisibleUrl(webContents.getURL() || tab.url)
-      tab.title = tab.url ? webContents.getTitle() || getDisplayTitle(tab.url) : 'New Tab'
-      tab.error = null
-      this.updateTabNavigationState(tab)
-      this.recordHistory(tab)
-      this.pushState()
-    })
-
-    webContents.on('did-navigate', (_event, url) => {
-      tab.url = toVisibleUrl(url)
-      tab.title = getDisplayTitle(tab.url)
-      tab.favicon = ''
-      tab.error = null
-      this.updateTabNavigationState(tab)
-      this.recordHistory(tab)
-      this.pushState()
-    })
-
-    webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-      if (!isMainFrame) {
-        return
+    if (ctrl && key === 'tab') {
+      const currentIdx = this.tabOrder.indexOf(this.activeTabId)
+      if (shift) {
+        const prevIdx = currentIdx <= 0 ? this.tabOrder.length - 1 : currentIdx - 1
+        this.switchTab(this.tabOrder[prevIdx])
+      } else {
+        const nextIdx = currentIdx >= this.tabOrder.length - 1 ? 0 : currentIdx + 1
+        this.switchTab(this.tabOrder[nextIdx])
       }
+      return true
+    }
 
-      tab.url = toVisibleUrl(url)
-      tab.error = null
-      this.updateTabNavigationState(tab)
-      this.recordHistory(tab)
-      this.pushState()
-    })
+    if (ctrl && /^[1-9]$/.test(input.key)) {
+      const idx = parseInt(input.key) - 1
+      if (input.key === '9') {
+        this.switchTab(this.tabOrder[this.tabOrder.length - 1])
+      } else if (idx < this.tabOrder.length) {
+        this.switchTab(this.tabOrder[idx])
+      }
+      return true
+    }
 
-    webContents.on('page-title-updated', (_event, title) => {
-      tab.title = tab.url ? title || getDisplayTitle(tab.url) : 'New Tab'
-      this.recordHistory(tab)
-      this.pushState()
-    })
+    if (ctrl && key === 'f') {
+      this.uiView.webContents.send('browser:focus-find')
+      return true
+    }
 
-    webContents.on('page-favicon-updated', (_event, favicons) => {
-      tab.favicon = favicons[0] || ''
-      this.pushState()
-    })
+    if (ctrl && key === 'd') {
+      this.uiView.webContents.send('browser:toggle-bookmark')
+      return true
+    }
 
-    webContents.on(
-      'did-fail-load',
-      (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-        if (!isMainFrame || errorCode === ERR_ABORTED) {
-          return
-        }
+    if (ctrl && key === 'h') {
+      this.uiView.webContents.send('browser:open-history-panel')
+      return true
+    }
 
-        const failedUrl = validatedURL || tab.url
+    if (ctrl && key === 'j') {
+      this.uiView.webContents.send('browser:open-downloads-panel')
+      return true
+    }
 
-        if (isNameNotResolvedError(errorCode) && this.loadWwwFallback(tab, failedUrl)) {
-          return
-        }
-
-        this.applyLoadError(tab, {
-          url: failedUrl,
-          errorCode,
-          errorDescription
+    if (ctrl && (key === '+' || key === '=' || key === 'add')) {
+      this.zoomIn(this.activeTabId)
+      const tab = this.getActiveTab()
+      if (tab) {
+        this.uiView.webContents.send('browser:toast', {
+          id: 'zoom',
+          text: `Zoom: ${Math.round(tab.zoomFactor * 100)}%`,
+          duration: 2000
         })
       }
-    )
-  }
-
-  private loadBlank(tab: ManagedTab): void {
-    tab.url = ''
-    tab.title = 'New Tab'
-    tab.favicon = ''
-    tab.error = null
-    tab.isLoading = false
-    tab.attemptedWwwFallbacks.clear()
-    this.updateTabNavigationState(tab)
-    this.pushState()
-
-    void tab.view.webContents.loadURL(BLANK_PAGE_URL).catch((error: Error) => {
-      this.applyLoadError(tab, {
-        url: BLANK_PAGE_URL,
-        errorCode: 0,
-        errorDescription: error.message || 'Failed to load blank tab'
-      })
-    })
-  }
-
-  private loadWwwFallback(tab: ManagedTab, failedUrl: string): boolean {
-    const fallbackUrl = getWwwFallbackUrl(failedUrl)
-
-    if (!fallbackUrl || tab.attemptedWwwFallbacks.has(failedUrl)) {
-      return false
+      return true
     }
 
-    tab.attemptedWwwFallbacks.add(failedUrl)
-    tab.url = fallbackUrl
-    tab.title = getDisplayTitle(fallbackUrl)
-    tab.favicon = ''
-    tab.error = null
-    tab.isLoading = true
-    this.pushState()
-
-    void tab.view.webContents.loadURL(fallbackUrl).catch((error: Error) => {
-      this.applyLoadError(tab, {
-        url: fallbackUrl,
-        errorCode: 0,
-        errorDescription: error.message || 'Failed to load URL'
-      })
-    })
-
-    return true
-  }
-
-  private applyLoadError(tab: ManagedTab, error: LoadError): void {
-    tab.url = toVisibleUrl(error.url)
-    tab.title = getDisplayTitle(error.url)
-    tab.favicon = ''
-    tab.isLoading = false
-    tab.error = error
-    this.updateTabNavigationState(tab)
-    this.pushState()
-  }
-
-  private updateTabNavigationState(tab: ManagedTab): void {
-    if (tab.view.webContents.isDestroyed()) {
-      tab.canGoBack = false
-      tab.canGoForward = false
-      return
-    }
-
-    tab.canGoBack = tab.view.webContents.navigationHistory.canGoBack()
-    tab.canGoForward = tab.view.webContents.navigationHistory.canGoForward()
-  }
-
-  private recordHistory(tab: ManagedTab): void {
-    if (!shouldRecordHistory(tab.url)) {
-      return
-    }
-
-    this.storage.addHistory({
-      url: tab.url,
-      title: tab.title || getDisplayTitle(tab.url),
-      visitedAt: Date.now()
-    })
-  }
-
-  private showContextMenu(tab: ManagedTab, params: Electron.ContextMenuParams): void {
-    const template: Electron.MenuItemConstructorOptions[] = [
-      {
-        label: 'Back',
-        enabled: tab.canGoBack,
-        click: () => this.goBack(tab.id)
-      },
-      {
-        label: 'Forward',
-        enabled: tab.canGoForward,
-        click: () => this.goForward(tab.id)
-      },
-      {
-        label: 'Reload',
-        enabled: Boolean(tab.url),
-        click: () => this.reload(tab.id)
-      },
-      { type: 'separator' },
-      {
-        label: 'Copy Link',
-        visible: Boolean(params.linkURL),
-        click: () => clipboard.writeText(params.linkURL)
-      },
-      {
-        label: 'Copy Page URL',
-        enabled: Boolean(tab.url),
-        click: () => clipboard.writeText(tab.url)
+    if (ctrl && (key === '-' || key === 'subtract')) {
+      this.zoomOut(this.activeTabId)
+      const tab = this.getActiveTab()
+      if (tab) {
+        this.uiView.webContents.send('browser:toast', {
+          id: 'zoom',
+          text: `Zoom: ${Math.round(tab.zoomFactor * 100)}%`,
+          duration: 2000
+        })
       }
-    ]
-
-    Menu.buildFromTemplate(template).popup()
-  }
-
-  private switchRelativeTab(direction: 1 | -1): void {
-    if (this.tabOrder.length <= 1) {
-      return
+      return true
     }
 
-    const currentIndex = this.tabOrder.indexOf(this.activeTabId)
-    const nextIndex = (currentIndex + direction + this.tabOrder.length) % this.tabOrder.length
-    this.switchTab(this.tabOrder[nextIndex])
-  }
-
-  private switchTabByNumber(number: number): void {
-    if (this.tabOrder.length === 0) {
-      return
+    if (ctrl && key === '0') {
+      this.zoomReset(this.activeTabId)
+      this.uiView.webContents.send('browser:toast', {
+        id: 'zoom',
+        text: 'Zoom: 100%',
+        duration: 2000
+      })
+      return true
     }
 
-    const targetIndex = number === 9 ? this.tabOrder.length - 1 : number - 1
-    const targetTabId = this.tabOrder[targetIndex]
-
-    if (targetTabId) {
-      this.switchTab(targetTabId)
-    }
-  }
-
-  private getActiveTab(): ManagedTab | undefined {
-    return this.tabs.get(this.activeTabId)
-  }
-
-  private getActiveTabTitle(): string {
-    const activeTab = this.getActiveTab()
-    return activeTab?.title || 'New Tab'
-  }
-
-  private insertTabId(tabId: string, openerTabId?: string): void {
-    const openerIndex = openerTabId ? this.tabOrder.indexOf(openerTabId) : -1
-
-    if (openerIndex >= 0) {
-      this.tabOrder.splice(openerIndex + 1, 0, tabId)
-      return
+    if (key === 'f12') {
+      const activeTab = this.getActiveTab()
+      if (activeTab) {
+        activeTab.view.webContents.openDevTools()
+      }
+      return true
     }
 
-    this.tabOrder.push(tabId)
-  }
-
-  private removeTabId(tabId: string): void {
-    const index = this.tabOrder.indexOf(tabId)
-
-    if (index >= 0) {
-      this.tabOrder.splice(index, 1)
-    }
-  }
-
-  private removeActiveView(tab: ManagedTab): void {
-    try {
-      this.window.contentView.removeChildView(tab.view)
-    } catch {
-      // The view may already be detached during window shutdown.
-    }
-  }
-
-  private scheduleSessionSave(): void {
-    if (this.saveSessionTimer) {
-      clearTimeout(this.saveSessionTimer)
+    if (ctrl && shift && key === 't') {
+      this.restoreClosed()
+      return true
     }
 
-    this.saveSessionTimer = setTimeout(() => {
-      this.saveSessionTimer = null
-      this.storage.saveSession(this.getPersistedSession())
-    }, 250)
+    return false
   }
 
-  private getPersistedSession(): PersistedSession {
-    return {
-      tabs: this.tabOrder
-        .map((tabId) => this.tabs.get(tabId))
-        .filter((tab): tab is ManagedTab => Boolean(tab))
-        .map((tab) => ({
-          url: tab.url,
-          title: tab.title
-        })),
-      activeIndex: Math.max(0, this.tabOrder.indexOf(this.activeTabId))
-    }
+  private pushState(): void {
+    this.onStateChange()
   }
-
-  private toTabState(tab: ManagedTab): TabState {
-    this.updateTabNavigationState(tab)
-
-    return {
-      id: tab.id,
-      url: tab.url,
-      title: tab.title,
-      favicon: tab.favicon,
-      isLoading: tab.isLoading,
-      canGoBack: tab.canGoBack,
-      canGoForward: tab.canGoForward,
-      error: tab.error,
-      zoomFactor: tab.zoomFactor
-    }
-  }
-}
-
-function clampZoomFactor(value: number): number {
-  return Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, value))
 }

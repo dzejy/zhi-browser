@@ -1,8 +1,4 @@
-export interface LoadError {
-  url: string
-  errorCode: number
-  errorDescription: string
-}
+// src/shared/types.ts
 
 export interface TabState {
   id: string
@@ -13,12 +9,38 @@ export interface TabState {
   canGoBack: boolean
   canGoForward: boolean
   error: LoadError | null
+  isPinned: boolean
   zoomFactor: number
+  isNewTab: boolean
+}
+
+export interface LoadError {
+  url: string
+  errorCode: number
+  errorDescription: string
+}
+
+export interface RecentlyClosedTab {
+  url: string
+  title: string
+  favicon: string
+  closedAt: number
 }
 
 export interface BrowserState {
   tabs: TabState[]
   activeTabId: string
+  findState: FindState | null
+  downloads: DownloadItem[]
+  recentlyClosed: RecentlyClosedTab[]
+  toast?: ToastMessage
+}
+
+export interface FindState {
+  tabId: string
+  text: string
+  activeMatchOrdinal: number
+  matches: number
 }
 
 export interface BookmarkItem {
@@ -34,24 +56,41 @@ export interface HistoryItem {
   visitedAt: number
 }
 
-export type DownloadState = 'progressing' | 'completed' | 'cancelled' | 'interrupted'
-
 export interface DownloadItem {
   id: string
   filename: string
   url: string
   totalBytes: number
   receivedBytes: number
-  state: DownloadState
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted'
   savePath: string
+  startedAt: number
+}
+
+export interface BrowserSettings {
+  searchEngine: 'google' | 'bing' | 'baidu' | 'duckduckgo'
+  homepage: string
+  restoreSession: boolean
+  downloadPath: string
+  askWhereToSaveBeforeDownloading: boolean
+}
+
+export interface ToastMessage {
+  id: string
+  text: string
+  duration: number
 }
 
 export interface PersistedSession {
-  tabs: {
-    url: string
-    title: string
-  }[]
+  tabs: { url: string; title: string; isPinned: boolean }[]
   activeIndex: number
 }
 
 export type ZoomAction = 'in' | 'out' | 'reset'
+
+export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings'
+
+export interface BrowserLayout {
+  uiViewHeight: number
+  pageTop: number
+}
