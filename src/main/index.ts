@@ -16,6 +16,15 @@ function isFocusAddressBarShortcut(input: {
   )
 }
 
+function isWebNavigationUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url)
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -48,6 +57,14 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.on('did-attach-webview', (_event, webContents) => {
+    webContents.setWindowOpenHandler((details) => {
+      if (isWebNavigationUrl(details.url)) {
+        void webContents.loadURL(details.url)
+      }
+
+      return { action: 'deny' }
+    })
+
     webContents.on('before-input-event', (event, input) => {
       if (isFocusAddressBarShortcut(input)) {
         event.preventDefault()
