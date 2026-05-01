@@ -43,18 +43,21 @@ interface DownloadItem {
   startedAt: number
 }
 interface RecentlyClosedTab {
+  id?: string
   url: string
   title: string
   favicon: string
   closedAt: number
 }
 interface BookmarkItem {
+  id?: string
   url: string
   title: string
   favicon: string
   createdAt: number
 }
 interface HistoryItem {
+  id?: string
   url: string
   title: string
   visitedAt: number
@@ -67,12 +70,38 @@ interface ToastMessage {
 interface BrowserSettings {
   searchEngine: 'google' | 'bing' | 'baidu' | 'duckduckgo'
   homepage: string
+  newTabBehavior: 'homepage' | 'blank'
   restoreSession: boolean
   downloadPath: string
   askWhereToSaveBeforeDownloading: boolean
+  saveHistory: boolean
+  saveDownloadsHistory: boolean
+  devToolsEnabled: boolean
 }
 
-type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings'
+interface AboutInfo {
+  appName: string
+  appVersion: string
+  electronVersion: string
+  chromiumVersion: string
+  nodeVersion: string
+  userDataPath: string
+}
+
+interface BookmarkEditState {
+  id: string
+  title: string
+  url: string
+}
+
+interface ConfirmDialogState {
+  title: string
+  message: string
+  confirmLabel: string
+  onConfirm: () => void | Promise<void>
+}
+
+type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about'
 
 const TOP_CHROME_HEIGHT = 74
 const FIND_BAR_HEIGHT = 34
@@ -82,13 +111,27 @@ function getOpenPanelType(
   showBookmarks: boolean,
   showHistory: boolean,
   showDownloads: boolean,
-  showSettings: boolean
+  showSettings: boolean,
+  showAbout: boolean
 ): SidePanelType | null {
   if (showBookmarks) return 'bookmarks'
   if (showHistory) return 'history'
   if (showDownloads) return 'downloads'
   if (showSettings) return 'settings'
+  if (showAbout) return 'about'
   return null
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 
 function App(): React.ReactElement {
@@ -108,6 +151,7 @@ function BrowserApp(): React.ReactElement {
   const [showHistory, setShowHistory] = useState(false)
   const [showDownloads, setShowDownloads] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
 
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([])
@@ -191,6 +235,7 @@ function BrowserApp(): React.ReactElement {
       setShowBookmarks(false)
       setShowDownloads(false)
       setShowSettings(false)
+      setShowAbout(false)
       window.api.getHistory(200).then(setHistoryItems)
     })
     const unsub9 = window.api.onOpenDownloadsPanel(() => {
@@ -198,12 +243,43 @@ function BrowserApp(): React.ReactElement {
       setShowBookmarks(false)
       setShowHistory(false)
       setShowSettings(false)
+      setShowAbout(false)
     })
     const unsub10 = window.api.onPanelClosed(() => {
       setShowBookmarks(false)
       setShowHistory(false)
       setShowDownloads(false)
       setShowSettings(false)
+      setShowAbout(false)
+    })
+    const unsub11 = window.api.onOpenBookmarksPanel(() => {
+      setShowBookmarks(true)
+      setShowHistory(false)
+      setShowDownloads(false)
+      setShowSettings(false)
+      setShowAbout(false)
+      window.api.getBookmarks().then(setBookmarks).catch(console.error)
+    })
+    const unsub12 = window.api.onOpenSettingsPanel(() => {
+      setShowSettings(true)
+      setShowBookmarks(false)
+      setShowHistory(false)
+      setShowDownloads(false)
+      setShowAbout(false)
+      window.api.getSettings().then(setSettings).catch(console.error)
+    })
+    const unsub13 = window.api.onOpenAboutPanel(() => {
+      setShowAbout(true)
+      setShowBookmarks(false)
+      setShowHistory(false)
+      setShowDownloads(false)
+      setShowSettings(false)
+    })
+    const unsub14 = window.api.onAddBookmark(() => {
+      handleToggleBookmark()
+    })
+    const unsub15 = window.api.onSettings((updated) => {
+      setSettings(updated)
     })
 
     return () => {
@@ -217,6 +293,11 @@ function BrowserApp(): React.ReactElement {
       unsub8()
       unsub9()
       unsub10()
+      unsub11()
+      unsub12()
+      unsub13()
+      unsub14()
+      unsub15()
     }
   }, [handleToggleBookmark])
 
@@ -232,13 +313,27 @@ function BrowserApp(): React.ReactElement {
       pageTop: uiViewHeight
     })
 
-    const openPanelType = getOpenPanelType(showBookmarks, showHistory, showDownloads, showSettings)
+    const openPanelType = getOpenPanelType(
+      showBookmarks,
+      showHistory,
+      showDownloads,
+      showSettings,
+      showAbout
+    )
     if (openPanelType) {
       window.api.showPanel(openPanelType)
     } else {
       window.api.hidePanel()
     }
-  }, [showFind, activeTab?.error, showBookmarks, showHistory, showDownloads, showSettings])
+  }, [
+    showFind,
+    activeTab?.error,
+    showBookmarks,
+    showHistory,
+    showDownloads,
+    showSettings,
+    showAbout
+  ])
 
   // Sync address bar
   const [prevActiveTabId, setPrevActiveTabId] = useState<string | undefined>(undefined)
@@ -289,6 +384,11 @@ function BrowserApp(): React.ReactElement {
       window.api.closeTab(tabId)
     }
   }
+  function handleTabContextMenu(tabId: string, e: React.MouseEvent): void {
+    e.preventDefault()
+    e.stopPropagation()
+    window.api.tabContextMenu(tabId).catch(console.error)
+  }
 
   function handleDragStart(tabId: string, e: React.DragEvent): void {
     setDragTabId(tabId)
@@ -326,6 +426,7 @@ function BrowserApp(): React.ReactElement {
     setShowHistory(false)
     setShowDownloads(false)
     setShowSettings(false)
+    setShowAbout(false)
   }
 
   async function handleShowHistory(): Promise<void> {
@@ -335,6 +436,7 @@ function BrowserApp(): React.ReactElement {
     setShowBookmarks(false)
     setShowDownloads(false)
     setShowSettings(false)
+    setShowAbout(false)
   }
 
   function handleShowDownloads(): void {
@@ -342,12 +444,14 @@ function BrowserApp(): React.ReactElement {
     setShowBookmarks(false)
     setShowHistory(false)
     setShowSettings(false)
+    setShowAbout(false)
   }
   function handleShowSettings(): void {
     setShowSettings(!showSettings)
     setShowBookmarks(false)
     setShowHistory(false)
     setShowDownloads(false)
+    setShowAbout(false)
   }
 
   function handleOpenBookmark(url: string): void {
@@ -414,6 +518,7 @@ function BrowserApp(): React.ReactElement {
         setShowBookmarks(false)
         setShowDownloads(false)
         setShowSettings(false)
+        setShowAbout(false)
         window.api.getHistory(200).then(setHistoryItems)
       } else if (ctrl && e.key === 'j') {
         e.preventDefault()
@@ -421,6 +526,7 @@ function BrowserApp(): React.ReactElement {
         setShowBookmarks(false)
         setShowHistory(false)
         setShowSettings(false)
+        setShowAbout(false)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -453,6 +559,7 @@ function BrowserApp(): React.ReactElement {
               className={`tab ${tab.id === browserState.activeTabId ? 'active' : ''} ${tab.isPinned ? 'pinned' : ''} ${dragTabId === tab.id ? 'dragging' : ''} ${dragOverTabId === tab.id ? 'drag-over' : ''}`}
               onClick={() => handleSwitchTab(tab.id)}
               onMouseDown={(e) => handleTabMouseDown(tab.id, e)}
+              onContextMenu={(e) => handleTabContextMenu(tab.id, e)}
               draggable
               onDragStart={(e) => handleDragStart(tab.id, e)}
               onDragOver={(e) => handleDragOver(tab.id, e)}
@@ -857,14 +964,48 @@ function App_PanelOnly(): React.ReactElement {
   const [historyQuery, setHistoryQuery] = useState('')
   const [bookmarkQuery, setBookmarkQuery] = useState('')
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
+  const [editingBookmark, setEditingBookmark] = useState<BookmarkEditState | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [aboutInfo, setAboutInfo] = useState<AboutInfo | null>(null)
+
+  const requestConfirm = useCallback(
+    (
+      title: string,
+      message: string,
+      confirmLabel: string,
+      onConfirm: () => void | Promise<void>
+    ): void => {
+      setConfirmDialog({ title, message, confirmLabel, onConfirm })
+    },
+    []
+  )
 
   useEffect(() => {
-    const unsubPanelType = window.api.onPanelType((type) => setPanelType(type))
+    const unsubPanelType = window.api.onPanelType((type) => {
+      setPanelType(type)
+      setEditingBookmark(null)
+      setConfirmDialog(null)
+    })
     const unsubBrowserState = window.api.onBrowserState((state: BrowserState) =>
       setBrowserState(state)
     )
     const unsubDownloadUpdate = window.api.onDownloadUpdate(() => {
       window.api.getBrowserState().then(setBrowserState)
+    })
+    const unsubSettings = window.api.onSettings((updated) => setSettings(updated))
+    const unsubClearData = window.api.onClearDataConfirm(() => {
+      requestConfirm(
+        'Clear browsing data',
+        'Clear all history and download records?',
+        'Clear',
+        async () => {
+          await window.api.clearHistory()
+          await window.api.clearDownloads()
+          setHistoryItems([])
+          const downloads = await window.api.getDownloads()
+          setBrowserState((current) => ({ ...current, downloads }))
+        }
+      )
     })
 
     window.api.getBrowserState().then(setBrowserState)
@@ -875,8 +1016,10 @@ function App_PanelOnly(): React.ReactElement {
       unsubPanelType()
       unsubBrowserState()
       unsubDownloadUpdate()
+      unsubSettings()
+      unsubClearData()
     }
-  }, [])
+  }, [requestConfirm])
 
   useEffect(() => {
     if (panelType === 'bookmarks') {
@@ -887,6 +1030,8 @@ function App_PanelOnly(): React.ReactElement {
       window.api.getBrowserState().then(setBrowserState)
     } else if (panelType === 'settings') {
       window.api.getSettings().then(setSettings)
+    } else if (panelType === 'about') {
+      window.api.getAboutInfo().then(setAboutInfo).catch(console.error)
     }
   }, [panelType])
 
@@ -909,14 +1054,19 @@ function App_PanelOnly(): React.ReactElement {
     window.api.hidePanel()
   }
 
-  function handleOpenBookmark(url: string): void {
-    window.api.openUrl(url, false)
+  function handleOpenBookmark(url: string, newTab = false): void {
+    window.api.openUrl(url, newTab)
     closePanel()
   }
 
-  function handleOpenHistory(url: string): void {
-    window.api.openUrl(url, false)
+  function handleOpenHistory(url: string, newTab = false): void {
+    window.api.openUrl(url, newTab)
     closePanel()
+  }
+
+  function handleCopyUrl(url: string, e?: React.MouseEvent): void {
+    e?.stopPropagation()
+    window.api.copyToClipboard(url).catch(console.error)
   }
 
   async function handleDeleteBookmark(url: string, e: React.MouseEvent): Promise<void> {
@@ -926,9 +1076,102 @@ function App_PanelOnly(): React.ReactElement {
     setBookmarks(updated)
   }
 
+  function handleEditBookmark(bookmark: BookmarkItem, e: React.MouseEvent): void {
+    e.stopPropagation()
+    setEditingBookmark({
+      id: bookmark.id || bookmark.url,
+      title: bookmark.title || bookmark.url,
+      url: bookmark.url
+    })
+  }
+
+  async function handleSaveBookmark(): Promise<void> {
+    if (!editingBookmark) return
+    const title = editingBookmark.title.trim()
+    const url = editingBookmark.url.trim()
+    if (!title || !url) return
+
+    const updated = await window.api.updateBookmark(editingBookmark.id, title, url)
+    setBookmarks(updated)
+    setEditingBookmark(null)
+  }
+
+  function handleClearBookmarks(): void {
+    requestConfirm('Clear bookmarks', 'Delete all bookmarks?', 'Clear', async () => {
+      await window.api.clearBookmarks()
+      setBookmarks([])
+    })
+  }
+
+  async function handleRemoveHistoryEntry(item: HistoryItem, e: React.MouseEvent): Promise<void> {
+    e.stopPropagation()
+    await window.api.removeHistoryEntry(item.id || item.url)
+    const updated = await window.api.getHistory(200)
+    setHistoryItems(updated)
+  }
+
   async function handleClearHistory(): Promise<void> {
-    await window.api.clearHistory()
-    setHistoryItems([])
+    requestConfirm('Clear history', 'Delete all history entries?', 'Clear', async () => {
+      await window.api.clearHistory()
+      setHistoryItems([])
+    })
+  }
+
+  async function handleOpenDownloadFile(downloadId: string, e: React.MouseEvent): Promise<void> {
+    e.stopPropagation()
+    await window.api.openDownloadFile(downloadId)
+  }
+
+  async function handleShowDownloadInFolder(
+    downloadId: string,
+    e: React.MouseEvent
+  ): Promise<void> {
+    e.stopPropagation()
+    await window.api.showDownloadInFolder(downloadId)
+  }
+
+  async function handleRemoveDownload(downloadId: string, e: React.MouseEvent): Promise<void> {
+    e.stopPropagation()
+    await window.api.removeDownload(downloadId)
+    const downloads = await window.api.getDownloads()
+    setBrowserState((current) => ({ ...current, downloads }))
+  }
+
+  function handleClearDownloads(): void {
+    requestConfirm('Clear downloads', 'Delete all download records?', 'Clear', async () => {
+      await window.api.clearDownloads()
+      setBrowserState((current) => ({ ...current, downloads: [] }))
+    })
+  }
+
+  function handleUpdateSettings(partial: Partial<BrowserSettings>): void {
+    window.api.updateSettings(partial).then(setSettings).catch(console.error)
+  }
+
+  async function handleSelectDownloadPath(): Promise<void> {
+    const selected = await window.api.selectDownloadPath()
+    if (selected) {
+      handleUpdateSettings({ downloadPath: selected })
+    }
+  }
+
+  function handleResetSettings(): void {
+    requestConfirm('Reset settings', 'Restore all settings to defaults?', 'Reset', async () => {
+      const updated = await window.api.resetSettings()
+      setSettings(updated)
+    })
+  }
+
+  async function handleConfirmDialog(): Promise<void> {
+    const dialog = confirmDialog
+    if (!dialog) return
+    try {
+      await dialog.onConfirm()
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setConfirmDialog(null)
+    }
   }
 
   return (
@@ -963,16 +1206,30 @@ function App_PanelOnly(): React.ReactElement {
                       }}
                     />
                   )}
-                  <span className="panel-item-title">{b.title || b.url}</span>
-                  <span className="panel-item-url">{b.url}</span>
-                  <button
-                    className="panel-item-delete"
-                    onClick={(e) => handleDeleteBookmark(b.url, e)}
-                  >
-                    ✕
-                  </button>
+                  <div className="panel-item-main">
+                    <span className="panel-item-title">{b.title || b.url}</span>
+                    <span className="panel-item-url">{b.url}</span>
+                  </div>
+                  <div className="panel-item-actions">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenBookmark(b.url, true)
+                      }}
+                    >
+                      New tab
+                    </button>
+                    <button onClick={(e) => handleEditBookmark(b, e)}>Edit</button>
+                    <button onClick={(e) => handleCopyUrl(b.url, e)}>Copy</button>
+                    <button onClick={(e) => handleDeleteBookmark(b.url, e)}>Delete</button>
+                  </div>
                 </div>
               ))}
+              {bookmarks.length > 0 && (
+                <button className="panel-action-btn" onClick={handleClearBookmarks}>
+                  Clear all bookmarks
+                </button>
+              )}
             </div>
           </>
         )}
@@ -999,13 +1256,29 @@ function App_PanelOnly(): React.ReactElement {
               {filteredHistory.length === 0 && <div className="panel-empty">No history</div>}
               {filteredHistory.map((h, i) => (
                 <div
-                  key={`${h.url}-${i}`}
+                  key={h.id || `${h.url}-${i}`}
                   className="panel-item"
                   onClick={() => handleOpenHistory(h.url)}
                 >
-                  <span className="panel-item-title">{h.title || h.url}</span>
-                  <span className="panel-item-url">{h.url}</span>
-                  <span className="panel-item-time">{new Date(h.visitedAt).toLocaleString()}</span>
+                  <div className="panel-item-main">
+                    <span className="panel-item-title">{h.title || h.url}</span>
+                    <span className="panel-item-url">{h.url}</span>
+                    <span className="panel-item-time">
+                      {new Date(h.visitedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="panel-item-actions">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenHistory(h.url, true)
+                      }}
+                    >
+                      New tab
+                    </button>
+                    <button onClick={(e) => handleCopyUrl(h.url, e)}>Copy</button>
+                    <button onClick={(e) => handleRemoveHistoryEntry(h, e)}>Delete</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1026,12 +1299,14 @@ function App_PanelOnly(): React.ReactElement {
               )}
               {browserState.downloads.map((d) => (
                 <div key={d.id} className="panel-item download-item">
-                  <span className="download-filename">{d.filename}</span>
-                  <span className="download-status">
-                    {d.state === 'progressing' && d.totalBytes > 0
-                      ? `${Math.round((d.receivedBytes / d.totalBytes) * 100)}%`
-                      : d.state}
-                  </span>
+                  <div className="download-head">
+                    <span className="download-filename">{d.filename || 'Unnamed file'}</span>
+                    <span className={`download-status status-${d.state}`}>
+                      {d.state === 'progressing' && d.totalBytes > 0
+                        ? `${Math.round((d.receivedBytes / d.totalBytes) * 100)}%`
+                        : d.state}
+                    </span>
+                  </div>
                   {d.state === 'progressing' && d.totalBytes > 0 && (
                     <div className="download-progress">
                       <div
@@ -1040,14 +1315,33 @@ function App_PanelOnly(): React.ReactElement {
                       />
                     </div>
                   )}
-                  {d.state === 'completed' && (
-                    <div className="download-actions">
-                      <button onClick={() => window.api.openDownloadFile(d.id)}>Open</button>
-                      <button onClick={() => window.api.showInFolder(d.id)}>Show in folder</button>
-                    </div>
-                  )}
+                  <span className="download-meta">
+                    {formatBytes(d.receivedBytes || d.totalBytes)}
+                    {d.totalBytes > 0 ? ` / ${formatBytes(d.totalBytes)}` : ''} ·{' '}
+                    {new Date(d.startedAt).toLocaleString()}
+                  </span>
+                  <span className="download-path">{d.savePath || 'No saved path yet'}</span>
+                  <span className="download-url">{d.url}</span>
+                  <div className="download-actions">
+                    <button disabled={!d.savePath} onClick={(e) => handleOpenDownloadFile(d.id, e)}>
+                      Open
+                    </button>
+                    <button
+                      disabled={!d.savePath}
+                      onClick={(e) => handleShowDownloadInFolder(d.id, e)}
+                    >
+                      Folder
+                    </button>
+                    <button onClick={(e) => handleCopyUrl(d.url, e)}>Copy URL</button>
+                    <button onClick={(e) => handleRemoveDownload(d.id, e)}>Delete</button>
+                  </div>
                 </div>
               ))}
+              {browserState.downloads.length > 0 && (
+                <button className="panel-action-btn" onClick={handleClearDownloads}>
+                  Clear all downloads
+                </button>
+              )}
             </div>
           </>
         )}
@@ -1065,15 +1359,36 @@ function App_PanelOnly(): React.ReactElement {
               {settings && (
                 <>
                   <div className="settings-row">
+                    <label>Homepage</label>
+                    <input
+                      type="text"
+                      value={settings.homepage}
+                      onChange={(e) => handleUpdateSettings({ homepage: e.target.value })}
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <label>New Tab Behavior</label>
+                    <select
+                      value={settings.newTabBehavior}
+                      onChange={(e) =>
+                        handleUpdateSettings({
+                          newTabBehavior: e.target.value as BrowserSettings['newTabBehavior']
+                        })
+                      }
+                    >
+                      <option value="blank">Blank page</option>
+                      <option value="homepage">Homepage</option>
+                    </select>
+                  </div>
+                  <div className="settings-row">
                     <label>Search Engine</label>
                     <select
                       value={settings.searchEngine}
-                      onChange={async (e) => {
-                        const newSet = await window.api.updateSettings({
+                      onChange={(e) =>
+                        handleUpdateSettings({
                           searchEngine: e.target.value as BrowserSettings['searchEngine']
                         })
-                        setSettings(newSet)
-                      }}
+                      }
                     >
                       <option value="google">Google</option>
                       <option value="bing">Bing</option>
@@ -1083,27 +1398,26 @@ function App_PanelOnly(): React.ReactElement {
                   </div>
                   <div className="settings-row">
                     <label>Download Path</label>
-                    <input
-                      type="text"
-                      value={settings.downloadPath}
-                      onChange={async (e) => {
-                        const newSet = await window.api.updateSettings({
-                          downloadPath: e.target.value
-                        })
-                        setSettings(newSet)
-                      }}
-                    />
+                    <div className="settings-path-row">
+                      <input
+                        type="text"
+                        value={settings.downloadPath}
+                        onChange={(e) => handleUpdateSettings({ downloadPath: e.target.value })}
+                      />
+                      <button onClick={() => handleSelectDownloadPath().catch(console.error)}>
+                        Browse
+                      </button>
+                    </div>
                   </div>
                   <label className="settings-check">
                     <input
                       type="checkbox"
                       checked={settings.askWhereToSaveBeforeDownloading}
-                      onChange={async (e) => {
-                        const newSet = await window.api.updateSettings({
+                      onChange={(e) =>
+                        handleUpdateSettings({
                           askWhereToSaveBeforeDownloading: e.target.checked
                         })
-                        setSettings(newSet)
-                      }}
+                      }
                     />
                     Ask where to save each file
                   </label>
@@ -1111,21 +1425,145 @@ function App_PanelOnly(): React.ReactElement {
                     <input
                       type="checkbox"
                       checked={settings.restoreSession}
-                      onChange={async (e) => {
-                        const newSet = await window.api.updateSettings({
-                          restoreSession: e.target.checked
-                        })
-                        setSettings(newSet)
-                      }}
+                      onChange={(e) => handleUpdateSettings({ restoreSession: e.target.checked })}
                     />
                     Restore session on startup
                   </label>
+                  <label className="settings-check">
+                    <input
+                      type="checkbox"
+                      checked={settings.saveHistory}
+                      onChange={(e) => handleUpdateSettings({ saveHistory: e.target.checked })}
+                    />
+                    Save history
+                  </label>
+                  <label className="settings-check">
+                    <input
+                      type="checkbox"
+                      checked={settings.saveDownloadsHistory}
+                      onChange={(e) =>
+                        handleUpdateSettings({ saveDownloadsHistory: e.target.checked })
+                      }
+                    />
+                    Save downloads history
+                  </label>
+                  <label className="settings-check">
+                    <input
+                      type="checkbox"
+                      checked={settings.devToolsEnabled}
+                      onChange={(e) => handleUpdateSettings({ devToolsEnabled: e.target.checked })}
+                    />
+                    Enable DevTools
+                  </label>
+                  <div className="settings-actions">
+                    <button onClick={() => window.api.openUserDataFolder().catch(console.error)}>
+                      Open User Data
+                    </button>
+                    <button onClick={handleResetSettings}>Reset Settings</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {panelType === 'about' && (
+          <>
+            <div className="panel-header">
+              <h3>About</h3>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            <div className="panel-list about-list">
+              {!aboutInfo && <div className="panel-empty">Loading about info</div>}
+              {aboutInfo && (
+                <>
+                  <div className="about-app-name">{aboutInfo.appName}</div>
+                  <div className="about-row">
+                    <span>Version</span>
+                    <strong>{aboutInfo.appVersion}</strong>
+                  </div>
+                  <div className="about-row">
+                    <span>Electron</span>
+                    <strong>{aboutInfo.electronVersion}</strong>
+                  </div>
+                  <div className="about-row">
+                    <span>Chromium</span>
+                    <strong>{aboutInfo.chromiumVersion}</strong>
+                  </div>
+                  <div className="about-row">
+                    <span>Node.js</span>
+                    <strong>{aboutInfo.nodeVersion}</strong>
+                  </div>
+                  <div className="about-path">{aboutInfo.userDataPath}</div>
+                  <div className="settings-actions">
+                    <button
+                      onClick={() =>
+                        window.api
+                          .copyToClipboard(
+                            `${aboutInfo.appName} ${aboutInfo.appVersion}\nElectron ${aboutInfo.electronVersion}\nChromium ${aboutInfo.chromiumVersion}\nNode.js ${aboutInfo.nodeVersion}\nData ${aboutInfo.userDataPath}`
+                          )
+                          .catch(console.error)
+                      }
+                    >
+                      Copy Info
+                    </button>
+                    <button onClick={() => window.api.openUserDataFolder().catch(console.error)}>
+                      Open User Data
+                    </button>
+                  </div>
                 </>
               )}
             </div>
           </>
         )}
       </div>
+      {editingBookmark && (
+        <div className="panel-modal-overlay" onClick={() => setEditingBookmark(null)}>
+          <div className="panel-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-modal-header">
+              <span>Edit Bookmark</span>
+              <button onClick={() => setEditingBookmark(null)}>✕</button>
+            </div>
+            <label>
+              Title
+              <input
+                value={editingBookmark.title}
+                onChange={(e) => setEditingBookmark({ ...editingBookmark, title: e.target.value })}
+              />
+            </label>
+            <label>
+              URL
+              <input
+                value={editingBookmark.url}
+                onChange={(e) => setEditingBookmark({ ...editingBookmark, url: e.target.value })}
+              />
+            </label>
+            <div className="panel-modal-actions">
+              <button onClick={() => handleSaveBookmark().catch(console.error)}>Save</button>
+              <button onClick={() => setEditingBookmark(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDialog && (
+        <div className="panel-modal-overlay" onClick={() => setConfirmDialog(null)}>
+          <div className="panel-modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-modal-header">
+              <span>{confirmDialog.title}</span>
+              <button onClick={() => setConfirmDialog(null)}>✕</button>
+            </div>
+            <p>{confirmDialog.message}</p>
+            <div className="panel-modal-actions">
+              <button onClick={() => handleConfirmDialog().catch(console.error)}>
+                {confirmDialog.confirmLabel}
+              </button>
+              <button onClick={() => setConfirmDialog(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

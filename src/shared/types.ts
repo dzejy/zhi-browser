@@ -21,6 +21,7 @@ export interface LoadError {
 }
 
 export interface RecentlyClosedTab {
+  id?: string
   url: string
   title: string
   favicon: string
@@ -44,6 +45,7 @@ export interface FindState {
 }
 
 export interface BookmarkItem {
+  id?: string
   url: string
   title: string
   favicon: string
@@ -51,6 +53,7 @@ export interface BookmarkItem {
 }
 
 export interface HistoryItem {
+  id?: string
   url: string
   title: string
   visitedAt: number
@@ -70,9 +73,22 @@ export interface DownloadItem {
 export interface BrowserSettings {
   searchEngine: 'google' | 'bing' | 'baidu' | 'duckduckgo'
   homepage: string
+  newTabBehavior: 'homepage' | 'blank'
   restoreSession: boolean
   downloadPath: string
   askWhereToSaveBeforeDownloading: boolean
+  saveHistory: boolean
+  saveDownloadsHistory: boolean
+  devToolsEnabled: boolean
+}
+
+export interface AboutInfo {
+  appName: string
+  appVersion: string
+  electronVersion: string
+  chromiumVersion: string
+  nodeVersion: string
+  userDataPath: string
 }
 
 export interface ToastMessage {
@@ -88,7 +104,7 @@ export interface PersistedSession {
 
 export type ZoomAction = 'in' | 'out' | 'reset'
 
-export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings'
+export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about'
 
 export interface BrowserLayout {
   uiViewHeight: number

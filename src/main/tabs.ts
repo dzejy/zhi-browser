@@ -6,11 +6,13 @@ import {
   LoadError,
   FindState,
   RecentlyClosedTab,
-  BrowserLayout
+  BrowserLayout,
+  SidePanelType
 } from '../shared/types'
 import { classifyInput, getWwwFallbackUrl } from './navigation'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
+import { getSettings } from './settings'
 
 interface ManagedTab {
   id: string
@@ -39,11 +41,18 @@ export class TabManager {
   private findState: FindState | null = null
   private recentlyClosed: RecentlyClosedTab[] = []
   private onStateChange: () => void
+  private onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
 
-  constructor(win: BaseWindow, uiView: WebContentsView, onStateChange: () => void) {
+  constructor(
+    win: BaseWindow,
+    uiView: WebContentsView,
+    onStateChange: () => void,
+    onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
+  ) {
     this.win = win
     this.uiView = uiView
     this.onStateChange = onStateChange
+    this.onOpenPanel = onOpenPanel
   }
 
   // ===== State aggregation =====
@@ -94,7 +103,14 @@ export class TabManager {
 
   createTab(url?: string): string {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-    const isNewTab = !url || url === 'about:blank'
+    let targetUrl = url
+    const settings = getSettings()
+
+    if (!targetUrl && settings.newTabBehavior === 'homepage' && settings.homepage.trim()) {
+      targetUrl = classifyInput(settings.homepage).value
+    }
+
+    const isNewTab = !targetUrl || targetUrl === 'about:blank'
 
     const view = new WebContentsView({
       webPreferences: {
@@ -107,7 +123,7 @@ export class TabManager {
     const tab: ManagedTab = {
       id,
       view,
-      url: url || 'about:blank',
+      url: targetUrl || 'about:blank',
       title: isNewTab ? 'New Tab' : '',
       favicon: '',
       isLoading: false,
@@ -130,8 +146,8 @@ export class TabManager {
     this.setupWindowOpenHandler(tab)
     this.setupContextMenu(tab)
 
-    if (!isNewTab && url) {
-      view.webContents.loadURL(url)
+    if (!isNewTab && targetUrl) {
+      view.webContents.loadURL(targetUrl)
     }
 
     this.switchTab(id)
@@ -184,6 +200,79 @@ export class TabManager {
     this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
 
     this.pushState()
+  }
+
+  duplicateTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    this.createTab(tab.url && tab.url !== 'about:blank' ? tab.url : undefined)
+  }
+
+  closeOtherTabs(tabId: string): void {
+    if (!this.tabs.has(tabId)) return
+    const tabsToClose = this.tabOrder.filter((id) => id !== tabId)
+    for (const id of tabsToClose) {
+      this.closeTab(id)
+    }
+    this.switchTab(tabId)
+  }
+
+  closeTabsToRight(tabId: string): void {
+    const index = this.tabOrder.indexOf(tabId)
+    if (index === -1) return
+    const tabsToClose = this.tabOrder.slice(index + 1)
+    for (const id of tabsToClose) {
+      this.closeTab(id)
+    }
+  }
+
+  showTabContextMenu(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+
+    const menu = Menu.buildFromTemplate([
+      { label: 'Reload', click: () => this.reload(tabId) },
+      { label: 'Duplicate', click: () => this.duplicateTab(tabId) },
+      { type: 'separator' },
+      { label: 'Close', click: () => this.closeTab(tabId) },
+      {
+        label: 'Close Others',
+        enabled: this.tabOrder.length > 1,
+        click: () => this.closeOtherTabs(tabId)
+      },
+      {
+        label: 'Close Tabs to the Right',
+        enabled: this.tabOrder.indexOf(tabId) < this.tabOrder.length - 1,
+        click: () => this.closeTabsToRight(tabId)
+      },
+      { type: 'separator' },
+      {
+        label: 'Reopen Closed Tab',
+        enabled: this.recentlyClosed.length > 0,
+        click: () => this.restoreClosed()
+      },
+      { type: 'separator' },
+      {
+        label: 'Copy URL',
+        enabled: Boolean(tab.url && tab.url !== 'about:blank'),
+        click: () => clipboard.writeText(tab.url)
+      }
+    ])
+
+    menu.popup()
+  }
+
+  toggleDevTools(tabId: string): void {
+    if (!getSettings().devToolsEnabled) return
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+
+    const wc = tab.view.webContents
+    if (wc.isDevToolsOpened()) {
+      wc.closeDevTools()
+    } else {
+      wc.openDevTools()
+    }
   }
 
   // ===== Tab switching =====
@@ -602,8 +691,14 @@ export class TabManager {
         )
       }
 
-      if (params.selectionText) {
-        menuItems.push({ label: 'Copy', role: 'copy' }, { type: 'separator' })
+      if (params.hasImageContents && params.srcURL) {
+        menuItems.push(
+          {
+            label: 'Save image as...',
+            click: () => tab.view.webContents.downloadURL(params.srcURL)
+          },
+          { type: 'separator' }
+        )
       }
 
       if (params.isEditable) {
@@ -611,16 +706,27 @@ export class TabManager {
           { label: 'Cut', role: 'cut' },
           { label: 'Copy', role: 'copy' },
           { label: 'Paste', role: 'paste' },
-          { type: 'separator' }
+          { label: 'Select All', role: 'selectAll' }
+        )
+      } else {
+        menuItems.push(
+          { label: 'Copy', role: 'copy', enabled: Boolean(params.selectionText) },
+          { label: 'Paste', role: 'paste', enabled: false },
+          { label: 'Select All', role: 'selectAll' }
         )
       }
 
-      menuItems.push({
-        label: 'Inspect Element',
-        click: () => {
-          tab.view.webContents.inspectElement(params.x, params.y)
-        }
-      })
+      if (getSettings().devToolsEnabled) {
+        menuItems.push({
+          type: 'separator'
+        })
+        menuItems.push({
+          label: 'Inspect Element',
+          click: () => {
+            tab.view.webContents.inspectElement(params.x, params.y)
+          }
+        })
+      }
 
       const menu = Menu.buildFromTemplate(menuItems)
       menu.popup()
@@ -706,12 +812,20 @@ export class TabManager {
     }
 
     if (ctrl && key === 'h') {
-      this.uiView.webContents.send('browser:open-history-panel')
+      if (this.onOpenPanel) {
+        this.onOpenPanel('history')
+      } else {
+        this.uiView.webContents.send('browser:open-history-panel')
+      }
       return true
     }
 
     if (ctrl && key === 'j') {
-      this.uiView.webContents.send('browser:open-downloads-panel')
+      if (this.onOpenPanel) {
+        this.onOpenPanel('downloads')
+      } else {
+        this.uiView.webContents.send('browser:open-downloads-panel')
+      }
       return true
     }
 
@@ -752,10 +866,7 @@ export class TabManager {
     }
 
     if (key === 'f12') {
-      const activeTab = this.getActiveTab()
-      if (activeTab) {
-        activeTab.view.webContents.openDevTools()
-      }
+      this.toggleDevTools(this.activeTabId)
       return true
     }
 

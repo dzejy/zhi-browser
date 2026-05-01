@@ -20,6 +20,10 @@ const api = {
   restoreClosed: () => ipcRenderer.send('tab:restore-closed'),
   moveTab: (tabId: string, toIndex: number) => ipcRenderer.send('tab:move', { tabId, toIndex }),
   openUrl: (url: string, newTab?: boolean) => ipcRenderer.send('tab:open-url', { url, newTab }),
+  tabContextMenu: (tabId: string) => ipcRenderer.invoke('tab:context-menu', tabId),
+  duplicateTab: (tabId: string) => ipcRenderer.invoke('tab:duplicate', tabId),
+  closeOtherTabs: (tabId: string) => ipcRenderer.invoke('tab:close-others', tabId),
+  closeTabsToRight: (tabId: string) => ipcRenderer.invoke('tab:close-right', tabId),
 
   // ===== Layout =====
   setUiHeight: (height: number) => ipcRenderer.send('ui:set-height', height),
@@ -39,23 +43,37 @@ const api = {
     ipcRenderer.invoke('bookmark:add-current', { url, title, favicon }),
   removeBookmark: (url: string) => ipcRenderer.invoke('bookmark:remove', { url }),
   getBookmarks: () => ipcRenderer.invoke('bookmark:list'),
+  updateBookmark: (id: string, title: string, url: string) =>
+    ipcRenderer.invoke('bookmarks:update', id, title, url),
+  clearBookmarks: () => ipcRenderer.invoke('bookmarks:clear'),
 
   // ===== History =====
   getHistory: (limit?: number, query?: string) =>
     ipcRenderer.invoke('history:list', { limit, query }),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
+  removeHistoryEntry: (id: string) => ipcRenderer.invoke('history:remove', id),
 
   // ===== Downloads =====
-  openDownloadFile: (downloadId: string) => ipcRenderer.send('download:open-file', { downloadId }),
-  showInFolder: (downloadId: string) => ipcRenderer.send('download:show-in-folder', { downloadId }),
+  getDownloads: () => ipcRenderer.invoke('downloads:list'),
+  openDownloadFile: (downloadId: string) => ipcRenderer.invoke('downloads:open-file', downloadId),
+  showInFolder: (downloadId: string) => ipcRenderer.invoke('downloads:show-in-folder', downloadId),
+  showDownloadInFolder: (downloadId: string) =>
+    ipcRenderer.invoke('downloads:show-in-folder', downloadId),
+  removeDownload: (downloadId: string) => ipcRenderer.invoke('downloads:remove', downloadId),
+  clearDownloads: () => ipcRenderer.invoke('downloads:clear'),
 
   // ===== Settings =====
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('settings:update', settings),
+  resetSettings: () => ipcRenderer.invoke('settings:reset'),
+  selectDownloadPath: () => ipcRenderer.invoke('settings:select-download-path'),
+  openUserDataFolder: () => ipcRenderer.invoke('settings:open-user-data'),
 
   // ===== Browser state =====
   getBrowserState: () => ipcRenderer.invoke('browser:get-state'),
+  getAboutInfo: () => ipcRenderer.invoke('browser:get-about-info'),
+  copyToClipboard: (text: string) => ipcRenderer.invoke('util:copy-to-clipboard', text),
 
   // ===== Listeners (Main → Renderer) =====
   onBrowserState: (callback: (state: unknown) => void): (() => void) => {
@@ -106,10 +124,35 @@ const api = {
     ipcRenderer.on('browser:open-history-panel', handler)
     return () => ipcRenderer.removeListener('browser:open-history-panel', handler)
   },
+  onOpenBookmarksPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-bookmarks-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-bookmarks-panel', handler)
+  },
   onOpenDownloadsPanel: (callback: () => void): (() => void) => {
     const handler = () => callback()
     ipcRenderer.on('browser:open-downloads-panel', handler)
     return () => ipcRenderer.removeListener('browser:open-downloads-panel', handler)
+  },
+  onOpenSettingsPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-settings-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-settings-panel', handler)
+  },
+  onOpenAboutPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-about-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-about-panel', handler)
+  },
+  onAddBookmark: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:add-bookmark', handler)
+    return () => ipcRenderer.removeListener('browser:add-bookmark', handler)
+  },
+  onClearDataConfirm: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:clear-data-confirm', handler)
+    return () => ipcRenderer.removeListener('browser:clear-data-confirm', handler)
   },
   onPanelType: (callback: (type: SidePanelType) => void): (() => void) => {
     const handler = (_event: unknown, type: SidePanelType) => callback(type)

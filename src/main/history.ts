@@ -1,14 +1,35 @@
 import { HistoryItem } from '../shared/types'
 import { readJSON, writeJSON } from './storage'
+import { getSettings } from './settings'
 
 const HISTORY_FILE = 'history.json'
 const MAX_HISTORY = 2000
 
 let cache: HistoryItem[] | null = null
 
+function makeHistoryId(url: string, visitedAt: number): string {
+  return `${visitedAt}:${url}`
+}
+
+function normalizeHistoryItem(item: Partial<HistoryItem>): HistoryItem | null {
+  if (typeof item.url !== 'string' || !item.url.trim()) return null
+  const url = item.url.trim()
+  const visitedAt = typeof item.visitedAt === 'number' ? item.visitedAt : Date.now()
+  const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : url
+
+  return {
+    id: typeof item.id === 'string' && item.id.trim() ? item.id : makeHistoryId(url, visitedAt),
+    url,
+    title,
+    visitedAt
+  }
+}
+
 export function getHistory(limit?: number, query?: string): HistoryItem[] {
   if (cache === null) {
-    cache = readJSON<HistoryItem[]>(HISTORY_FILE, [])
+    cache = readJSON<Partial<HistoryItem>[]>(HISTORY_FILE, [])
+      .map(normalizeHistoryItem)
+      .filter((item): item is HistoryItem => item !== null)
   }
   let results = cache
   if (query) {
@@ -24,9 +45,11 @@ export function getHistory(limit?: number, query?: string): HistoryItem[] {
 }
 
 export function addHistory(url: string, title: string): void {
+  if (!getSettings().saveHistory) return
   if (!url || url === 'about:blank') return
 
   const history = getHistory()
+  const visitedAt = Date.now()
 
   // Find existing entry for this URL
   const existingIdx = history.findIndex((h) => h.url === url)
@@ -36,9 +59,9 @@ export function addHistory(url: string, title: string): void {
     const existing = history[existingIdx]
     const betterTitle = title && title !== 'New Tab' && title !== url ? title : existing.title
     history.splice(existingIdx, 1)
-    history.unshift({ url, title: betterTitle, visitedAt: Date.now() })
+    history.unshift({ id: makeHistoryId(url, visitedAt), url, title: betterTitle, visitedAt })
   } else {
-    const item: HistoryItem = { url, title, visitedAt: Date.now() }
+    const item: HistoryItem = { id: makeHistoryId(url, visitedAt), url, title, visitedAt }
     history.unshift(item)
   }
 
@@ -54,4 +77,10 @@ export function addHistory(url: string, title: string): void {
 export function clearHistory(): void {
   cache = []
   writeJSON(HISTORY_FILE, [])
+}
+
+export function removeHistoryEntry(id: string): void {
+  const history = getHistory()
+  cache = history.filter((item) => item.id !== id && item.url !== id)
+  writeJSON(HISTORY_FILE, cache)
 }

@@ -11,6 +11,13 @@ const activeDownloads: Map<string, { item: DownloadItem; appItem: AppDownloadIte
 let completedDownloads: AppDownloadItem[] = []
 let onUpdateCallback: ((item: AppDownloadItem) => void) | null = null
 
+const DOWNLOAD_STATES: AppDownloadItem['state'][] = [
+  'progressing',
+  'completed',
+  'cancelled',
+  'interrupted'
+]
+
 export function setOnDownloadUpdate(cb: (item: AppDownloadItem) => void): void {
   onUpdateCallback = cb
 }
@@ -21,10 +28,32 @@ export function getDownloads(): AppDownloadItem[] {
 }
 
 export function loadCompletedDownloads(): void {
-  completedDownloads = readJSON<AppDownloadItem[]>(DOWNLOADS_FILE, [])
+  completedDownloads = readJSON<Partial<AppDownloadItem>[]>(DOWNLOADS_FILE, [])
+    .map(normalizeDownload)
+    .filter((item): item is AppDownloadItem => item !== null)
+}
+
+function normalizeDownload(item: Partial<AppDownloadItem>): AppDownloadItem | null {
+  if (typeof item.id !== 'string' || !item.id.trim()) return null
+  const state = DOWNLOAD_STATES.includes(item.state as AppDownloadItem['state'])
+    ? (item.state as AppDownloadItem['state'])
+    : 'completed'
+
+  return {
+    id: item.id,
+    filename:
+      typeof item.filename === 'string' && item.filename.trim() ? item.filename : 'download',
+    url: typeof item.url === 'string' ? item.url : '',
+    totalBytes: typeof item.totalBytes === 'number' ? item.totalBytes : 0,
+    receivedBytes: typeof item.receivedBytes === 'number' ? item.receivedBytes : 0,
+    state,
+    savePath: typeof item.savePath === 'string' ? item.savePath : '',
+    startedAt: typeof item.startedAt === 'number' ? item.startedAt : Date.now()
+  }
 }
 
 function saveCompletedDownloads(): void {
+  if (!getSettings().saveDownloadsHistory) return
   writeJSON(DOWNLOADS_FILE, completedDownloads.slice(0, 100)) // keep last 100
 }
 
@@ -96,8 +125,10 @@ export function setupDownloadHandler(): void {
         state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted'
 
       activeDownloads.delete(id)
-      completedDownloads.unshift(appItem)
-      saveCompletedDownloads()
+      if (getSettings().saveDownloadsHistory) {
+        completedDownloads.unshift(appItem)
+        saveCompletedDownloads()
+      }
       onUpdateCallback?.(appItem)
     })
 
@@ -105,26 +136,39 @@ export function setupDownloadHandler(): void {
   })
 }
 
+function findDownload(downloadId: string): AppDownloadItem | undefined {
+  return (
+    activeDownloads.get(downloadId)?.appItem || completedDownloads.find((d) => d.id === downloadId)
+  )
+}
+
 export function openDownloadFile(downloadId: string): void {
-  const active = activeDownloads.get(downloadId)
-  if (active?.appItem.savePath) {
-    shell.openPath(active.appItem.savePath)
-    return
-  }
-  const completed = completedDownloads.find((d) => d.id === downloadId)
-  if (completed?.savePath) {
-    shell.openPath(completed.savePath)
+  const download = findDownload(downloadId)
+  if (download?.savePath && existsSync(download.savePath)) {
+    shell.openPath(download.savePath).catch(() => {
+      /* ignore */
+    })
   }
 }
 
 export function showInFolder(downloadId: string): void {
-  const active = activeDownloads.get(downloadId)
-  if (active?.appItem.savePath) {
-    shell.showItemInFolder(active.appItem.savePath)
-    return
+  const download = findDownload(downloadId)
+  if (download?.savePath && existsSync(download.savePath)) {
+    shell.showItemInFolder(download.savePath)
   }
-  const completed = completedDownloads.find((d) => d.id === downloadId)
-  if (completed?.savePath) {
-    shell.showItemInFolder(completed.savePath)
-  }
+}
+
+export function showDownloadInFolder(downloadId: string): void {
+  showInFolder(downloadId)
+}
+
+export function removeDownload(downloadId: string): void {
+  activeDownloads.delete(downloadId)
+  completedDownloads = completedDownloads.filter((d) => d.id !== downloadId)
+  writeJSON(DOWNLOADS_FILE, completedDownloads)
+}
+
+export function clearDownloads(): void {
+  completedDownloads = []
+  writeJSON(DOWNLOADS_FILE, [])
 }

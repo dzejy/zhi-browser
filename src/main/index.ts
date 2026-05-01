@@ -1,18 +1,36 @@
-import { app, BaseWindow, WebContentsView, ipcMain, Menu } from 'electron'
+import { app, BaseWindow, WebContentsView, ipcMain, clipboard } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { TabManager } from './tabs'
 import { readJSON, writeJSON } from './storage'
-import { addBookmark, removeBookmark, getBookmarks } from './bookmarks'
-import { getHistory, clearHistory } from './history'
+import {
+  addBookmark,
+  removeBookmark,
+  getBookmarks,
+  updateBookmark,
+  clearBookmarks
+} from './bookmarks'
+import { getHistory, clearHistory, removeHistoryEntry } from './history'
 import {
   setupDownloadHandler,
   setOnDownloadUpdate,
   openDownloadFile,
   showInFolder,
-  loadCompletedDownloads
+  loadCompletedDownloads,
+  getDownloads,
+  removeDownload,
+  clearDownloads,
+  showDownloadInFolder
 } from './downloads'
-import { getSettings, updateSettings } from './settings'
+import {
+  getSettings,
+  updateSettings,
+  resetSettings,
+  selectDownloadPath,
+  openUserDataFolder,
+  getUserDataPath
+} from './settings'
+import { buildMenu } from './menu'
 import { PersistedSession, BrowserSettings, BrowserLayout, SidePanelType } from '../shared/types'
 
 let win: BaseWindow
@@ -30,7 +48,74 @@ const PANEL_WIDTH = 380
 const PANEL_HEIGHT = 386
 const PANEL_RIGHT_MARGIN = 8
 const PANEL_TOP = TOP_CHROME_HEIGHT
-const SIDE_PANEL_TYPES = new Set<SidePanelType>(['bookmarks', 'history', 'downloads', 'settings'])
+const SIDE_PANEL_TYPES = new Set<SidePanelType>([
+  'bookmarks',
+  'history',
+  'downloads',
+  'settings',
+  'about'
+])
+
+function sendToUi(channel: string, ...args: unknown[]): void {
+  try {
+    uiView.webContents.send(channel, ...args)
+  } catch {
+    /* ui view may not be ready */
+  }
+}
+
+function sendToPanel(channel: string, ...args: unknown[]): void {
+  if (!panelView) return
+
+  const send = (): void => {
+    try {
+      panelView?.webContents.send(channel, ...args)
+    } catch {
+      /* panel view may not be ready */
+    }
+  }
+
+  if (panelReady) {
+    send()
+  } else {
+    panelView.webContents.once('did-finish-load', send)
+  }
+}
+
+function installAppMenu(): void {
+  buildMenu({
+    newTab: () => {
+      tabManager.createTab()
+      sendToUi('browser:focus-address-bar')
+    },
+    closeTab: () => tabManager.closeTab(tabManager.getActiveTabId()),
+    reload: () => tabManager.reload(tabManager.getActiveTabId()),
+    zoomIn: () => tabManager.zoomIn(tabManager.getActiveTabId()),
+    zoomOut: () => tabManager.zoomOut(tabManager.getActiveTabId()),
+    zoomReset: () => tabManager.zoomReset(tabManager.getActiveTabId()),
+    toggleDevTools: () => tabManager.toggleDevTools(tabManager.getActiveTabId()),
+    focusAddressBar: () => sendToUi('browser:focus-address-bar'),
+    findInPage: () => sendToUi('browser:focus-find'),
+    showHistory: () => openSidePanelFromShortcut('history'),
+    showBookmarks: () => sendToUi('browser:open-bookmarks-panel'),
+    showDownloads: () => openSidePanelFromShortcut('downloads'),
+    showSettings: () => sendToUi('browser:open-settings-panel'),
+    showAbout: () => sendToUi('browser:open-about-panel'),
+    reopenClosedTab: () => tabManager.restoreClosed(),
+    addBookmark: () => sendToUi('browser:add-bookmark'),
+    openUserDataFolder: () => openUserDataFolder(),
+    clearBrowsingData: () => {
+      showPanelView('settings')
+      sendToPanel('browser:clear-data-confirm')
+    },
+    isDevToolsEnabled: () => getSettings().devToolsEnabled
+  })
+}
+
+function openSidePanelFromShortcut(type: 'history' | 'downloads'): void {
+  showPanelView(type)
+  sendToUi(type === 'history' ? 'browser:open-history-panel' : 'browser:open-downloads-panel')
+}
 
 function createWindow(): void {
   win = new BaseWindow({
@@ -61,9 +146,15 @@ function createWindow(): void {
     uiView.webContents.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  tabManager = new TabManager(win, uiView, () => {
-    pushBrowserState()
-  })
+  tabManager = new TabManager(
+    win,
+    uiView,
+    () => {
+      pushBrowserState()
+    },
+    openSidePanelFromShortcut
+  )
+  installAppMenu()
 
   // Create a narrow, right-aligned view for bookmark/history/download/settings panels.
   // The page view remains full-size behind it; no wide transparent overlay is needed.
@@ -132,12 +223,12 @@ function createWindow(): void {
     }
     if (ctrl && key === 'h') {
       event.preventDefault()
-      uiView.webContents.send('browser:open-history-panel')
+      openSidePanelFromShortcut('history')
       return
     }
     if (ctrl && key === 'j') {
       event.preventDefault()
-      uiView.webContents.send('browser:open-downloads-panel')
+      openSidePanelFromShortcut('downloads')
       return
     }
     if (ctrl && key === 'tab') {
@@ -160,8 +251,7 @@ function createWindow(): void {
     }
     if (key === 'f12') {
       event.preventDefault()
-      const activeTab = tabManager.getActiveTab()
-      if (activeTab) activeTab.view.webContents.openDevTools()
+      tabManager.toggleDevTools(tabManager.getActiveTabId())
       return
     }
   })
@@ -432,6 +522,26 @@ function setupIPC(): void {
     }
   })
 
+  ipcMain.handle('tab:context-menu', (event, tabId: string) => {
+    if (!validateSender(event)) return
+    tabManager.showTabContextMenu(tabId)
+  })
+
+  ipcMain.handle('tab:duplicate', (event, tabId: string) => {
+    if (!validateSender(event)) return
+    tabManager.duplicateTab(tabId)
+  })
+
+  ipcMain.handle('tab:close-others', (event, tabId: string) => {
+    if (!validateSender(event)) return
+    tabManager.closeOtherTabs(tabId)
+  })
+
+  ipcMain.handle('tab:close-right', (event, tabId: string) => {
+    if (!validateSender(event)) return
+    tabManager.closeTabsToRight(tabId)
+  })
+
   // Browser state sync — renderer requests current state on mount
   ipcMain.handle('browser:get-state', (event) => {
     if (!validateSender(event))
@@ -483,6 +593,20 @@ function setupIPC(): void {
     return getBookmarks()
   })
 
+  ipcMain.handle('bookmarks:update', (event, id: string, title: string, url: string) => {
+    if (!validateSender(event)) return []
+    const nextTitle = typeof title === 'string' ? title.trim() : ''
+    const nextUrl = typeof url === 'string' ? url.trim() : ''
+    if (!id || !nextTitle || !nextUrl) return getBookmarks()
+    if (!nextUrl.includes('.') && !nextUrl.includes('://')) return getBookmarks()
+    return updateBookmark(id, { title: nextTitle, url: nextUrl })
+  })
+
+  ipcMain.handle('bookmarks:clear', (event) => {
+    if (!validateSender(event)) return
+    clearBookmarks()
+  })
+
   // History
   ipcMain.handle('history:list', (event, args?: { limit?: number; query?: string }) => {
     if (!validateSender(event)) return []
@@ -492,6 +616,11 @@ function setupIPC(): void {
   ipcMain.handle('history:clear', (event) => {
     if (!validateSender(event)) return
     clearHistory()
+  })
+
+  ipcMain.handle('history:remove', (event, id: string) => {
+    if (!validateSender(event)) return
+    removeHistoryEntry(id)
   })
 
   // Downloads
@@ -505,6 +634,33 @@ function setupIPC(): void {
     showInFolder(args.downloadId)
   })
 
+  ipcMain.handle('downloads:list', (event) => {
+    if (!validateSender(event)) return []
+    return getDownloads()
+  })
+
+  ipcMain.handle('downloads:open-file', (event, id: string) => {
+    if (!validateSender(event)) return
+    openDownloadFile(id)
+  })
+
+  ipcMain.handle('downloads:show-in-folder', (event, id: string) => {
+    if (!validateSender(event)) return
+    showDownloadInFolder(id)
+  })
+
+  ipcMain.handle('downloads:remove', (event, id: string) => {
+    if (!validateSender(event)) return
+    removeDownload(id)
+    pushBrowserState()
+  })
+
+  ipcMain.handle('downloads:clear', (event) => {
+    if (!validateSender(event)) return
+    clearDownloads()
+    pushBrowserState()
+  })
+
   // Settings
   ipcMain.handle('settings:get', (event) => {
     if (!validateSender(event)) return null
@@ -513,17 +669,55 @@ function setupIPC(): void {
 
   ipcMain.handle('settings:update', (event, args: Partial<BrowserSettings>) => {
     if (!validateSender(event)) return null
-    return updateSettings(args)
+    const updated = updateSettings(args)
+    installAppMenu()
+    sendToUi('browser:settings', updated)
+    sendToPanel('browser:settings', updated)
+    return updated
+  })
+
+  ipcMain.handle('settings:reset', (event) => {
+    if (!validateSender(event)) return null
+    const updated = resetSettings()
+    installAppMenu()
+    sendToUi('browser:settings', updated)
+    sendToPanel('browser:settings', updated)
+    return updated
+  })
+
+  ipcMain.handle('settings:select-download-path', async (event) => {
+    if (!validateSender(event)) return null
+    return selectDownloadPath()
+  })
+
+  ipcMain.handle('settings:open-user-data', (event) => {
+    if (!validateSender(event)) return
+    openUserDataFolder()
+  })
+
+  ipcMain.handle('browser:get-about-info', (event) => {
+    if (!validateSender(event)) return null
+    return {
+      appName: 'Zhi Browser',
+      appVersion: app.getVersion(),
+      electronVersion: process.versions.electron || '',
+      chromiumVersion: process.versions.chrome || '',
+      nodeVersion: process.versions.node,
+      userDataPath: getUserDataPath()
+    }
+  })
+
+  ipcMain.handle('util:copy-to-clipboard', (event, text: string) => {
+    if (!validateSender(event)) return
+    if (typeof text === 'string') {
+      clipboard.writeText(text)
+    }
   })
 }
 
 // ===== App lifecycle =====
 
 app.whenReady().then(() => {
-  // Remove default application menu so Ctrl+W does not close the window.
-  // Tab close is handled via before-input-event in TabManager.
-  Menu.setApplicationMenu(null)
-
   loadCompletedDownloads()
   setupDownloadHandler()
   setOnDownloadUpdate((item) => {

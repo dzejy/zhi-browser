@@ -12,15 +12,15 @@ export function classifyInput(input: string): ClassifiedUrl {
     return { type: 'newtab', value: 'about:blank' }
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)) {
     return { type: 'url', value: trimmed }
   }
 
-  if (/^file:\/\//i.test(trimmed)) {
-    return { type: 'url', value: trimmed }
+  if (/^(localhost|\[::1\])(?::\d+)?(?:[/?#].*)?$/i.test(trimmed)) {
+    return { type: 'url', value: 'http://' + trimmed }
   }
 
-  if (/^(localhost|127\.0\.0\.1|192\.168\.\d|10\.\d|\[::1\])/.test(trimmed)) {
+  if (/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#].*)?$/.test(trimmed)) {
     return { type: 'url', value: 'http://' + trimmed }
   }
 
@@ -32,7 +32,7 @@ export function classifyInput(input: string): ClassifiedUrl {
     return { type: 'search', value: getSearchUrl(trimmed) }
   }
 
-  if (/^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+/.test(trimmed)) {
+  if (/^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+(?:[/:?#].*)?$/.test(trimmed)) {
     return { type: 'url', value: 'https://' + trimmed }
   }
 

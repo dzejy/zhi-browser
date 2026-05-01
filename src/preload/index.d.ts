@@ -4,6 +4,7 @@ import {
   HistoryItem,
   DownloadItem,
   BrowserSettings,
+  AboutInfo,
   ToastMessage,
   BrowserLayout,
   SidePanelType
@@ -32,6 +33,10 @@ export interface PreloadAPI {
   restoreClosed(): void
   moveTab(tabId: string, toIndex: number): void
   openUrl(url: string, newTab?: boolean): void
+  tabContextMenu(tabId: string): Promise<void>
+  duplicateTab(tabId: string): Promise<void>
+  closeOtherTabs(tabId: string): Promise<void>
+  closeTabsToRight(tabId: string): Promise<void>
 
   // Layout
   setUiHeight(height: number): void
@@ -48,21 +53,33 @@ export interface PreloadAPI {
   addBookmark(url: string, title: string, favicon: string): Promise<BookmarkItem>
   removeBookmark(url: string): Promise<void>
   getBookmarks(): Promise<BookmarkItem[]>
+  updateBookmark(id: string, title: string, url: string): Promise<BookmarkItem[]>
+  clearBookmarks(): Promise<void>
 
   // History
   getHistory(limit?: number, query?: string): Promise<HistoryItem[]>
   clearHistory(): Promise<void>
+  removeHistoryEntry(id: string): Promise<void>
 
   // Downloads
-  openDownloadFile(downloadId: string): void
-  showInFolder(downloadId: string): void
+  getDownloads(): Promise<DownloadItem[]>
+  openDownloadFile(downloadId: string): Promise<void>
+  showInFolder(downloadId: string): Promise<void>
+  showDownloadInFolder(downloadId: string): Promise<void>
+  removeDownload(downloadId: string): Promise<void>
+  clearDownloads(): Promise<void>
 
   // Settings
   getSettings(): Promise<BrowserSettings>
   updateSettings(settings: Partial<BrowserSettings>): Promise<BrowserSettings>
+  resetSettings(): Promise<BrowserSettings>
+  selectDownloadPath(): Promise<string | null>
+  openUserDataFolder(): Promise<void>
 
   // Browser state
   getBrowserState(): Promise<BrowserState>
+  getAboutInfo(): Promise<AboutInfo>
+  copyToClipboard(text: string): Promise<void>
 
   // Listeners
   onBrowserState(callback: (state: BrowserState) => void): () => void
@@ -74,7 +91,12 @@ export interface PreloadAPI {
   onToast(callback: (msg: ToastMessage) => void): () => void
   onSettings(callback: (settings: BrowserSettings) => void): () => void
   onOpenHistoryPanel(callback: () => void): () => void
+  onOpenBookmarksPanel(callback: () => void): () => void
   onOpenDownloadsPanel(callback: () => void): () => void
+  onOpenSettingsPanel(callback: () => void): () => void
+  onOpenAboutPanel(callback: () => void): () => void
+  onAddBookmark(callback: () => void): () => void
+  onClearDataConfirm(callback: () => void): () => void
   onPanelType(callback: (type: SidePanelType) => void): () => void
   onPanelClosed(callback: () => void): () => void
 }
