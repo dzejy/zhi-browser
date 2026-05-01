@@ -2,36 +2,33 @@ import {
   app,
   BaseWindow,
   ipcMain,
+  Menu,
   net,
   protocol,
+  session as electronSession,
   WebContentsView,
-  type IpcMainEvent
+  type IpcMainEvent,
+  type IpcMainInvokeEvent
 } from 'electron'
+import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import type {
+  BookmarkItem,
+  DownloadItem,
+  DownloadState,
+  HistoryItem,
+  ZoomAction
+} from '../shared/types'
+import { APP_TITLE, NEW_TAB_URL } from './navigation'
+import { BrowserStorage } from './storage'
+import { TabManager } from './tabs'
 
-interface PageState {
-  url: string
-  title: string
-  favicon: string
-  isLoading: boolean
-  canGoBack: boolean
-  canGoForward: boolean
-}
-
-interface PageLoadError {
-  url: string
-  errorCode: number
-  errorDescription: string
-}
-
-const UI_HEIGHT = 90
-const INITIAL_URL = 'https://example.com'
-const APP_TITLE = 'Zhi Browser'
-const ERR_NAME_NOT_RESOLVED = -105
-const ERR_ABORTED = -3
+const UI_HEIGHT = 104
 const DEV_RENDERER_PROTOCOL = 'zhi-ui'
+
+let activeTabManager: TabManager | null = null
 
 if (is.dev) {
   protocol.registerSchemesAsPrivileged([
@@ -45,75 +42,6 @@ if (is.dev) {
       }
     }
   ])
-}
-
-function isFocusAddressBarShortcut(input: {
-  type?: string
-  key?: string
-  control?: boolean
-  meta?: boolean
-}): boolean {
-  return (
-    input.type === 'keyDown' &&
-    (input.control === true || input.meta === true) &&
-    input.key?.toLowerCase() === 'l'
-  )
-}
-
-function normalizeNavigationUrl(value: string): string {
-  const trimmed = value.trim()
-
-  if (!trimmed || /\s/.test(trimmed)) {
-    return ''
-  }
-
-  const candidate = /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-
-  try {
-    const parsedUrl = new URL(candidate)
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      return ''
-    }
-
-    return parsedUrl.href
-  } catch {
-    return ''
-  }
-}
-
-function getDisplayTitle(url: string): string {
-  try {
-    return new URL(url).hostname || APP_TITLE
-  } catch {
-    return APP_TITLE
-  }
-}
-
-function isFallbackHost(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname.startsWith('www.') ||
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) ||
-    hostname.includes(':')
-  )
-}
-
-function getWwwFallbackUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-
-    if (
-      (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') ||
-      isFallbackHost(parsedUrl.hostname)
-    ) {
-      return ''
-    }
-
-    parsedUrl.hostname = `www.${parsedUrl.hostname}`
-    return parsedUrl.href
-  } catch {
-    return ''
-  }
 }
 
 function stripContentSecurityPolicyMeta(html: string): string {
@@ -193,163 +121,10 @@ function createWindow(): void {
     }
   })
 
-  const pageView = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
-    }
-  })
-
-  uiView.setBackgroundColor('#1f1f1f')
-  pageView.setBackgroundColor('#ffffff')
-
+  uiView.setBackgroundColor('#202124')
   mainWindow.contentView.addChildView(uiView)
-  mainWindow.contentView.addChildView(pageView)
 
-  let currentUrl = INITIAL_URL
-  let currentTitle = getDisplayTitle(INITIAL_URL)
-  let currentFavicon = ''
-  const attemptedWwwFallbacks = new Set<string>()
-
-  const updateBounds = (): void => {
-    if (mainWindow.isDestroyed()) {
-      return
-    }
-
-    const { width, height } = mainWindow.getContentBounds()
-    const pageHeight = Math.max(0, height - UI_HEIGHT)
-
-    uiView.setBounds({ x: 0, y: 0, width, height: UI_HEIGHT })
-    pageView.setBounds({ x: 0, y: UI_HEIGHT, width, height: pageHeight })
-  }
-
-  const getPageState = (): PageState => ({
-    url: pageView.webContents.getURL() || currentUrl,
-    title: currentTitle,
-    favicon: currentFavicon,
-    isLoading: pageView.webContents.isLoading(),
-    canGoBack: pageView.webContents.navigationHistory.canGoBack(),
-    canGoForward: pageView.webContents.navigationHistory.canGoForward()
-  })
-
-  const sendPageState = (): void => {
-    if (!uiView.webContents.isDestroyed()) {
-      uiView.webContents.send('page:state-update', getPageState())
-    }
-  }
-
-  const sendPageLoadError = (errorInfo: PageLoadError): void => {
-    if (!uiView.webContents.isDestroyed()) {
-      uiView.webContents.send('page:load-error', errorInfo)
-    }
-  }
-
-  const updateWindowTitle = (): void => {
-    const nextTitle =
-      currentTitle && currentTitle !== APP_TITLE ? `${currentTitle} - ${APP_TITLE}` : APP_TITLE
-    mainWindow.setTitle(nextTitle)
-  }
-
-  const loadPageUrl = (rawUrl: string): void => {
-    const nextUrl = normalizeNavigationUrl(rawUrl)
-
-    if (!nextUrl) {
-      const errorInfo = {
-        url: rawUrl,
-        errorCode: 0,
-        errorDescription: 'Invalid URL'
-      }
-
-      currentUrl = rawUrl
-      currentTitle = APP_TITLE
-      currentFavicon = ''
-      updateWindowTitle()
-      sendPageState()
-      sendPageLoadError(errorInfo)
-      return
-    }
-
-    attemptedWwwFallbacks.clear()
-    currentUrl = nextUrl
-    currentTitle = getDisplayTitle(nextUrl)
-    currentFavicon = ''
-    updateWindowTitle()
-    sendPageState()
-
-    void pageView.webContents.loadURL(nextUrl).catch((error: Error) => {
-      sendPageLoadError({
-        url: nextUrl,
-        errorCode: 0,
-        errorDescription: error.message || 'Failed to load URL'
-      })
-    })
-  }
-
-  const loadWwwFallback = (failedUrl: string): boolean => {
-    const fallbackUrl = getWwwFallbackUrl(failedUrl)
-
-    if (!fallbackUrl || attemptedWwwFallbacks.has(failedUrl)) {
-      return false
-    }
-
-    attemptedWwwFallbacks.add(failedUrl)
-    currentUrl = fallbackUrl
-    currentTitle = getDisplayTitle(fallbackUrl)
-    currentFavicon = ''
-    updateWindowTitle()
-    sendPageState()
-
-    void pageView.webContents.loadURL(fallbackUrl).catch((error: Error) => {
-      sendPageLoadError({
-        url: fallbackUrl,
-        errorCode: 0,
-        errorDescription: error.message || 'Failed to load URL'
-      })
-    })
-
-    return true
-  }
-
-  const isFromUiView = (event: IpcMainEvent): boolean => event.sender === uiView.webContents
-
-  const handleNavigateToUrl = (event: IpcMainEvent, url: string): void => {
-    if (!isFromUiView(event) || typeof url !== 'string') {
-      return
-    }
-
-    loadPageUrl(url)
-  }
-
-  const handleGoBack = (event: IpcMainEvent): void => {
-    if (isFromUiView(event) && pageView.webContents.navigationHistory.canGoBack()) {
-      pageView.webContents.navigationHistory.goBack()
-    }
-  }
-
-  const handleGoForward = (event: IpcMainEvent): void => {
-    if (isFromUiView(event) && pageView.webContents.navigationHistory.canGoForward()) {
-      pageView.webContents.navigationHistory.goForward()
-    }
-  }
-
-  const handleReload = (event: IpcMainEvent): void => {
-    if (isFromUiView(event) && pageView.webContents.getURL()) {
-      pageView.webContents.reload()
-    }
-  }
-
-  const handleStop = (event: IpcMainEvent): void => {
-    if (isFromUiView(event)) {
-      pageView.webContents.stop()
-    }
-  }
-
-  const handleRequestPageState = (event: IpcMainEvent): void => {
-    if (isFromUiView(event)) {
-      sendPageState()
-    }
-  }
+  const storage = new BrowserStorage(app.getPath('userData'))
 
   const requestAddressBarFocus = (): void => {
     if (uiView.webContents.isDestroyed()) {
@@ -360,94 +135,212 @@ function createWindow(): void {
     uiView.webContents.send('browser:focus-address-bar')
   }
 
-  const handleInputShortcut = (event: Electron.Event, input: Electron.Input): void => {
-    if (isFocusAddressBarShortcut(input)) {
-      event.preventDefault()
-      requestAddressBarFocus()
+  const tabManager = new TabManager({
+    window: mainWindow,
+    uiView,
+    uiHeight: UI_HEIGHT,
+    storage,
+    focusAddressBar: requestAddressBarFocus,
+    updateWindowTitle: (title) => {
+      mainWindow.setTitle(title && title !== 'New Tab' ? `${title} - ${APP_TITLE}` : APP_TITLE)
     }
+  })
+
+  activeTabManager = tabManager
+
+  const isFromUiView = (event: IpcMainEvent | IpcMainInvokeEvent): boolean =>
+    event.sender === uiView.webContents
+
+  const getTabId = (payload: unknown): string => {
+    const tabId = readString(payload, 'tabId')
+    return tabId || tabManager.getActiveTabId()
   }
 
-  ipcMain.on('nav:go', handleNavigateToUrl)
-  ipcMain.on('nav:back', handleGoBack)
-  ipcMain.on('nav:forward', handleGoForward)
-  ipcMain.on('nav:reload', handleReload)
-  ipcMain.on('nav:stop', handleStop)
-  ipcMain.on('page:request-state', handleRequestPageState)
-
-  uiView.webContents.on('before-input-event', handleInputShortcut)
-  pageView.webContents.on('before-input-event', handleInputShortcut)
-
-  pageView.webContents.on('did-start-loading', () => {
-    sendPageState()
-  })
-
-  pageView.webContents.on('did-stop-loading', () => {
-    sendPageState()
-  })
-
-  pageView.webContents.on('did-finish-load', () => {
-    sendPageState()
-  })
-
-  pageView.webContents.on('did-navigate', (_event, url) => {
-    currentUrl = url
-    currentTitle = getDisplayTitle(url)
-    currentFavicon = ''
-    updateWindowTitle()
-    sendPageState()
-  })
-
-  pageView.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (!isMainFrame) {
+  const handleCreateTab = (event: IpcMainEvent, payload?: unknown): void => {
+    if (!isFromUiView(event)) {
       return
     }
 
-    currentUrl = url
-    sendPageState()
-  })
+    tabManager.createTab(readString(payload, 'url') || NEW_TAB_URL, true)
+    requestAddressBarFocus()
+  }
 
-  pageView.webContents.on('page-title-updated', (_event, title) => {
-    currentTitle = title || getDisplayTitle(pageView.webContents.getURL() || currentUrl)
-    updateWindowTitle()
-    sendPageState()
-  })
-
-  pageView.webContents.on('page-favicon-updated', (_event, favicons) => {
-    currentFavicon = favicons[0] || ''
-    sendPageState()
-  })
-
-  pageView.webContents.on(
-    'did-fail-load',
-    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      if (!isMainFrame || errorCode === ERR_ABORTED) {
-        return
-      }
-
-      const failedUrl = validatedURL || currentUrl
-
-      if (errorCode === ERR_NAME_NOT_RESOLVED && loadWwwFallback(failedUrl)) {
-        return
-      }
-
-      currentUrl = failedUrl
-      currentTitle = getDisplayTitle(failedUrl)
-      currentFavicon = ''
-      updateWindowTitle()
-      sendPageState()
-      sendPageLoadError({
-        url: failedUrl,
-        errorCode,
-        errorDescription
-      })
+  const handleCloseTab = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.closeTab(getTabId(payload))
     }
-  )
+  }
+
+  const handleSwitchTab = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.switchTab(getTabId(payload))
+    }
+  }
+
+  const handleLoadUrl = (event: IpcMainEvent, payload?: unknown): void => {
+    if (!isFromUiView(event)) {
+      return
+    }
+
+    const url = readString(payload, 'url')
+
+    if (url) {
+      tabManager.loadUrl(getTabId(payload), url)
+    }
+  }
+
+  const handleBack = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.goBack(getTabId(payload))
+    }
+  }
+
+  const handleForward = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.goForward(getTabId(payload))
+    }
+  }
+
+  const handleReload = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.reload(getTabId(payload))
+    }
+  }
+
+  const handleStop = (event: IpcMainEvent, payload?: unknown): void => {
+    if (isFromUiView(event)) {
+      tabManager.stop(getTabId(payload))
+    }
+  }
+
+  const handleZoom = (event: IpcMainEvent, payload?: unknown): void => {
+    if (!isFromUiView(event)) {
+      return
+    }
+
+    const action = readString(payload, 'action')
+
+    if (action === 'in' || action === 'out' || action === 'reset') {
+      tabManager.zoom(getTabId(payload), action as ZoomAction)
+    }
+  }
+
+  const handleRequestState = (event: IpcMainEvent): void => {
+    if (isFromUiView(event)) {
+      tabManager.pushState()
+    }
+  }
+
+  const handleAddBookmark = (event: IpcMainInvokeEvent, payload?: unknown): BookmarkItem | null => {
+    if (!isFromUiView(event)) {
+      return null
+    }
+
+    const url = readString(payload, 'url')
+
+    if (!url) {
+      return null
+    }
+
+    return storage.addBookmark({
+      url,
+      title: readString(payload, 'title') || url,
+      favicon: readString(payload, 'favicon'),
+      createdAt: Date.now()
+    })
+  }
+
+  const handleRemoveBookmark = (event: IpcMainInvokeEvent, payload?: unknown): boolean => {
+    if (!isFromUiView(event)) {
+      return false
+    }
+
+    const url = readString(payload, 'url')
+    return url ? storage.removeBookmark(url) : false
+  }
+
+  const handleListBookmarks = (event: IpcMainInvokeEvent): BookmarkItem[] => {
+    if (!isFromUiView(event)) {
+      return []
+    }
+
+    return storage.listBookmarks()
+  }
+
+  const handleListHistory = (event: IpcMainInvokeEvent, payload?: unknown): HistoryItem[] => {
+    if (!isFromUiView(event)) {
+      return []
+    }
+
+    const limit = readNumber(payload, 'limit')
+    return storage.listHistory(limit || undefined)
+  }
+
+  const handleClearHistory = (event: IpcMainInvokeEvent): boolean => {
+    if (!isFromUiView(event)) {
+      return false
+    }
+
+    storage.clearHistory()
+    return true
+  }
+
+  const sendDownloadUpdate = (item: DownloadItem): void => {
+    if (!uiView.webContents.isDestroyed()) {
+      uiView.webContents.send('browser:download-update', item)
+    }
+  }
+
+  const handleDownload = (_event: Electron.Event, item: Electron.DownloadItem): void => {
+    const id = randomUUID()
+    const toDownloadItem = (state: DownloadState): DownloadItem => ({
+      id,
+      filename: item.getFilename(),
+      url: item.getURL(),
+      totalBytes: item.getTotalBytes(),
+      receivedBytes: item.getReceivedBytes(),
+      state,
+      savePath: item.getSavePath()
+    })
+
+    sendDownloadUpdate(toDownloadItem('progressing'))
+
+    item.on('updated', (_downloadEvent, state) => {
+      sendDownloadUpdate(toDownloadItem(state === 'interrupted' ? 'interrupted' : 'progressing'))
+    })
+
+    item.once('done', (_downloadEvent, state) => {
+      sendDownloadUpdate(toDownloadItem(state as DownloadState))
+    })
+  }
+
+  ipcMain.on('tab:create', handleCreateTab)
+  ipcMain.on('tab:close', handleCloseTab)
+  ipcMain.on('tab:switch', handleSwitchTab)
+  ipcMain.on('tab:load-url', handleLoadUrl)
+  ipcMain.on('tab:back', handleBack)
+  ipcMain.on('tab:forward', handleForward)
+  ipcMain.on('tab:reload', handleReload)
+  ipcMain.on('tab:stop', handleStop)
+  ipcMain.on('tab:zoom', handleZoom)
+  ipcMain.on('browser:request-state', handleRequestState)
+  ipcMain.handle('bookmark:add', handleAddBookmark)
+  ipcMain.handle('bookmark:remove', handleRemoveBookmark)
+  ipcMain.handle('bookmark:list', handleListBookmarks)
+  ipcMain.handle('history:list', handleListHistory)
+  ipcMain.handle('history:clear', handleClearHistory)
+
+  electronSession.defaultSession.on('will-download', handleDownload)
+
+  uiView.webContents.on('before-input-event', (event, input) => {
+    tabManager.handleKeyboardInput(event, input)
+  })
 
   uiView.webContents.once('did-finish-load', () => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.show()
-      uiView.webContents.focus()
-      sendPageState()
+      requestAddressBarFocus()
+      tabManager.pushState()
     }
   })
 
@@ -457,18 +350,36 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('resize', updateBounds)
-  mainWindow.on('closed', () => {
-    ipcMain.off('nav:go', handleNavigateToUrl)
-    ipcMain.off('nav:back', handleGoBack)
-    ipcMain.off('nav:forward', handleGoForward)
-    ipcMain.off('nav:reload', handleReload)
-    ipcMain.off('nav:stop', handleStop)
-    ipcMain.off('page:request-state', handleRequestPageState)
+  mainWindow.on('resize', () => {
+    tabManager.updateBounds()
   })
 
-  updateBounds()
-  updateWindowTitle()
+  mainWindow.on('closed', () => {
+    tabManager.cleanup()
+
+    if (activeTabManager === tabManager) {
+      activeTabManager = null
+    }
+
+    electronSession.defaultSession.off('will-download', handleDownload)
+    ipcMain.off('tab:create', handleCreateTab)
+    ipcMain.off('tab:close', handleCloseTab)
+    ipcMain.off('tab:switch', handleSwitchTab)
+    ipcMain.off('tab:load-url', handleLoadUrl)
+    ipcMain.off('tab:back', handleBack)
+    ipcMain.off('tab:forward', handleForward)
+    ipcMain.off('tab:reload', handleReload)
+    ipcMain.off('tab:stop', handleStop)
+    ipcMain.off('tab:zoom', handleZoom)
+    ipcMain.off('browser:request-state', handleRequestState)
+    ipcMain.removeHandler('bookmark:add')
+    ipcMain.removeHandler('bookmark:remove')
+    ipcMain.removeHandler('bookmark:list')
+    ipcMain.removeHandler('history:list')
+    ipcMain.removeHandler('history:clear')
+  })
+
+  tabManager.updateBounds()
 
   const rendererEntryUrl = getRendererEntryUrl()
 
@@ -478,11 +389,33 @@ function createWindow(): void {
     void uiView.webContents.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  loadPageUrl(INITIAL_URL)
+  tabManager.restoreSession(storage.readSession())
+}
+
+function readString(payload: unknown, key: string): string {
+  if (!payload || typeof payload !== 'object' || !(key in payload)) {
+    return ''
+  }
+
+  const value = (payload as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function readNumber(payload: unknown, key: string): number | undefined {
+  if (!payload || typeof payload !== 'object' || !(key in payload)) {
+    return undefined
+  }
+
+  const value = (payload as Record<string, unknown>)[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
+
+  // Remove default application menu so Ctrl+W does not close the window.
+  // Tab close is handled via before-input-event in TabManager.
+  Menu.setApplicationMenu(null)
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     registerDevRendererProtocol(process.env['ELECTRON_RENDERER_URL'])
@@ -495,6 +428,10 @@ app.whenReady().then(() => {
       createWindow()
     }
   })
+})
+
+app.on('before-quit', () => {
+  activeTabManager?.saveSessionNow()
 })
 
 app.on('window-all-closed', () => {

@@ -1,111 +1,98 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type {
+  BookmarkItem,
+  BrowserState,
+  DownloadItem,
+  HistoryItem,
+  ZoomAction
+} from '../shared/types'
 
-interface PageState {
-  url: string
-  title: string
-  favicon: string
-  isLoading: boolean
-  canGoBack: boolean
-  canGoForward: boolean
-}
-
-interface PageLoadError {
-  url: string
-  errorCode: number
-  errorDescription: string
-}
-
-type PageStateCallback = (state: PageState) => void
-type PageLoadErrorCallback = (errorInfo: PageLoadError) => void
-type FocusAddressBarCallback = () => void
-
-const pageStateListeners = new Map<
-  PageStateCallback,
-  (event: IpcRendererEvent, state: PageState) => void
->()
-const pageErrorListeners = new Map<
-  PageLoadErrorCallback,
-  (event: IpcRendererEvent, errorInfo: PageLoadError) => void
->()
-const focusAddressBarListeners = new Map<
-  FocusAddressBarCallback,
-  (event: IpcRendererEvent) => void
->()
+type Unsubscribe = () => void
 
 const api = {
-  navigateTo: (url: string): void => {
-    ipcRenderer.send('nav:go', url)
+  createTab: (url?: string): void => {
+    ipcRenderer.send('tab:create', { url })
   },
-  goBack: (): void => {
-    ipcRenderer.send('nav:back')
+  closeTab: (tabId: string): void => {
+    ipcRenderer.send('tab:close', { tabId })
   },
-  goForward: (): void => {
-    ipcRenderer.send('nav:forward')
+  switchTab: (tabId: string): void => {
+    ipcRenderer.send('tab:switch', { tabId })
   },
-  reload: (): void => {
-    ipcRenderer.send('nav:reload')
+  loadUrl: (tabId: string, url: string): void => {
+    ipcRenderer.send('tab:load-url', { tabId, url })
   },
-  stop: (): void => {
-    ipcRenderer.send('nav:stop')
+  goBack: (tabId: string): void => {
+    ipcRenderer.send('tab:back', { tabId })
   },
-  onPageStateUpdate: (callback: PageStateCallback): void => {
-    const listener = (_event: IpcRendererEvent, state: PageState): void => {
-      callback(state)
-    }
-
-    pageStateListeners.set(callback, listener)
-    ipcRenderer.on('page:state-update', listener)
-    ipcRenderer.send('page:request-state')
+  goForward: (tabId: string): void => {
+    ipcRenderer.send('tab:forward', { tabId })
   },
-  onPageLoadError: (callback: PageLoadErrorCallback): void => {
-    const listener = (_event: IpcRendererEvent, errorInfo: PageLoadError): void => {
-      callback(errorInfo)
-    }
-
-    pageErrorListeners.set(callback, listener)
-    ipcRenderer.on('page:load-error', listener)
+  reload: (tabId: string): void => {
+    ipcRenderer.send('tab:reload', { tabId })
   },
-  onFocusAddressBar: (callback: FocusAddressBarCallback): void => {
+  stop: (tabId: string): void => {
+    ipcRenderer.send('tab:stop', { tabId })
+  },
+  zoom: (tabId: string, action: ZoomAction): void => {
+    ipcRenderer.send('tab:zoom', { tabId, action })
+  },
+  requestState: (): void => {
+    ipcRenderer.send('browser:request-state')
+  },
+  addBookmark: (bookmark: Omit<BookmarkItem, 'createdAt'>): Promise<BookmarkItem | null> => {
+    return ipcRenderer.invoke('bookmark:add', bookmark)
+  },
+  removeBookmark: (url: string): Promise<boolean> => {
+    return ipcRenderer.invoke('bookmark:remove', { url })
+  },
+  listBookmarks: (): Promise<BookmarkItem[]> => {
+    return ipcRenderer.invoke('bookmark:list')
+  },
+  listHistory: (limit?: number): Promise<HistoryItem[]> => {
+    return ipcRenderer.invoke('history:list', { limit })
+  },
+  clearHistory: (): Promise<boolean> => {
+    return ipcRenderer.invoke('history:clear')
+  },
+  onBrowserState: (callback: (state: BrowserState) => void): Unsubscribe => {
+    return subscribe('browser:state', callback)
+  },
+  onFocusAddressBar: (callback: () => void): Unsubscribe => {
     const listener = (): void => {
       callback()
     }
 
-    focusAddressBarListeners.set(callback, listener)
     ipcRenderer.on('browser:focus-address-bar', listener)
-  },
-  removeAllListeners: (): void => {
-    pageStateListeners.forEach((listener) => {
-      ipcRenderer.removeListener('page:state-update', listener)
-    })
-    pageErrorListeners.forEach((listener) => {
-      ipcRenderer.removeListener('page:load-error', listener)
-    })
-    focusAddressBarListeners.forEach((listener) => {
-      ipcRenderer.removeListener('browser:focus-address-bar', listener)
-    })
 
-    pageStateListeners.clear()
-    pageErrorListeners.clear()
-    focusAddressBarListeners.clear()
+    return () => {
+      ipcRenderer.removeListener('browser:focus-address-bar', listener)
+    }
+  },
+  onDownloadUpdate: (callback: (download: DownloadItem) => void): Unsubscribe => {
+    return subscribe('browser:download-update', callback)
   }
 }
 
-const electronApi = {
-  process: {
-    versions: process.versions
+function subscribe<T>(channel: string, callback: (value: T) => void): Unsubscribe {
+  const listener = (_event: IpcRendererEvent, value: T): void => {
+    callback(value)
+  }
+
+  ipcRenderer.on(channel, listener)
+
+  return () => {
+    ipcRenderer.removeListener(channel, listener)
   }
 }
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronApi)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
-  window.electron = electronApi
   // @ts-ignore (define in dts)
   window.api = api
 }

@@ -1,39 +1,34 @@
-export interface PageState {
-  url: string
-  title: string
-  favicon: string
-  isLoading: boolean
-  canGoBack: boolean
-  canGoForward: boolean
-}
-
-export interface PageLoadError {
-  url: string
-  errorCode: number
-  errorDescription: string
-}
+import type {
+  BookmarkItem,
+  BrowserState,
+  DownloadItem,
+  HistoryItem,
+  ZoomAction
+} from '../shared/types'
 
 export interface ZhiBrowserAPI {
-  navigateTo: (url: string) => void
-  goBack: () => void
-  goForward: () => void
-  reload: () => void
-  stop: () => void
-  onPageStateUpdate: (callback: (state: PageState) => void) => void
-  onPageLoadError: (callback: (errorInfo: PageLoadError) => void) => void
-  onFocusAddressBar: (callback: () => void) => void
-  removeAllListeners: () => void
-}
-
-export interface ZhiElectronAPI {
-  process: {
-    versions: Record<string, string>
-  }
+  createTab: (url?: string) => void
+  closeTab: (tabId: string) => void
+  switchTab: (tabId: string) => void
+  loadUrl: (tabId: string, url: string) => void
+  goBack: (tabId: string) => void
+  goForward: (tabId: string) => void
+  reload: (tabId: string) => void
+  stop: (tabId: string) => void
+  zoom: (tabId: string, action: ZoomAction) => void
+  requestState: () => void
+  addBookmark: (bookmark: Omit<BookmarkItem, 'createdAt'>) => Promise<BookmarkItem | null>
+  removeBookmark: (url: string) => Promise<boolean>
+  listBookmarks: () => Promise<BookmarkItem[]>
+  listHistory: (limit?: number) => Promise<HistoryItem[]>
+  clearHistory: () => Promise<boolean>
+  onBrowserState: (callback: (state: BrowserState) => void) => () => void
+  onFocusAddressBar: (callback: () => void) => () => void
+  onDownloadUpdate: (callback: (download: DownloadItem) => void) => () => void
 }
 
 declare global {
   interface Window {
-    electron: ZhiElectronAPI
     api: ZhiBrowserAPI
   }
 }
