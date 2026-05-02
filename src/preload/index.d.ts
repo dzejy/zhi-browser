@@ -91,6 +91,8 @@ export interface PreloadAPI {
   importSettings(): Promise<{ success: boolean; error?: string; prefs?: BrowserSettings }>
   selectDownloadPath(): Promise<string | null>
   openUserDataFolder(): Promise<void>
+  setDefaultBrowser(): Promise<void>
+  isDefaultBrowser(): Promise<boolean>
 
   // AdBlock Zhi
   getAdBlockState(): Promise<AdBlockState>

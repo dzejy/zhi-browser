@@ -1706,6 +1706,7 @@ function App_PanelOnly(): React.ReactElement {
   const [aiShowSettings, setAiShowSettings] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
+  const aiInputRef = useRef<HTMLTextAreaElement>(null)
 
   const showToast = useCallback((text: string, tone: ToastTone = 'success', duration = 2200) => {
     setToast({ id: `${Date.now()}`, text, duration, tone })
@@ -1740,6 +1741,18 @@ function App_PanelOnly(): React.ReactElement {
       setAiContextLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (panelType === 'ai') {
+      const timer = setTimeout(() => {
+        if (aiInputRef.current) {
+          aiInputRef.current.focus()
+        }
+      }, 150)
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [panelType])
 
   useEffect(() => {
     if (panelType !== 'ai' || aiShowSettings) return undefined
@@ -1972,8 +1985,13 @@ function App_PanelOnly(): React.ReactElement {
       if (editingBookmark) {
         setEditingBookmark(null)
         setBookmarkEditError('')
+        return
       }
-      if (confirmDialog) setConfirmDialog(null)
+      if (confirmDialog) {
+        setConfirmDialog(null)
+        return
+      }
+      window.api.hidePanel()
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -3405,6 +3423,7 @@ function App_PanelOnly(): React.ReactElement {
                 {aiError && <div className="ai-error">{aiError}</div>}
                 <div className="ai-input-area">
                   <textarea
+                    ref={aiInputRef}
                     className="ai-input"
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}

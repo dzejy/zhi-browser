@@ -1,4 +1,5 @@
 import { app, Menu, MenuItemConstructorOptions } from 'electron'
+import { setAsDefaultBrowser, isDefaultBrowser } from './default-browser'
 
 export interface MenuActions {
   newTab: () => void
@@ -106,7 +107,15 @@ export function buildMenu(actions: MenuActions): void {
         { label: '设置', accelerator: 'CmdOrCtrl+,', click: actions.showSettings },
         { label: '打开数据目录', click: actions.openUserDataFolder },
         { type: 'separator' },
-        { label: '清除浏览数据', click: actions.clearBrowsingData }
+        { label: '清除浏览数据', click: actions.clearBrowsingData },
+        { type: 'separator' },
+        {
+          label: isDefaultBrowser() ? '✓ 已是默认浏览器' : '设置为默认浏览器',
+          click: (): void => {
+            setAsDefaultBrowser()
+          },
+          enabled: !isDefaultBrowser()
+        }
       ]
     },
     {
