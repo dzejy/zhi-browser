@@ -4,6 +4,7 @@ import type { AIResponse, AISelectionAction, AIStatus } from '../../shared/aiTyp
 // ===== Types (mirrored from shared/types for renderer use) =====
 interface TabState {
   id: string
+  webContentsId: number
   url: string
   title: string
   favicon: string
@@ -98,6 +99,7 @@ interface BrowserSettings {
   showBookmarkBar: boolean
   themeColor: ThemeColorId
   uiFont: UIFontId
+  webDarkMode: boolean
   startup: {
     behavior: 'homepage' | 'newtab' | 'restoreSession' | 'specificPages'
     homepageUrl: string
@@ -131,6 +133,12 @@ interface BrowserSettings {
     defaultDirectory: string
     askBeforeDownload: boolean
   }
+  downloader: {
+    enabled: boolean
+    type: 'idm' | 'fdm' | 'ndm' | 'custom' | 'builtin'
+    path: string
+  }
+  webPanels: Array<{ url: string; title: string; pinned: boolean }>
   advanced: {
     saveHistory: boolean
     saveDownloadsHistory: boolean
@@ -200,7 +208,41 @@ interface ConfirmDialogState {
   onConfirm: () => void | Promise<void>
 }
 
-type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about' | 'ai'
+interface UserScriptItem {
+  id: string
+  meta: {
+    name: string
+    version: string
+    description: string
+    author: string
+    match: string[]
+  }
+  enabled: boolean
+  installTime: number
+  updateTime: number
+}
+
+interface SniffedResource {
+  id: string
+  url: string
+  contentType: string
+  size: string | null
+  filename: string
+  tabId: number
+  timestamp: number
+  resourceType: 'video' | 'audio' | 'document' | 'archive' | 'other'
+}
+
+type SidePanelType =
+  | 'bookmarks'
+  | 'history'
+  | 'downloads'
+  | 'settings'
+  | 'about'
+  | 'ai'
+  | 'scripts'
+  | 'webpanel'
+  | 'sniffer'
 
 const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'bookmarks',
@@ -208,7 +250,10 @@ const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'downloads',
   'settings',
   'about',
-  'ai'
+  'ai',
+  'scripts',
+  'webpanel',
+  'sniffer'
 ])
 
 function isSidePanelType(value: unknown): value is SidePanelType {
@@ -549,6 +594,19 @@ function BrowserApp(): React.ReactElement {
   const [enteringTabIds, setEnteringTabIds] = useState<Set<string>>(new Set())
   const [closingTabIds, setClosingTabIds] = useState<Set<string>>(new Set())
   const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(new Set())
+  const [webDarkMode, setWebDarkMode] = useState(false)
+  const [isTranslating, setIsTranslating] = useState(false)
+  const [readerActive, setReaderActive] = useState(false)
+  const [readerAvailable, setReaderAvailable] = useState(false)
+  const [snifferCounts, setSnifferCounts] = useState<Record<number, number>>({})
+  const [splitViewActive, setSplitViewActive] = useState(false)
+  const [splitViewInput, setSplitViewInput] = useState('')
+  const [previewTabId, setPreviewTabId] = useState<string | null>(null)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0
+  })
 
   const addressBarWrapperRef = useRef<HTMLDivElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
@@ -557,6 +615,7 @@ function BrowserApp(): React.ReactElement {
   const knownTabIdsRef = useRef<Set<string>>(new Set())
   const loadingTabIdsRef = useRef<Set<string>>(new Set())
   const tabCloseTimers = useRef<Map<string, number>>(new Map())
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const activeTab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
 
@@ -694,6 +753,85 @@ function BrowserApp(): React.ReactElement {
     setShowBookmarkBar(visible)
   }, [])
 
+  const handleToggleDarkMode = useCallback(async () => {
+    const newState = await window.api.toggleDarkMode()
+    setWebDarkMode(newState)
+  }, [])
+
+  const handleToggleTranslate = useCallback(async () => {
+    const newState = !isTranslating
+    setIsTranslating(newState)
+    try {
+      await window.api.translatePage(newState)
+      showToast(newState ? '沉浸式翻译已开启' : '沉浸式翻译已关闭')
+    } catch {
+      setIsTranslating(!newState)
+      showToast('翻译失败', 'error')
+    }
+  }, [isTranslating, showToast])
+
+  const handleToggleReader = useCallback(async () => {
+    if (readerActive) {
+      await window.api.readerExit()
+      setReaderActive(false)
+      return
+    }
+
+    const result = await window.api.readerEnter()
+    if (result.success) {
+      setReaderActive(true)
+    } else {
+      showToast(result.error || '当前页面不适合阅读模式', 'error')
+    }
+  }, [readerActive, showToast])
+
+  const handleTabMouseEnter = useCallback((tab: TabState, event: React.MouseEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setPreviewPosition({ x: rect.left + rect.width / 2, y: rect.bottom + 8 })
+
+    previewTimerRef.current = setTimeout(async () => {
+      const image = await window.api.tabPreviewCapture(tab.webContentsId)
+      if (image) {
+        setPreviewTabId(tab.id)
+        setPreviewImage(image)
+      }
+    }, 400)
+  }, [])
+
+  const handleTabMouseLeave = useCallback(() => {
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current)
+      previewTimerRef.current = null
+    }
+    setPreviewTabId(null)
+    setPreviewImage(null)
+  }, [])
+
+  const handleSplitViewOpen = useCallback(
+    async (url?: string) => {
+      const targetUrl = url || splitViewInput.trim() || activeTab?.url || 'about:blank'
+      let finalUrl = targetUrl
+      if (
+        !finalUrl.startsWith('http://') &&
+        !finalUrl.startsWith('https://') &&
+        finalUrl !== 'about:blank'
+      ) {
+        finalUrl = `https://${finalUrl}`
+      }
+      const result = await window.api.splitViewOpen(finalUrl)
+      if (result.success) {
+        setSplitViewActive(true)
+        setSplitViewInput('')
+      }
+    },
+    [activeTab?.url, splitViewInput]
+  )
+
+  const handleSplitViewClose = useCallback(async () => {
+    await window.api.splitViewClose()
+    setSplitViewActive(false)
+  }, [])
+
   // Initial load — get state synchronously on mount so tab bar appears immediately
   useEffect(() => {
     window.api.getBrowserState().then((state: BrowserState) => {
@@ -701,9 +839,14 @@ function BrowserApp(): React.ReactElement {
     })
     window.api.getBookmarks().then(setBookmarks)
     window.api.getBookmarkBarVisible().then(setShowBookmarkBar)
-    window.api.getSettings().then(setSettings)
+    window.api.getSettings().then((loaded) => {
+      setSettings(loaded)
+      setWebDarkMode(loaded.webDarkMode)
+    })
+    window.api.getDarkMode().then(setWebDarkMode)
     window.api.getAdBlockState().then(setAdBlockState).catch(console.error)
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
+    window.api.splitViewGetState().then((state) => setSplitViewActive(state.active)).catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -750,6 +893,7 @@ function BrowserApp(): React.ReactElement {
     })
     const unsub15 = window.api.onSettings((updated) => {
       setSettings(updated)
+      setWebDarkMode(updated.webDarkMode)
     })
     const unsub16 = window.api.onDownloadCompleted((item: DownloadItem) => {
       showToast(`下载完成：${item.filename}`, 'success')
@@ -771,6 +915,9 @@ function BrowserApp(): React.ReactElement {
     })
     const unsub23 = window.api.onBookmarksChanged((updatedBookmarks) => {
       setBookmarks(updatedBookmarks)
+    })
+    const unsub24 = window.api.onResourceFound((data) => {
+      setSnifferCounts((current) => ({ ...current, [data.tabId]: data.count }))
     })
 
     return () => {
@@ -797,6 +944,7 @@ function BrowserApp(): React.ReactElement {
       unsub21()
       unsub22()
       unsub23()
+      unsub24()
     }
   }, [closePanel, handleToggleBookmark, openAIPanel, openPanel, showToast, toggleAIPanel])
 
@@ -836,6 +984,22 @@ function BrowserApp(): React.ReactElement {
   useEffect(() => {
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
   }, [activeTab?.id, activeTab?.url])
+
+  useEffect(() => {
+    Promise.resolve().then(() => setReaderActive(false))
+    window.api.readerCanExtract().then(setReaderAvailable).catch(() => setReaderAvailable(false))
+    if (activeTab?.webContentsId) {
+      window.api
+        .snifferGetResourcesForTab(activeTab.webContentsId)
+        .then((resources) => {
+          setSnifferCounts((current) => ({
+            ...current,
+            [activeTab.webContentsId]: resources.length
+          }))
+        })
+        .catch(() => {})
+    }
+  }, [activeTab?.id, activeTab?.url, activeTab?.webContentsId])
 
   // Sync address bar
   const [prevActiveTabId, setPrevActiveTabId] = useState<string | undefined>(undefined)
@@ -958,6 +1122,15 @@ function BrowserApp(): React.ReactElement {
   function handleShowDownloads(): void {
     togglePanel('downloads')
   }
+  function handleShowScripts(): void {
+    togglePanel('scripts')
+  }
+  function handleShowSniffer(): void {
+    togglePanel('sniffer')
+  }
+  function handleShowWebPanel(): void {
+    togglePanel('webpanel')
+  }
   function handleShowSettings(): void {
     togglePanel('settings')
   }
@@ -1058,6 +1231,7 @@ function BrowserApp(): React.ReactElement {
   }, [handleToggleBookmark, openPanel, toggleAIPanel])
 
   const isCurrentBookmarked = bookmarks.some((b) => activeTab && b.url === activeTab.url)
+  const activeSnifferCount = activeTab?.webContentsId ? snifferCounts[activeTab.webContentsId] || 0 : 0
   const currentAdBlockHostname = currentAdBlockSite?.hostname || ''
   const isCurrentAdBlockWhitelisted = Boolean(
     currentAdBlockHostname && adBlockState?.whitelist.includes(currentAdBlockHostname)
@@ -1091,6 +1265,8 @@ function BrowserApp(): React.ReactElement {
                 className={`tab ${tab.id === browserState.activeTabId ? 'active' : ''} ${tab.isPinned ? 'pinned' : ''} ${tab.isLoading ? 'tab-loading' : ''} ${loadedTabIds.has(tab.id) ? 'tab-loaded' : ''} ${tab.isAudible && !tab.isMuted ? 'tab-audible' : ''} ${enteringTabIds.has(tab.id) ? 'tab-entering' : ''} ${closingTabIds.has(tab.id) ? 'tab-exiting' : ''} ${dragTabId === tab.id ? 'dragging' : ''} ${dragOverTabId === tab.id ? 'drag-over' : ''}`}
                 onClick={() => handleSwitchTab(tab.id)}
                 onMouseDown={(e) => handleTabMouseDown(tab.id, e)}
+                onMouseEnter={(e) => handleTabMouseEnter(tab, e)}
+                onMouseLeave={handleTabMouseLeave}
                 onContextMenu={(e) => handleTabContextMenu(tab.id, e)}
                 draggable
                 onDragStart={(e) => handleDragStart(tab.id, e)}
@@ -1258,6 +1434,31 @@ function BrowserApp(): React.ReactElement {
             >
               🛡
             </button>
+            <button
+              className={`action-btn ${webDarkMode ? 'active' : ''}`}
+              onClick={() => handleToggleDarkMode().catch(console.error)}
+              title="网页暗色模式"
+              aria-pressed={webDarkMode}
+            >
+              🌙
+            </button>
+            <button
+              className={`action-btn ${isTranslating ? 'active' : ''}`}
+              onClick={() => handleToggleTranslate().catch(console.error)}
+              title="沉浸式翻译"
+              aria-pressed={isTranslating}
+            >
+              译
+            </button>
+            <button
+              className={`action-btn ${readerActive ? 'active' : ''}`}
+              onClick={() => handleToggleReader().catch(console.error)}
+              disabled={!readerActive && !readerAvailable}
+              title={readerActive ? '退出阅读模式' : '阅读模式'}
+              aria-pressed={readerActive}
+            >
+              读
+            </button>
             {settings?.toolbar.bookmarkButton !== false && (
               <button
                 className={`action-btn bookmark-btn ${isCurrentBookmarked ? 'bookmarked' : ''}`}
@@ -1294,6 +1495,45 @@ function BrowserApp(): React.ReactElement {
               </button>
             )}
             <button
+              className={`action-btn sniffer-action-btn ${activePanel === 'sniffer' ? 'active' : ''}`}
+              onClick={handleShowSniffer}
+              title="资源嗅探"
+              aria-pressed={activePanel === 'sniffer'}
+            >
+              ⧉
+              {activeSnifferCount > 0 && (
+                <span className="sniffer-badge">{activeSnifferCount}</span>
+              )}
+            </button>
+            <button
+              className={`action-btn ${activePanel === 'scripts' ? 'active' : ''}`}
+              onClick={handleShowScripts}
+              title="用户脚本"
+              aria-pressed={activePanel === 'scripts'}
+            >
+              脚
+            </button>
+            <button
+              className={`action-btn ${activePanel === 'webpanel' ? 'active' : ''}`}
+              onClick={handleShowWebPanel}
+              title="侧边栏网页面板"
+              aria-pressed={activePanel === 'webpanel'}
+            >
+              ⊞
+            </button>
+            <button
+              className={`action-btn ${splitViewActive ? 'active' : ''}`}
+              onClick={() =>
+                splitViewActive
+                  ? handleSplitViewClose().catch(console.error)
+                  : handleSplitViewOpen().catch(console.error)
+              }
+              title="分屏浏览"
+              aria-pressed={splitViewActive}
+            >
+              ⫘
+            </button>
+            <button
               className={`action-btn toolbar-ai-btn ${activePanel === 'ai' ? 'active' : ''}`}
               onClick={handleShowAI}
               title="AI 助手"
@@ -1312,6 +1552,51 @@ function BrowserApp(): React.ReactElement {
               </button>
             )}
           </div>
+          {splitViewActive && (
+            <div className="split-view-bar">
+              <button
+                className="split-view-btn"
+                onClick={() => window.api.splitViewGoBack().catch(console.error)}
+                title="右侧后退"
+              >
+                ←
+              </button>
+              <button
+                className="split-view-btn"
+                onClick={() => window.api.splitViewGoForward().catch(console.error)}
+                title="右侧前进"
+              >
+                →
+              </button>
+              <button
+                className="split-view-btn"
+                onClick={() => window.api.splitViewReload().catch(console.error)}
+                title="右侧刷新"
+              >
+                ↻
+              </button>
+              <input
+                className="split-view-url"
+                value={splitViewInput}
+                onChange={(e) => setSplitViewInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  const value = splitViewInput.trim()
+                  if (!value) return
+                  const url = value.startsWith('http') ? value : `https://${value}`
+                  window.api.splitViewNavigate(url).catch(console.error)
+                }}
+                placeholder="右侧窗口地址..."
+              />
+              <button
+                className="split-view-btn close"
+                onClick={() => handleSplitViewClose().catch(console.error)}
+                title="关闭分屏"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1651,7 +1936,31 @@ function BrowserApp(): React.ReactElement {
                 启动时恢复标签
               </label>
             </div>
+            <div style={{ marginBottom: '12px' }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', fontSize: '12px', gap: '6px' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={webDarkMode}
+                  onChange={() => handleToggleDarkMode().catch(console.error)}
+                />
+                网页暗色模式
+              </label>
+            </div>
           </div>
+        </div>
+      )}
+
+      {previewTabId && previewImage && (
+        <div
+          className="tab-preview-tooltip"
+          style={{
+            left: previewPosition.x,
+            top: previewPosition.y
+          }}
+        >
+          <img src={previewImage} alt="preview" className="tab-preview-image" />
         </div>
       )}
 
@@ -1690,6 +1999,7 @@ function App_PanelOnly(): React.ReactElement {
   const [downloadQuery, setDownloadQuery] = useState('')
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
   const [showBookmarkBar, setShowBookmarkBar] = useState(true)
+  const [webDarkMode, setWebDarkMode] = useState(false)
   const [adBlockState, setAdBlockState] = useState<AdBlockState | null>(null)
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [editingBookmark, setEditingBookmark] = useState<BookmarkEditState | null>(null)
@@ -1704,6 +2014,15 @@ function App_PanelOnly(): React.ReactElement {
   const [aiStatus, setAiStatus] = useState<AIStatus | null>(null)
   const [aiContextLoading, setAiContextLoading] = useState(false)
   const [aiShowSettings, setAiShowSettings] = useState(false)
+  const [userScripts, setUserScripts] = useState<UserScriptItem[]>([])
+  const [scriptInstallUrl, setScriptInstallUrl] = useState('')
+  const [sniffedResources, setSniffedResources] = useState<SniffedResource[]>([])
+  const [webPanelVisible, setWebPanelVisible] = useState(false)
+  const [savedWebPanels, setSavedWebPanels] = useState<
+    Array<{ url: string; title: string; pinned: boolean }>
+  >([])
+  const [webPanelInput, setWebPanelInput] = useState('')
+  const [detectedDownloaders, setDetectedDownloaders] = useState<Record<string, string | null>>({})
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const aiMessageListRef = useRef<HTMLDivElement | null>(null)
   const aiInputRef = useRef<HTMLTextAreaElement>(null)
@@ -1888,12 +2207,26 @@ function App_PanelOnly(): React.ReactElement {
     const unsubDownloadUpdate = window.api.onDownloadUpdate(() => {
       window.api.getBrowserState().then(setBrowserState)
     })
-    const unsubSettings = window.api.onSettings((updated) => setSettings(updated))
+    const unsubSettings = window.api.onSettings((updated) => {
+      setSettings(updated)
+      setWebDarkMode(updated.webDarkMode)
+    })
     const unsubBookmarkBar = window.api.onBookmarkBarChanged((visible) => {
       setShowBookmarkBar(visible)
     })
     const unsubBookmarksChanged = window.api.onBookmarksChanged((updatedBookmarks) => {
       setBookmarks(updatedBookmarks)
+    })
+    const unsubResourceFound = window.api.onResourceFound(() => {
+      if (panelType === 'sniffer') {
+        loadSniffedResources().catch(console.error)
+      }
+    })
+    const unsubUserScriptInstalled = window.api.onUserScriptInstalled((data) => {
+      if (panelType === 'scripts') {
+        loadUserScripts().catch(console.error)
+      }
+      showToast(`已安装脚本：${data.name}`)
     })
     const unsubClearData = window.api.onClearDataConfirm(() => {
       requestConfirm(
@@ -1915,7 +2248,11 @@ function App_PanelOnly(): React.ReactElement {
     window.api.getBrowserState().then(setBrowserState)
     window.api.getBookmarks().then(setBookmarks)
     window.api.getBookmarkBarVisible().then(setShowBookmarkBar)
-    window.api.getSettings().then(setSettings)
+    window.api.getSettings().then((loaded) => {
+      setSettings(loaded)
+      setWebDarkMode(loaded.webDarkMode)
+    })
+    window.api.getDarkMode().then(setWebDarkMode)
     window.api.getAdBlockState().then(setAdBlockState).catch(console.error)
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
 
@@ -1933,9 +2270,11 @@ function App_PanelOnly(): React.ReactElement {
       unsubBookmarksChanged()
       unsubClearData()
       unsubAdBlock()
+      unsubResourceFound()
+      unsubUserScriptInstalled()
       if (toastTimer.current) clearTimeout(toastTimer.current)
     }
-  }, [requestConfirm, showToast])
+  }, [panelType, requestConfirm, showToast])
 
   useEffect(() => {
     const unsubscribe = window.api.onAITriggerAction(handleAITriggeredAction)
@@ -2007,6 +2346,7 @@ function App_PanelOnly(): React.ReactElement {
       window.api.getBrowserState().then(setBrowserState)
     } else if (panelType === 'settings') {
       window.api.getSettings().then(setSettings)
+      window.api.downloaderDetect().then(setDetectedDownloaders).catch(console.error)
     } else if (panelType === 'about') {
       window.api.getAboutInfo().then(setAboutInfo).catch(console.error)
     } else if (panelType === 'ai') {
@@ -2015,6 +2355,12 @@ function App_PanelOnly(): React.ReactElement {
         .catch(() => {
           /* context is optional */
         })
+    } else if (panelType === 'scripts') {
+      loadUserScripts().catch(console.error)
+    } else if (panelType === 'sniffer') {
+      loadSniffedResources().catch(console.error)
+    } else if (panelType === 'webpanel') {
+      loadSavedWebPanels().catch(console.error)
     }
   }, [
     panelType,
@@ -2138,6 +2484,12 @@ function App_PanelOnly(): React.ReactElement {
     showToast(visible ? '已显示书签栏' : '已隐藏书签栏')
   }
 
+  async function handleToggleDarkMode(): Promise<void> {
+    const newState = await window.api.toggleDarkMode()
+    setWebDarkMode(newState)
+    showToast(newState ? '网页暗色模式已开启' : '网页暗色模式已关闭')
+  }
+
   function handleRemoveHistoryEntry(item: HistoryItem, e: React.MouseEvent): void {
     e.stopPropagation()
     requestConfirm('删除这条记录？', '只删这一条，其他不动。', '清空', async () => {
@@ -2213,6 +2565,102 @@ function App_PanelOnly(): React.ReactElement {
         showToast('已保存')
       })
       .catch(console.error)
+  }
+
+  async function loadUserScripts(): Promise<void> {
+    const scripts = await window.api.userscriptGetAll()
+    setUserScripts(scripts)
+  }
+
+  async function handleToggleUserScript(id: string, enabled: boolean): Promise<void> {
+    await window.api.userscriptToggle(id, enabled)
+    await loadUserScripts()
+    showToast(enabled ? '脚本已启用' : '脚本已停用')
+  }
+
+  function handleRemoveUserScript(id: string): void {
+    requestConfirm('删除这个用户脚本？', '删除后脚本文件和配置会从本机移除。', '删除', async () => {
+      await window.api.userscriptRemove(id)
+      await loadUserScripts()
+      showToast('脚本已删除')
+    })
+  }
+
+  async function handleInstallFromUrl(): Promise<void> {
+    if (!scriptInstallUrl.trim()) return
+    const result = await window.api.userscriptInstallFromUrl(scriptInstallUrl.trim())
+    if (result.success) {
+      setScriptInstallUrl('')
+      await loadUserScripts()
+      showToast('脚本已安装')
+    } else {
+      showToast(result.error || '安装失败', 'error')
+    }
+  }
+
+  async function handleUpdateUserScript(id: string): Promise<void> {
+    const result = await window.api.userscriptUpdate(id)
+    await loadUserScripts()
+    showToast(
+      result.success ? `已更新到 ${result.newVersion}` : result.error || '无需更新',
+      result.success ? 'success' : 'info'
+    )
+  }
+
+  async function loadSniffedResources(): Promise<void> {
+    const resources = await window.api.snifferGetResources()
+    setSniffedResources(resources)
+  }
+
+  async function handleCopyResource(resource: SniffedResource): Promise<void> {
+    await window.api.copyToClipboard(resource.url)
+    showToast('链接已复制')
+  }
+
+  async function handleDownloadResource(resource: SniffedResource): Promise<void> {
+    const result = await window.api.downloaderSend({
+      url: resource.url,
+      filename: resource.filename
+    })
+    showToast(result.success ? '已发送到下载器' : result.error || '发送失败', result.success ? 'success' : 'error')
+  }
+
+  async function loadSavedWebPanels(): Promise<void> {
+    const panels = await window.api.webPanelGetSaved()
+    const visible = await window.api.webPanelIsVisible()
+    setSavedWebPanels(panels)
+    setWebPanelVisible(visible)
+  }
+
+  async function handleOpenWebPanel(url: string): Promise<void> {
+    const result = await window.api.webPanelOpen(url)
+    if (result.success) {
+      setWebPanelVisible(true)
+      await loadSavedWebPanels()
+      showToast('网页面板已打开')
+    }
+  }
+
+  async function handleCloseWebPanel(): Promise<void> {
+    await window.api.webPanelClose()
+    setWebPanelVisible(false)
+    showToast('网页面板已关闭')
+  }
+
+  async function handleAddWebPanel(): Promise<void> {
+    if (!webPanelInput.trim()) return
+    let url = webPanelInput.trim()
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`
+    }
+    await handleOpenWebPanel(url)
+    setWebPanelInput('')
+  }
+
+  async function handleRemoveWebPanel(url: string): Promise<void> {
+    await window.api.webPanelRemove(url)
+    await loadSavedWebPanels()
+    showToast('已移除')
   }
 
   function handleUpdateAISettings(patch: Partial<BrowserSettings['ai']>): void {
@@ -2318,6 +2766,27 @@ function App_PanelOnly(): React.ReactElement {
   async function handleCopyAboutInfo(aboutInfo: AboutInfo): Promise<void> {
     await window.api.copyToClipboard(formatAboutInfo(aboutInfo))
     showToast('版本信息已复制')
+  }
+
+  function formatSniffedSize(size: string | null): string {
+    if (!size) return '未知大小'
+    const value = Number.parseInt(size, 10)
+    return Number.isFinite(value) ? formatBytes(value) : size
+  }
+
+  function getResourceIcon(type: SniffedResource['resourceType']): string {
+    switch (type) {
+      case 'video':
+        return '▶'
+      case 'audio':
+        return '♪'
+      case 'document':
+        return 'PDF'
+      case 'archive':
+        return 'ZIP'
+      default:
+        return '•'
+    }
   }
 
   async function handleConfirmDialog(): Promise<void> {
@@ -2583,6 +3052,216 @@ function App_PanelOnly(): React.ReactElement {
           </>
         )}
 
+        {panelType === 'scripts' && (
+          <>
+            <div className="panel-header">
+              <h3>用户脚本</h3>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            <div className="script-install-bar">
+              <input
+                type="text"
+                className="script-install-input"
+                placeholder="输入 .user.js 链接安装..."
+                value={scriptInstallUrl}
+                onChange={(e) => setScriptInstallUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleInstallFromUrl().catch(console.error)
+                }}
+              />
+              <button className="script-install-btn" onClick={() => handleInstallFromUrl().catch(console.error)}>
+                安装
+              </button>
+            </div>
+            <div className="script-tip">
+              <span>访问 Greasy Fork 点击脚本安装按钮，或粘贴 .user.js 链接。</span>
+            </div>
+            <div className="panel-list">
+              {userScripts.length === 0 ? (
+                <div className="panel-empty-state">
+                  <p>暂无已安装的脚本</p>
+                  <p>从 Greasy Fork 安装脚本或粘贴链接</p>
+                </div>
+              ) : (
+                <div className="script-list">
+                  {userScripts.map((script) => (
+                    <div
+                      key={script.id}
+                      className={`script-item ${script.enabled ? '' : 'disabled'}`}
+                    >
+                      <div className="script-item-header">
+                        <label className="script-toggle">
+                          <input
+                            type="checkbox"
+                            checked={script.enabled}
+                            onChange={(e) =>
+                              handleToggleUserScript(script.id, e.target.checked).catch(console.error)
+                            }
+                          />
+                          <span className="script-toggle-slider"></span>
+                        </label>
+                        <span className="script-name">{script.meta.name}</span>
+                        <span className="script-version">v{script.meta.version}</span>
+                      </div>
+                      <div className="script-item-desc">{script.meta.description}</div>
+                      <div className="script-item-meta">
+                        <span className="script-author">{script.meta.author}</span>
+                        <span className="script-match">
+                          {script.meta.match.slice(0, 2).join(', ')}
+                          {script.meta.match.length > 2 ? '...' : ''}
+                        </span>
+                      </div>
+                      <div className="script-item-actions">
+                        <button
+                          className="script-action-btn"
+                          onClick={() => handleUpdateUserScript(script.id).catch(console.error)}
+                        >
+                          更新
+                        </button>
+                        <button
+                          className="script-action-btn danger"
+                          onClick={() => handleRemoveUserScript(script.id)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {panelType === 'sniffer' && (
+          <>
+            <div className="panel-header">
+              <h3>资源嗅探</h3>
+              <button className="panel-header-btn" onClick={() => loadSniffedResources().catch(console.error)}>
+                刷新
+              </button>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            <div className="panel-list sniffer-list">
+              {sniffedResources.length === 0 ? (
+                <div className="panel-empty-state">
+                  <p>当前标签页暂无可下载资源</p>
+                  <p>播放视频、音频或打开文件链接后会显示在这里</p>
+                </div>
+              ) : (
+                sniffedResources.map((resource) => (
+                  <div className="sniffer-item" key={resource.id}>
+                    <div className="sniffer-resource-icon">
+                      {getResourceIcon(resource.resourceType)}
+                    </div>
+                    <div className="sniffer-resource-main">
+                      <div className="sniffer-resource-name">{resource.filename}</div>
+                      <div className="sniffer-resource-meta">
+                        {resource.resourceType} · {formatSniffedSize(resource.size)}
+                      </div>
+                      <div className="sniffer-resource-url">{resource.url}</div>
+                    </div>
+                    <div className="sniffer-resource-actions">
+                      <button onClick={() => handleCopyResource(resource).catch(console.error)}>
+                        复制
+                      </button>
+                      <button onClick={() => handleDownloadResource(resource).catch(console.error)}>
+                        下载
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {panelType === 'webpanel' && (
+          <>
+            <div className="panel-header">
+              <h3>网页面板</h3>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            <div className="panel-list">
+              <div className="webpanel-input-bar">
+                <input
+                  type="text"
+                  className="webpanel-input"
+                  placeholder="输入网址添加面板..."
+                  value={webPanelInput}
+                  onChange={(e) => setWebPanelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddWebPanel().catch(console.error)
+                  }}
+                />
+                <button className="webpanel-add-btn" onClick={() => handleAddWebPanel().catch(console.error)}>
+                  添加
+                </button>
+              </div>
+
+              <div className="webpanel-presets">
+                <div className="webpanel-preset-title">常用面板</div>
+                <div className="webpanel-preset-grid">
+                  <button className="webpanel-preset-item" onClick={() => handleOpenWebPanel('https://chat.openai.com').catch(console.error)}>
+                    <span className="webpanel-preset-icon">AI</span>
+                    <span className="webpanel-preset-label">ChatGPT</span>
+                  </button>
+                  <button className="webpanel-preset-item" onClick={() => handleOpenWebPanel('https://translate.google.com').catch(console.error)}>
+                    <span className="webpanel-preset-icon">译</span>
+                    <span className="webpanel-preset-label">翻译</span>
+                  </button>
+                  <button className="webpanel-preset-item" onClick={() => handleOpenWebPanel('https://wx.qq.com').catch(console.error)}>
+                    <span className="webpanel-preset-icon">微</span>
+                    <span className="webpanel-preset-label">微信</span>
+                  </button>
+                  <button className="webpanel-preset-item" onClick={() => handleOpenWebPanel('https://music.163.com').catch(console.error)}>
+                    <span className="webpanel-preset-icon">乐</span>
+                    <span className="webpanel-preset-label">网易云</span>
+                  </button>
+                </div>
+              </div>
+
+              {savedWebPanels.length > 0 && (
+                <div className="webpanel-saved">
+                  <div className="webpanel-saved-title">已保存</div>
+                  {savedWebPanels.map((panel) => (
+                    <div key={panel.url} className="webpanel-saved-item">
+                      <button
+                        className="webpanel-saved-open"
+                        onClick={() => handleOpenWebPanel(panel.url).catch(console.error)}
+                      >
+                        {panel.title || panel.url}
+                      </button>
+                      <button
+                        className="webpanel-saved-remove"
+                        onClick={() => handleRemoveWebPanel(panel.url).catch(console.error)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {webPanelVisible && (
+                <div className="webpanel-status">
+                  <span className="webpanel-status-dot"></span>
+                  <span className="webpanel-status-text">面板运行中</span>
+                  <button className="webpanel-status-close" onClick={() => handleCloseWebPanel().catch(console.error)}>
+                    关闭
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         {panelType === 'settings' && (
           <>
             <div className="panel-header">
@@ -2835,6 +3514,17 @@ function App_PanelOnly(): React.ReactElement {
                       <option value="spacious">宽松</option>
                     </select>
                   </div>
+                  <label className="settings-row settings-check">
+                    <div className="settings-copy">
+                      <span>网页暗色模式</span>
+                      <p>对网页内容强制暗色，不影响浏览器界面主题。</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={webDarkMode}
+                      onChange={() => handleToggleDarkMode().catch(console.error)}
+                    />
+                  </label>
 
                   <div className="settings-group-title">工具栏</div>
                   {[
@@ -2973,6 +3663,86 @@ function App_PanelOnly(): React.ReactElement {
                       }
                     />
                   </label>
+
+                  <div className="settings-group-title">下载管理</div>
+                  <label className="settings-row settings-check">
+                    <div className="settings-copy">
+                      <span>启用外部下载器</span>
+                      <p>开启后浏览器下载会转发给已配置的 IDM/FDM/NDM。</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.downloader.enabled}
+                      onChange={(e) =>
+                        handleUpdateSettings({
+                          downloader: { enabled: e.target.checked }
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="settings-row">
+                    <div className="settings-copy">
+                      <label>默认下载器</label>
+                      <p>未配置路径时仍使用内置下载。</p>
+                    </div>
+                    <select
+                      value={settings.downloader.type}
+                      onChange={(e) =>
+                        handleUpdateSettings({
+                          downloader: {
+                            type: e.target.value as BrowserSettings['downloader']['type']
+                          }
+                        })
+                      }
+                    >
+                      <option value="builtin">内置下载</option>
+                      <option value="idm">IDM</option>
+                      <option value="fdm">FDM</option>
+                      <option value="ndm">NDM</option>
+                      <option value="custom">自定义</option>
+                    </select>
+                  </div>
+                  <div className="settings-row">
+                    <div className="settings-copy">
+                      <label>下载器路径</label>
+                      <p>外部下载器可执行文件路径。</p>
+                    </div>
+                    <input
+                      key={`downloader-path-${settings.downloader.path}`}
+                      type="text"
+                      defaultValue={settings.downloader.path}
+                      onBlur={(e) =>
+                        handleUpdateSettings({
+                          downloader: { path: e.target.value }
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="settings-row external-downloader-detect">
+                    <div className="settings-copy">
+                      <label>自动检测</label>
+                      <p>检测本机常见安装路径。</p>
+                    </div>
+                    <div className="downloader-detect-list">
+                      {(['idm', 'fdm', 'ndm'] as const).map((type) => (
+                        <button
+                          key={type}
+                          disabled={!detectedDownloaders[type]}
+                          onClick={() =>
+                            handleUpdateSettings({
+                              downloader: {
+                                enabled: true,
+                                type,
+                                path: detectedDownloaders[type] || ''
+                              }
+                            })
+                          }
+                        >
+                          {type.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="settings-group-title">导入、导出与重置</div>
                   <div className="settings-row">

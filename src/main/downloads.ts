@@ -82,7 +82,9 @@ function getUniqueSavePath(dir: string, filename: string): string {
 }
 
 export function setupDownloadHandler(): void {
-  session.defaultSession.on('will-download', (_event, item) => {
+  session.defaultSession.on('will-download', (event, item) => {
+    if (event.defaultPrevented) return
+
     const settings = getSettings()
     const autoSave = !settings.askWhereToSaveBeforeDownloading
     const downloadDir = settings.downloadPath || app.getPath('downloads')

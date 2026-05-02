@@ -13,6 +13,7 @@ import type {
 
 export interface TabState {
   id: string
+  webContentsId: number
   url: string
   title: string
   favicon: string
@@ -147,7 +148,16 @@ export interface PersistedSession {
 
 export type ZoomAction = 'in' | 'out' | 'reset'
 
-export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about' | 'ai'
+export type SidePanelType =
+  | 'bookmarks'
+  | 'history'
+  | 'downloads'
+  | 'settings'
+  | 'about'
+  | 'ai'
+  | 'scripts'
+  | 'webpanel'
+  | 'sniffer'
 
 export interface BrowserLayout {
   uiViewHeight: number

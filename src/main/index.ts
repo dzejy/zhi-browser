@@ -48,7 +48,28 @@ import { AdBlockController } from './adblockController'
 import { registerAdBlockIPC } from './adblockIPC'
 import { registerAIIPC } from './aiIPC'
 import { setAsDefaultBrowser, isDefaultBrowser } from './default-browser'
+import {
+  DARK_BG_COLOR,
+  CHROME_BG_COLOR,
+  getWindowBackgroundColor,
+  registerDarkModeHandlers
+} from './darkMode'
+import { registerTranslateHandlers } from './translate'
 import type { AISelectionAction } from '../shared/aiTypes'
+import { registerUserScriptIPC } from './userscript/ipc-handler'
+import { registerReaderHandlers } from './reader'
+import { registerSnifferHandlers } from './sniffer'
+import { registerDownloaderHandlers } from './downloader'
+import { registerTabPreviewHandlers } from './tab-preview'
+import { registerWebPanelHandlers, relayoutWebPanel, getWebPanelWidth } from './web-panel'
+import { registerMouseGestureHandlers } from './mouse-gesture'
+import { executeGestureAction } from './mouse-gesture-actions'
+import {
+  registerSplitViewHandlers,
+  relayoutSplitView,
+  isSplitViewActive,
+  getLeftViewWidth
+} from './split-view'
 
 let win: BaseWindow
 let uiView: WebContentsView
@@ -75,7 +96,10 @@ const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'downloads',
   'settings',
   'about',
-  'ai'
+  'ai',
+  'scripts',
+  'webpanel',
+  'sniffer'
 ])
 
 function sendToUi(channel: string, ...args: unknown[]): void {
@@ -196,6 +220,7 @@ function createWindow(): void {
     minWidth: 600,
     minHeight: 400,
     title: 'Zhi Browser',
+    backgroundColor: prefs.webDarkMode ? DARK_BG_COLOR : CHROME_BG_COLOR,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -237,7 +262,11 @@ function createWindow(): void {
     },
     openSidePanelFromShortcut,
     openAIPanelFromAction,
-    toggleBookmarkBarVisible
+    toggleBookmarkBarVisible,
+    (payload) => {
+      sendToUi('userscript:installed', payload)
+      sendToPanel('userscript:installed', payload)
+    }
   )
   installAppMenu()
 
@@ -285,6 +314,74 @@ function createWindow(): void {
     uiView,
     panelView,
     getActiveWebContents: () => tabManager.getActiveWebContents()
+  })
+  registerTranslateHandlers(() => {
+    const activeView = tabManager.getActiveTabView()
+    return activeView?.webContents ?? null
+  })
+  registerUserScriptIPC((url, active) => {
+    tabManager.createTab(url, { background: !active })
+  })
+  registerReaderHandlers(() => {
+    const activeView = tabManager.getActiveTabView()
+    return activeView?.webContents ?? null
+  })
+  registerSnifferHandlers(
+    () => {
+      const activeView = tabManager.getActiveTabView()
+      return activeView?.webContents?.id ?? null
+    },
+    (channel, payload) => {
+      sendToUi(channel, payload)
+      sendToPanel(channel, payload)
+    }
+  )
+  registerTabPreviewHandlers((tabId) => tabManager.getTabViewByWebContentsId(tabId))
+  registerWebPanelHandlers(
+    () => win,
+    getRawContentBounds,
+    () => updateLayout()
+  )
+  registerMouseGestureHandlers((action) => {
+    executeGestureAction(
+      action,
+      () => tabManager.getActiveTabView(),
+      () => {
+        tabManager.createTab()
+        sendToUi('browser:focus-address-bar')
+      },
+      () => tabManager.closeTab(tabManager.getActiveTabId()),
+      () => tabManager.restoreClosed()
+    )
+  })
+  registerSplitViewHandlers(
+    () => win,
+    getBrowserContentBounds,
+    () => updateLayout(),
+    (url) => tabManager.createTab(url)
+  )
+  tabManager.setPageBoundsProvider((bounds) => {
+    const availableWidth = Math.max(0, bounds.width - getWebPanelWidth())
+    return {
+      ...bounds,
+      width: isSplitViewActive() ? getLeftViewWidth(availableWidth) : availableWidth
+    }
+  })
+  registerDarkModeHandlers({
+    getAllViews: () => tabManager.getAllTabViews(),
+    validateSender: (event) => {
+      return event.sender === uiView.webContents || event.sender === panelView?.webContents
+    },
+    onDarkModeChanged: (enabled) => {
+      win.setBackgroundColor(getWindowBackgroundColor())
+      if (!enabled) {
+        tabManager.releaseDarkModeHiddenViews()
+      }
+    },
+    onSettingsChanged: (updated) => {
+      sendToUi('browser:settings', updated)
+      sendToPanel('browser:settings', updated)
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -434,6 +531,8 @@ function createWindow(): void {
 
 function updateLayout(): void {
   tabManager.updateLayout()
+  relayoutWebPanel(getRawContentBounds)
+  relayoutSplitView(getBrowserContentBounds)
   if (panelVisible && panelView) {
     const { width, height } = win.getContentBounds()
     panelView.setBounds({
@@ -567,6 +666,24 @@ function hidePanelView(notifyRenderer = true): void {
   panelVisible = false
   if (notifyRenderer) {
     uiView.webContents.send('browser:panel-closed')
+  }
+}
+
+function getRawContentBounds(): { x: number; y: number; width: number; height: number } {
+  const { width, height } = win.getContentBounds()
+  return {
+    x: 0,
+    y: currentChromeHeight,
+    width,
+    height: Math.max(0, height - currentChromeHeight)
+  }
+}
+
+function getBrowserContentBounds(): { x: number; y: number; width: number; height: number } {
+  const bounds = getRawContentBounds()
+  return {
+    ...bounds,
+    width: Math.max(0, bounds.width - getWebPanelWidth())
   }
 }
 
@@ -984,6 +1101,7 @@ function setupIPC(): void {
 
 app.whenReady().then(() => {
   loadCompletedDownloads()
+  registerDownloaderHandlers()
   setupDownloadHandler()
   setOnDownloadUpdate((item) => {
     try {
