@@ -14,6 +14,16 @@ export type NewTabPosition = 'afterCurrent' | 'atEnd'
 export type NewTabFocus = 'foreground' | 'background'
 export type CloseTabActivate = 'left' | 'right' | 'recent'
 export type AISearchMode = 'none' | 'xiaomi_web_search' | 'gemini_google_search'
+export type ThemeColorId =
+  | 'indigo'
+  | 'violet'
+  | 'rose'
+  | 'teal'
+  | 'amber'
+  | 'emerald'
+  | 'sky'
+  | 'crimson'
+export type UIFontId = 'system' | 'wenkai' | 'harmony' | 'source' | 'mono'
 
 export interface SearchEngineConfig {
   name: string
@@ -46,6 +56,8 @@ export interface AIProviderProfile {
 export interface Preferences {
   _schemaVersion: number
   showBookmarkBar: boolean
+  themeColor: ThemeColorId
+  uiFont: UIFontId
   startup: {
     behavior: StartupBehavior
     homepageUrl: string
@@ -113,6 +125,8 @@ export const DENSITY_VALUES = {
 export const DEFAULT_PREFERENCES: Preferences = {
   _schemaVersion: PREFERENCES_SCHEMA_VERSION,
   showBookmarkBar: true,
+  themeColor: 'indigo',
+  uiFont: 'system',
   startup: {
     behavior: 'newtab',
     homepageUrl: 'https://www.baidu.com',
@@ -286,8 +300,21 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   const focusModes: NewTabFocus[] = ['foreground', 'background']
   const activateModes: CloseTabActivate[] = ['left', 'right', 'recent']
   const aiSearchModes: AISearchMode[] = ['none', 'xiaomi_web_search', 'gemini_google_search']
+  const themeColors: ThemeColorId[] = [
+    'indigo',
+    'violet',
+    'rose',
+    'teal',
+    'amber',
+    'emerald',
+    'sky',
+    'crimson'
+  ]
+  const uiFonts: UIFontId[] = ['system', 'wenkai', 'harmony', 'source', 'mono']
 
   if (!startupBehaviors.includes(prefs.startup.behavior)) prefs.startup.behavior = 'newtab'
+  if (!themeColors.includes(prefs.themeColor)) prefs.themeColor = defaults.themeColor
+  if (!uiFonts.includes(prefs.uiFont)) prefs.uiFont = defaults.uiFont
   if (typeof prefs.startup.homepageUrl !== 'string') {
     prefs.startup.homepageUrl = defaults.startup.homepageUrl
   }

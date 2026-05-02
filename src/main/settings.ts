@@ -62,6 +62,8 @@ export function resetPreferenceGroup(group: string): BrowserSettings {
     'downloads',
     'advanced',
     'adblock',
+    'themeColor',
+    'uiFont',
     'ai'
   ]
   if (!validGroups.includes(group as keyof Preferences)) return getSettings()
@@ -205,6 +207,8 @@ function toPreferencePatch(partial: BrowserSettingsPatch): DeepPartial<Preferenc
     'downloads',
     'advanced',
     'adblock',
+    'themeColor',
+    'uiFont',
     'ai'
   ]
 

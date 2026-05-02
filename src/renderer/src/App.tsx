@@ -71,10 +71,33 @@ interface ToastMessage {
   duration: number
 }
 type AISearchMode = 'none' | 'xiaomi_web_search' | 'gemini_google_search'
+type ThemeColorId = 'indigo' | 'violet' | 'rose' | 'teal' | 'amber' | 'emerald' | 'sky' | 'crimson'
+type UIFontId = 'system' | 'wenkai' | 'harmony' | 'source' | 'mono'
+
+const THEME_COLORS: Array<{ id: ThemeColorId; label: string; hue: number }> = [
+  { id: 'indigo', label: '靛蓝', hue: 220 },
+  { id: 'violet', label: '紫罗兰', hue: 262 },
+  { id: 'rose', label: '玫瑰', hue: 340 },
+  { id: 'teal', label: '松石绿', hue: 174 },
+  { id: 'amber', label: '琥珀', hue: 36 },
+  { id: 'emerald', label: '翡翠', hue: 152 },
+  { id: 'sky', label: '天蓝', hue: 199 },
+  { id: 'crimson', label: '绯红', hue: 4 }
+]
+
+const UI_FONTS: Array<{ id: UIFontId; label: string; preview: string }> = [
+  { id: 'system', label: '系统默认', preview: '浏览世界，从这里开始' },
+  { id: 'wenkai', label: '霞鹜文楷', preview: '浏览世界，从这里开始' },
+  { id: 'harmony', label: '鸿蒙字体', preview: '浏览世界，从这里开始' },
+  { id: 'source', label: '思源黑体', preview: '浏览世界，从这里开始' },
+  { id: 'mono', label: '等宽极客', preview: '浏览世界，从这里开始' }
+]
 
 interface BrowserSettings {
   _schemaVersion: number
   showBookmarkBar: boolean
+  themeColor: ThemeColorId
+  uiFont: UIFontId
   startup: {
     behavior: 'homepage' | 'newtab' | 'restoreSession' | 'specificPages'
     homepageUrl: string
@@ -423,6 +446,27 @@ function renderMarkdownMessage(content: string): React.ReactNode {
   return <div className="ai-markdown">{blocks}</div>
 }
 
+function SkeletonRows({ rows = 3 }: { rows?: number }): React.ReactElement {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, rowIndex) => (
+        <div className="skeleton-row" key={`skeleton-${rowIndex}`}>
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line" />
+        </div>
+      ))}
+    </>
+  )
+}
+
+function handlePanelSpotlightMove(e: React.MouseEvent<HTMLElement>): void {
+  const rect = e.currentTarget.getBoundingClientRect()
+  e.currentTarget.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`)
+  e.currentTarget.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`)
+}
+
 const DENSITY_VALUES = {
   compact: { chrome: 84, tabbar: 36, toolbar: 48, tab: 32, address: 34 },
   normal: { chrome: 92, tabbar: 40, toolbar: 52, tab: 36, address: 38 },
@@ -439,7 +483,13 @@ function applyAppearance(settings: BrowserSettings | null): (() => void) | undef
   root.style.setProperty('--toolbar-height', `${scaleUiSize(values.toolbar)}px`)
   root.style.setProperty('--tab-height', `${scaleUiSize(values.tab)}px`)
   root.style.setProperty('--address-bar-height', `${scaleUiSize(values.address)}px`)
-  root.style.setProperty('--color-accent', settings.appearance.accentColor)
+  root.style.setProperty('--legacy-accent-color', settings.appearance.accentColor)
+  root.style.setProperty('--color-accent', 'var(--theme)')
+  root.style.setProperty('--color-accent-hover', 'hsl(var(--theme-hue), var(--theme-sat), 54%)')
+  root.style.setProperty('--color-loading', 'var(--theme)')
+  root.style.setProperty('--border-focus', 'var(--theme-border)')
+  root.setAttribute('data-theme-color', settings.themeColor)
+  root.setAttribute('data-ui-font', settings.uiFont)
 
   const setTheme = (mode: 'dark' | 'light'): void => {
     root.setAttribute('data-theme', mode)
@@ -496,10 +546,17 @@ function BrowserApp(): React.ReactElement {
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [isEditingAddress, setIsEditingAddress] = useState(false)
   const [showBookmarkBar, setShowBookmarkBar] = useState(true)
+  const [enteringTabIds, setEnteringTabIds] = useState<Set<string>>(new Set())
+  const [closingTabIds, setClosingTabIds] = useState<Set<string>>(new Set())
+  const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(new Set())
 
+  const addressBarWrapperRef = useRef<HTMLDivElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const knownTabIdsRef = useRef<Set<string>>(new Set())
+  const loadingTabIdsRef = useRef<Set<string>>(new Set())
+  const tabCloseTimers = useRef<Map<string, number>>(new Map())
 
   const activeTab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
 
@@ -514,6 +571,77 @@ function BrowserApp(): React.ReactElement {
   useEffect(() => {
     activeTabRef.current = activeTab
   }, [activeTab])
+
+  useEffect(() => {
+    const previousIds = knownTabIdsRef.current
+    const previousLoadingIds = loadingTabIdsRef.current
+    const currentIds = new Set(browserState.tabs.map((tab) => tab.id))
+    const currentLoadingIds = new Set(
+      browserState.tabs.filter((tab) => tab.isLoading).map((tab) => tab.id)
+    )
+    const isInitialSync = previousIds.size === 0
+
+    if (!isInitialSync) {
+      const nextEnteringIds = browserState.tabs
+        .map((tab) => tab.id)
+        .filter((tabId) => !previousIds.has(tabId))
+
+      if (nextEnteringIds.length > 0) {
+        setEnteringTabIds((current) => {
+          const next = new Set(current)
+          nextEnteringIds.forEach((tabId) => next.add(tabId))
+          return next
+        })
+        nextEnteringIds.forEach((tabId) => {
+          window.setTimeout(() => {
+            setEnteringTabIds((current) => {
+              const next = new Set(current)
+              next.delete(tabId)
+              return next
+            })
+          }, 320)
+        })
+      }
+    }
+
+    const nextLoadedIds = browserState.tabs
+      .map((tab) => tab.id)
+      .filter((tabId) => previousLoadingIds.has(tabId) && !currentLoadingIds.has(tabId))
+
+    if (nextLoadedIds.length > 0) {
+      setLoadedTabIds((current) => {
+        const next = new Set(current)
+        nextLoadedIds.forEach((tabId) => next.add(tabId))
+        return next
+      })
+      nextLoadedIds.forEach((tabId) => {
+        window.setTimeout(() => {
+          setLoadedTabIds((current) => {
+            const next = new Set(current)
+            next.delete(tabId)
+            return next
+          })
+        }, 340)
+      })
+    }
+
+    setClosingTabIds((current) => {
+      if ([...current].every((tabId) => currentIds.has(tabId))) return current
+      const next = new Set([...current].filter((tabId) => currentIds.has(tabId)))
+      return next
+    })
+
+    knownTabIdsRef.current = currentIds
+    loadingTabIdsRef.current = currentLoadingIds
+  }, [browserState.tabs])
+
+  useEffect(() => {
+    const timers = tabCloseTimers.current
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+      timers.clear()
+    }
+  }, [])
 
   const openPanel = useCallback((panel: SidePanelType): void => {
     setActivePanel(panel)
@@ -726,10 +854,20 @@ function BrowserApp(): React.ReactElement {
   }
 
   // Handlers
+  function triggerAddressRipple(): void {
+    const wrapper = addressBarWrapperRef.current
+    if (!wrapper) return
+    wrapper.classList.remove('ripple')
+    void wrapper.offsetWidth
+    wrapper.classList.add('ripple')
+    window.setTimeout(() => wrapper.classList.remove('ripple'), 550)
+  }
+
   function handleNavigate(): void {
     if (!activeTab) return
     const trimmed = inputUrl.trim()
     if (!trimmed) return
+    triggerAddressRipple()
     window.api.loadUrl(activeTab.id, trimmed)
     setIsEditingAddress(false)
     urlInputRef.current?.blur()
@@ -749,7 +887,17 @@ function BrowserApp(): React.ReactElement {
   }
   function handleCloseTab(tabId: string, e?: React.MouseEvent): void {
     if (e) e.stopPropagation()
-    window.api.closeTab(tabId)
+    if (closingTabIds.has(tabId)) return
+    setClosingTabIds((current) => {
+      const next = new Set(current)
+      next.add(tabId)
+      return next
+    })
+    const timer = window.setTimeout(() => {
+      tabCloseTimers.current.delete(tabId)
+      window.api.closeTab(tabId)
+    }, 220)
+    tabCloseTimers.current.set(tabId, timer)
   }
   function handleSwitchTab(tabId: string): void {
     window.api.switchTab(tabId)
@@ -757,7 +905,7 @@ function BrowserApp(): React.ReactElement {
   function handleTabMouseDown(tabId: string, e: React.MouseEvent): void {
     if (e.button === 1) {
       e.preventDefault()
-      window.api.closeTab(tabId)
+      handleCloseTab(tabId, e)
     }
   }
   function handleTabContextMenu(tabId: string, e: React.MouseEvent): void {
@@ -940,7 +1088,7 @@ function BrowserApp(): React.ReactElement {
             {browserState.tabs.map((tab) => (
               <div
                 key={tab.id}
-                className={`tab ${tab.id === browserState.activeTabId ? 'active' : ''} ${tab.isPinned ? 'pinned' : ''} ${dragTabId === tab.id ? 'dragging' : ''} ${dragOverTabId === tab.id ? 'drag-over' : ''}`}
+                className={`tab ${tab.id === browserState.activeTabId ? 'active' : ''} ${tab.isPinned ? 'pinned' : ''} ${tab.isLoading ? 'tab-loading' : ''} ${loadedTabIds.has(tab.id) ? 'tab-loaded' : ''} ${tab.isAudible && !tab.isMuted ? 'tab-audible' : ''} ${enteringTabIds.has(tab.id) ? 'tab-entering' : ''} ${closingTabIds.has(tab.id) ? 'tab-exiting' : ''} ${dragTabId === tab.id ? 'dragging' : ''} ${dragOverTabId === tab.id ? 'drag-over' : ''}`}
                 onClick={() => handleSwitchTab(tab.id)}
                 onMouseDown={(e) => handleTabMouseDown(tab.id, e)}
                 onContextMenu={(e) => handleTabContextMenu(tab.id, e)}
@@ -971,7 +1119,7 @@ function BrowserApp(): React.ReactElement {
                 {!tab.isPinned && <span className="tab-title">{tab.title || '新标签页'}</span>}
                 {tab.isAudible && !tab.isMuted && (
                   <button
-                    className="tab-audio"
+                    className="tab-audio tab-audio-icon"
                     onClick={(e) => {
                       e.stopPropagation()
                       window.api.toggleMuteTab(tab.id)
@@ -983,7 +1131,7 @@ function BrowserApp(): React.ReactElement {
                 )}
                 {tab.isMuted && (
                   <button
-                    className="tab-audio muted"
+                    className="tab-audio tab-audio-icon muted"
                     onClick={(e) => {
                       e.stopPropagation()
                       window.api.toggleMuteTab(tab.id)
@@ -1067,8 +1215,11 @@ function BrowserApp(): React.ReactElement {
             )}
           </div>
 
+          <div className="toolbar-divider" />
+
           <div
-            className={`address-bar ${activeTab?.isLoading ? 'loading' : ''} ${activeTab?.error ? 'has-error' : ''}`}
+            ref={addressBarWrapperRef}
+            className={`address-bar address-bar-wrapper ${activeTab?.isLoading ? 'loading' : ''} ${activeTab?.error ? 'has-error' : ''}`}
           >
             <input
               ref={urlInputRef}
@@ -1089,6 +1240,8 @@ function BrowserApp(): React.ReactElement {
               spellCheck={false}
             />
           </div>
+
+          <div className="toolbar-divider" />
 
           <div className="toolbar-actions">
             <button
@@ -1293,7 +1446,12 @@ function BrowserApp(): React.ReactElement {
               </div>
             )}
             {filteredBookmarks.map((b) => (
-              <div key={b.url} className="panel-item" onClick={() => handleOpenBookmark(b.url)}>
+              <div
+                key={b.url}
+                className="panel-item"
+                onMouseMove={handlePanelSpotlightMove}
+                onClick={() => handleOpenBookmark(b.url)}
+              >
                 {b.favicon && (
                   <img
                     className="panel-item-icon"
@@ -1352,6 +1510,7 @@ function BrowserApp(): React.ReactElement {
               <div
                 key={`${h.url}-${i}`}
                 className="panel-item"
+                onMouseMove={handlePanelSpotlightMove}
                 onClick={() => handleOpenHistory(h.url)}
               >
                 <span className="panel-item-title">{h.title || h.url}</span>
@@ -1377,7 +1536,11 @@ function BrowserApp(): React.ReactElement {
               <div className="panel-empty">还没下载过东西。</div>
             )}
             {browserState.downloads.map((d) => (
-              <div key={d.id} className="panel-item download-item">
+              <div
+                key={d.id}
+                className="panel-item download-item"
+                onMouseMove={handlePanelSpotlightMove}
+              >
                 <span className="download-filename">{d.filename}</span>
                 <span className="download-status">{getDownloadProgress(d)}</span>
                 {d.state === 'progressing' && d.totalBytes > 0 && (
@@ -2190,7 +2353,12 @@ function App_PanelOnly(): React.ReactElement {
                 </div>
               )}
               {filteredBookmarks.map((b) => (
-                <div key={b.url} className="panel-item" onClick={() => handleOpenBookmark(b.url)}>
+                <div
+                  key={b.url}
+                  className="panel-item"
+                  onMouseMove={handlePanelSpotlightMove}
+                  onClick={() => handleOpenBookmark(b.url)}
+                >
                   {b.favicon ? (
                     <img
                       className="panel-item-icon"
@@ -2273,6 +2441,7 @@ function App_PanelOnly(): React.ReactElement {
                 <div
                   key={h.id || `${h.url}-${i}`}
                   className="panel-item"
+                  onMouseMove={handlePanelSpotlightMove}
                   onClick={() => handleOpenHistory(h.url)}
                 >
                   <div className="panel-item-main">
@@ -2344,7 +2513,11 @@ function App_PanelOnly(): React.ReactElement {
                 </div>
               )}
               {filteredDownloads.map((d) => (
-                <div key={d.id} className="panel-item download-item">
+                <div
+                  key={d.id}
+                  className="panel-item download-item"
+                  onMouseMove={handlePanelSpotlightMove}
+                >
                   <div className="download-head">
                     <span className="download-filename">{d.filename || '未命名文件'}</span>
                     <span className={`download-status status-${d.state}`}>
@@ -2401,7 +2574,7 @@ function App_PanelOnly(): React.ReactElement {
               </button>
             </div>
             <div className="panel-list settings-list">
-              {!settings && <div className="panel-empty">加载中</div>}
+              {!settings && <SkeletonRows rows={4} />}
               {settings && (
                 <>
                   <div className="settings-group-title">启动与主页</div>
@@ -2566,8 +2739,54 @@ function App_PanelOnly(): React.ReactElement {
                   </div>
                   <div className="settings-row">
                     <div className="settings-copy">
+                      <label>主题色</label>
+                      <p>影响强调色、发光边线和界面氛围。</p>
+                    </div>
+                    <div className="theme-color-picker" role="radiogroup" aria-label="主题色">
+                      {THEME_COLORS.map((theme) => (
+                        <button
+                          key={theme.id}
+                          className={`theme-color-dot ${
+                            settings.themeColor === theme.id ? 'active' : ''
+                          }`}
+                          onClick={() => handleUpdateSettings({ themeColor: theme.id })}
+                          title={theme.label}
+                          aria-label={theme.label}
+                          aria-pressed={settings.themeColor === theme.id}
+                          style={{ '--dot-hue': theme.hue } as React.CSSProperties}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="settings-row settings-row-font-picker">
+                    <div className="settings-copy">
+                      <label>界面字体</label>
+                      <p>仅影响浏览器界面，不影响网页内容。</p>
+                    </div>
+                    <div className="font-picker">
+                      {UI_FONTS.map((font) => (
+                        <button
+                          key={font.id}
+                          className={`font-picker-option ${
+                            settings.uiFont === font.id ? 'active' : ''
+                          }`}
+                          data-font={font.id}
+                          onClick={() => handleUpdateSettings({ uiFont: font.id })}
+                          type="button"
+                        >
+                          <span className="font-picker-radio" />
+                          <span className="font-picker-info">
+                            <span className="font-picker-name">{font.label}</span>
+                            <span className="font-picker-preview">{font.preview}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="settings-row">
+                    <div className="settings-copy">
                       <label>强调色</label>
-                      <p>用于焦点边框、按钮和状态提示。</p>
+                      <p>兼容旧设置；Beautiful 主题优先使用上方主题色。</p>
                     </div>
                     <input
                       className="settings-color-input"
@@ -2910,7 +3129,7 @@ function App_PanelOnly(): React.ReactElement {
             </div>
             {aiShowSettings ? (
               <div className="ai-settings-content">
-                {!settings && <div className="panel-empty">加载中</div>}
+                {!settings && <SkeletonRows rows={4} />}
                 {settings && (
                   <div className="ai-settings-section">
                     <label className="settings-item">
@@ -3082,7 +3301,7 @@ function App_PanelOnly(): React.ReactElement {
               </div>
             ) : !aiStatus ? (
               <div className="panel-list ai-panel-body">
-                <div className="panel-empty">加载中</div>
+                <SkeletonRows rows={3} />
               </div>
             ) : (
               <>
@@ -3201,7 +3420,7 @@ function App_PanelOnly(): React.ReactElement {
                   />
                   <div className="ai-input-buttons">
                     <button
-                      className="ai-send-button"
+                      className={`ai-send-button ${aiLoading ? 'loading' : ''}`}
                       onClick={() => handleAIChat().catch(() => setAiError('请求异常'))}
                       disabled={aiLoading || !aiInput.trim() || !canUseAI}
                     >
@@ -3230,7 +3449,7 @@ function App_PanelOnly(): React.ReactElement {
               </button>
             </div>
             <div className="panel-list about-list">
-              {!aboutInfo && <div className="panel-empty">加载中</div>}
+              {!aboutInfo && <SkeletonRows rows={3} />}
               {aboutInfo && (
                 <div className="about-card">
                   <div className="about-app-name">{aboutInfo.appName}</div>
