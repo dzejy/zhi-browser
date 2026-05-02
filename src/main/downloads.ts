@@ -1,5 +1,5 @@
 import { DownloadItem as AppDownloadItem } from '../shared/types'
-import { shell, session, DownloadItem, app } from 'electron'
+import { shell, session, DownloadItem, app, dialog } from 'electron'
 import { readJSON, writeJSON } from './storage'
 import { getSettings } from './settings'
 import { existsSync, mkdirSync } from 'fs'
@@ -10,6 +10,7 @@ const DOWNLOADS_FILE = 'downloads.json'
 const activeDownloads: Map<string, { item: DownloadItem; appItem: AppDownloadItem }> = new Map()
 let completedDownloads: AppDownloadItem[] = []
 let onUpdateCallback: ((item: AppDownloadItem) => void) | null = null
+let onCompletedCallback: ((item: AppDownloadItem) => void) | null = null
 
 const DOWNLOAD_STATES: AppDownloadItem['state'][] = [
   'progressing',
@@ -20,6 +21,10 @@ const DOWNLOAD_STATES: AppDownloadItem['state'][] = [
 
 export function setOnDownloadUpdate(cb: (item: AppDownloadItem) => void): void {
   onUpdateCallback = cb
+}
+
+export function setOnDownloadCompleted(cb: (item: AppDownloadItem) => void): void {
+  onCompletedCallback = cb
 }
 
 export function getDownloads(): AppDownloadItem[] {
@@ -94,6 +99,20 @@ export function setupDownloadHandler(): void {
       const saveDir = existsSync(downloadDir) ? downloadDir : app.getPath('downloads')
       const savePath = getUniqueSavePath(saveDir, item.getFilename())
       item.setSavePath(savePath)
+    } else {
+      dialog
+        .showSaveDialog({
+          title: '保存文件',
+          defaultPath: join(downloadDir, item.getFilename())
+        })
+        .then((result) => {
+          if (result.canceled || !result.filePath) {
+            item.cancel()
+          } else {
+            item.setSavePath(result.filePath)
+          }
+        })
+        .catch(() => item.cancel())
     }
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 
@@ -130,6 +149,9 @@ export function setupDownloadHandler(): void {
         saveCompletedDownloads()
       }
       onUpdateCallback?.(appItem)
+      if (appItem.state === 'completed') {
+        onCompletedCallback?.(appItem)
+      }
     })
 
     onUpdateCallback?.(appItem)

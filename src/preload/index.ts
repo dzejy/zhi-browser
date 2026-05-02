@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { contextBridge, ipcRenderer } from 'electron'
 import type { BrowserLayout, SidePanelType } from '../shared/types'
+import type { AISelectionAction } from '../shared/aiTypes'
 
 const api = {
   // ===== Tab commands =====
@@ -24,12 +25,14 @@ const api = {
   duplicateTab: (tabId: string) => ipcRenderer.invoke('tab:duplicate', tabId),
   closeOtherTabs: (tabId: string) => ipcRenderer.invoke('tab:close-others', tabId),
   closeTabsToRight: (tabId: string) => ipcRenderer.invoke('tab:close-right', tabId),
+  toggleMuteTab: (tabId: string) => ipcRenderer.invoke('tab:toggle-mute', tabId),
 
   // ===== Layout =====
   setUiHeight: (height: number) => ipcRenderer.send('ui:set-height', height),
   setLayout: (layout: BrowserLayout) => ipcRenderer.send('ui:set-layout', layout),
   showPanel: (type: SidePanelType) => ipcRenderer.send('panel:show', { type }),
   hidePanel: () => ipcRenderer.send('panel:hide'),
+  popupMenu: () => ipcRenderer.invoke('menu:popup'),
 
   // ===== Find =====
   findStart: (tabId: string, text: string, options?: { forward?: boolean; matchCase?: boolean }) =>
@@ -46,6 +49,8 @@ const api = {
   updateBookmark: (id: string, title: string, url: string) =>
     ipcRenderer.invoke('bookmarks:update', id, title, url),
   clearBookmarks: () => ipcRenderer.invoke('bookmarks:clear'),
+  toggleBookmarkBar: () => ipcRenderer.invoke('bookmarkBar:toggle'),
+  getBookmarkBarVisible: () => ipcRenderer.invoke('bookmarkBar:get-visible'),
 
   // ===== History =====
   getHistory: (limit?: number, query?: string) =>
@@ -67,8 +72,39 @@ const api = {
   updateSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('settings:update', settings),
   resetSettings: () => ipcRenderer.invoke('settings:reset'),
+  resetPreferenceGroup: (group: string) => ipcRenderer.invoke('settings:reset-group', group),
+  exportSettings: () => ipcRenderer.invoke('settings:export'),
+  importSettings: () => ipcRenderer.invoke('settings:import'),
   selectDownloadPath: () => ipcRenderer.invoke('settings:select-download-path'),
   openUserDataFolder: () => ipcRenderer.invoke('settings:open-user-data'),
+
+  // ===== AdBlock Zhi =====
+  getAdBlockState: () => ipcRenderer.invoke('adblock:get-state'),
+  setAdBlockEnabled: (enabled: boolean) => ipcRenderer.invoke('adblock:set-enabled', enabled),
+  addAdBlockWhitelist: (hostname: string) => ipcRenderer.invoke('adblock:add-whitelist', hostname),
+  removeAdBlockWhitelist: (hostname: string) =>
+    ipcRenderer.invoke('adblock:remove-whitelist', hostname),
+  clearAdBlockCount: () => ipcRenderer.invoke('adblock:clear-count'),
+  getCurrentSiteForAdBlock: () => ipcRenderer.invoke('adblock:get-current-site'),
+  toggleCurrentSiteAdBlockWhitelist: () =>
+    ipcRenderer.invoke('adblock:toggle-current-site-whitelist'),
+
+  // ===== AI =====
+  getAIStatus: () => ipcRenderer.invoke('ai:get-status'),
+  testAIConnection: () => ipcRenderer.invoke('ai:test-connection'),
+  extractCurrentPage: () => ipcRenderer.invoke('ai:extract-current-page'),
+  extractSelection: () => ipcRenderer.invoke('ai:extract-selection'),
+  summarizeCurrentPage: () => ipcRenderer.invoke('ai:summarize-page'),
+  verifyCurrentPage: () => ipcRenderer.invoke('ai:verify-page'),
+  searchCurrentPage: () => ipcRenderer.invoke('ai:search-page'),
+  debateCurrentPage: () => ipcRenderer.invoke('ai:debate-page'),
+  youAskCurrentPage: () => ipcRenderer.invoke('ai:you-ask-page'),
+  explainCurrentPage: () => ipcRenderer.invoke('ai:explain-page'),
+  askCurrentPage: (question: string) => ipcRenderer.invoke('ai:ask-page', question),
+  chatWithAI: (message: string) => ipcRenderer.invoke('ai:chat', message),
+  translateSelection: () => ipcRenderer.invoke('ai:translate-selection'),
+  explainSelection: () => ipcRenderer.invoke('ai:explain-selection'),
+  summarizeSelection: () => ipcRenderer.invoke('ai:summarize-selection'),
 
   // ===== Browser state =====
   getBrowserState: () => ipcRenderer.invoke('browser:get-state'),
@@ -96,6 +132,16 @@ const api = {
     ipcRenderer.on('browser:toggle-bookmark', handler)
     return () => ipcRenderer.removeListener('browser:toggle-bookmark', handler)
   },
+  onBookmarkBarChanged: (callback: (visible: boolean) => void): (() => void) => {
+    const handler = (_event: unknown, visible: boolean): void => callback(visible)
+    ipcRenderer.on('bookmarkBar:visibility-changed', handler)
+    return () => ipcRenderer.removeListener('bookmarkBar:visibility-changed', handler)
+  },
+  onBookmarksChanged: (callback: (bookmarks: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, bookmarks: unknown): void => callback(bookmarks)
+    ipcRenderer.on('bookmarks:changed', handler)
+    return () => ipcRenderer.removeListener('bookmarks:changed', handler)
+  },
   onFindResult: (
     callback: (result: { activeMatchOrdinal: number; matches: number }) => void
   ): (() => void) => {
@@ -108,6 +154,21 @@ const api = {
     const handler = (_event: unknown, item: unknown): void => callback(item)
     ipcRenderer.on('browser:download-update', handler)
     return () => ipcRenderer.removeListener('browser:download-update', handler)
+  },
+  onDownloadCompleted: (callback: (item: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, item: unknown): void => callback(item)
+    ipcRenderer.on('browser:download-completed', handler)
+    return () => ipcRenderer.removeListener('browser:download-completed', handler)
+  },
+  onHoverUrl: (callback: (url: string) => void): (() => void) => {
+    const handler = (_event: unknown, url: string): void => callback(url)
+    ipcRenderer.on('browser:hover-url', handler)
+    return () => ipcRenderer.removeListener('browser:hover-url', handler)
+  },
+  onAdBlockStateChanged: (callback: (state: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, state: unknown): void => callback(state)
+    ipcRenderer.on('adblock:state-changed', handler)
+    return () => ipcRenderer.removeListener('adblock:state-changed', handler)
   },
   onToast: (callback: (msg: unknown) => void): (() => void) => {
     const handler = (_event: unknown, msg: unknown) => callback(msg)
@@ -138,6 +199,30 @@ const api = {
     const handler = () => callback()
     ipcRenderer.on('browser:open-settings-panel', handler)
     return () => ipcRenderer.removeListener('browser:open-settings-panel', handler)
+  },
+  onOpenAIPanel: (callback: () => void): (() => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('browser:open-ai-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-ai-panel', handler)
+  },
+  onOpenPanel: (callback: (type: SidePanelType) => void): (() => void) => {
+    const handler = (_event: unknown, type: SidePanelType): void => callback(type)
+    ipcRenderer.on('browser:open-panel', handler)
+    return () => ipcRenderer.removeListener('browser:open-panel', handler)
+  },
+  onToggleAIPanel: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback()
+    }
+    ipcRenderer.on('browser:toggle-ai-panel', handler)
+    return () => {
+      ipcRenderer.removeListener('browser:toggle-ai-panel', handler)
+    }
+  },
+  onAITriggerAction: (callback: (action: AISelectionAction) => void): (() => void) => {
+    const handler = (_event: unknown, action: AISelectionAction): void => callback(action)
+    ipcRenderer.on('ai:trigger-action', handler)
+    return () => ipcRenderer.removeListener('ai:trigger-action', handler)
   },
   onOpenAboutPanel: (callback: () => void): (() => void) => {
     const handler = () => callback()

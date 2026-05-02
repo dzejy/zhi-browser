@@ -57,7 +57,8 @@ export function addHistory(url: string, title: string): void {
   if (existingIdx >= 0) {
     // Update existing entry: bump to top, update title if better
     const existing = history[existingIdx]
-    const betterTitle = title && title !== 'New Tab' && title !== url ? title : existing.title
+    const betterTitle =
+      title && title !== 'New Tab' && title !== '新标签页' && title !== url ? title : existing.title
     history.splice(existingIdx, 1)
     history.unshift({ id: makeHistoryId(url, visitedAt), url, title: betterTitle, visitedAt })
   } else {

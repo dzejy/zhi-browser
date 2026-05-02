@@ -46,6 +46,8 @@ import {
 import { normalizeUrl, isValidNavigableUrl } from '../shared/preferences'
 import { AdBlockController } from './adblockController'
 import { registerAdBlockIPC } from './adblockIPC'
+import { registerAIIPC } from './aiIPC'
+import type { AISelectionAction } from '../shared/aiTypes'
 
 let win: BaseWindow
 let uiView: WebContentsView
@@ -57,8 +59,12 @@ let panelCloseTimeout: ReturnType<typeof setTimeout> | null = null
 let currentPanelType: SidePanelType = 'bookmarks'
 let panelReady = false
 
-const TOP_CHROME_HEIGHT = 92
-const MIN_CHROME_HEIGHT = 84
+const UI_SCALE = 1.5
+const BASE_TOP_CHROME_HEIGHT = 92
+const BASE_MIN_CHROME_HEIGHT = 84
+const TOP_CHROME_HEIGHT = Math.round(BASE_TOP_CHROME_HEIGHT * UI_SCALE)
+const MIN_CHROME_HEIGHT = Math.round(BASE_MIN_CHROME_HEIGHT * UI_SCALE)
+const TITLE_BAR_OVERLAY_HEIGHT = Math.round(34 * UI_SCALE)
 const PANEL_WIDTH = 400
 const PANEL_RIGHT_MARGIN = 8
 let currentChromeHeight = TOP_CHROME_HEIGHT
@@ -67,7 +73,8 @@ const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'history',
   'downloads',
   'settings',
-  'about'
+  'about',
+  'ai'
 ])
 
 function sendToUi(channel: string, ...args: unknown[]): void {
@@ -96,6 +103,35 @@ function sendToPanel(channel: string, ...args: unknown[]): void {
   }
 }
 
+function broadcastBookmarkBarVisibility(visible: boolean): void {
+  sendToUi('bookmarkBar:visibility-changed', visible)
+  sendToPanel('bookmarkBar:visibility-changed', visible)
+}
+
+function broadcastSettings(): void {
+  const settings = getSettings()
+  sendToUi('browser:settings', settings)
+  sendToPanel('browser:settings', settings)
+}
+
+function setBookmarkBarVisible(visible: boolean): boolean {
+  const updated = updatePreferences({ showBookmarkBar: visible })
+  installAppMenu()
+  broadcastBookmarkBarVisibility(updated.showBookmarkBar)
+  broadcastSettings()
+  return updated.showBookmarkBar
+}
+
+function toggleBookmarkBarVisible(): boolean {
+  return setBookmarkBarVisible(!getPreferences().showBookmarkBar)
+}
+
+function broadcastBookmarksChanged(): void {
+  const bookmarks = getBookmarks()
+  sendToUi('bookmarks:changed', bookmarks)
+  sendToPanel('bookmarks:changed', bookmarks)
+}
+
 function installAppMenu(): void {
   buildMenu({
     newTab: () => {
@@ -110,25 +146,41 @@ function installAppMenu(): void {
     toggleDevTools: () => tabManager.toggleDevTools(tabManager.getActiveTabId()),
     focusAddressBar: () => sendToUi('browser:focus-address-bar'),
     findInPage: () => sendToUi('browser:focus-find'),
-    showHistory: () => openSidePanelFromShortcut('history'),
-    showBookmarks: () => sendToUi('browser:open-bookmarks-panel'),
-    showDownloads: () => openSidePanelFromShortcut('downloads'),
-    showSettings: () => sendToUi('browser:open-settings-panel'),
-    showAbout: () => sendToUi('browser:open-about-panel'),
+    showHistory: () => openPanelFromCommand('history'),
+    showBookmarks: () => openPanelFromCommand('bookmarks'),
+    showDownloads: () => openPanelFromCommand('downloads'),
+    showSettings: () => openPanelFromCommand('settings'),
+    showAbout: () => openPanelFromCommand('about'),
     reopenClosedTab: () => tabManager.restoreClosed(),
     addBookmark: () => sendToUi('browser:add-bookmark'),
     openUserDataFolder: () => openUserDataFolder(),
     clearBrowsingData: () => {
-      showPanelView('settings')
+      openPanelFromCommand('settings')
       sendToPanel('browser:clear-data-confirm')
     },
-    isDevToolsEnabled: () => getSettings().devToolsEnabled
+    isDevToolsEnabled: () => getSettings().devToolsEnabled,
+    isBookmarkBarVisible: () => getPreferences().showBookmarkBar,
+    setBookmarkBarVisible
   })
 }
 
-function openSidePanelFromShortcut(type: 'history' | 'downloads'): void {
+function openPanelFromCommand(type: SidePanelType): void {
   showPanelView(type)
-  sendToUi(type === 'history' ? 'browser:open-history-panel' : 'browser:open-downloads-panel')
+  sendToUi('browser:open-panel', type)
+}
+
+function openSidePanelFromShortcut(type: 'history' | 'downloads'): void {
+  openPanelFromCommand(type)
+}
+
+function openAIPanelFromAction(action?: AISelectionAction): void {
+  showPanelView('ai')
+  sendToUi('browser:open-panel', 'ai')
+  if (action) {
+    setTimeout(() => {
+      sendToPanel('ai:trigger-action', action)
+    }, 80)
+  }
 }
 
 function createWindow(): void {
@@ -143,7 +195,7 @@ function createWindow(): void {
     titleBarOverlay: {
       color: '#1f2127',
       symbolColor: '#9498a3',
-      height: 34
+      height: TITLE_BAR_OVERLAY_HEIGHT
     }
   })
 
@@ -173,7 +225,9 @@ function createWindow(): void {
     () => {
       pushBrowserState()
     },
-    openSidePanelFromShortcut
+    openSidePanelFromShortcut,
+    openAIPanelFromAction,
+    toggleBookmarkBarVisible
   )
   installAppMenu()
 
@@ -217,6 +271,11 @@ function createWindow(): void {
     panelView,
     getActiveTabUrl: () => tabManager.getActiveTabUrl()
   })
+  registerAIIPC({
+    uiView,
+    panelView,
+    getActiveWebContents: () => tabManager.getActiveWebContents()
+  })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     panelView.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=true`)
@@ -232,6 +291,12 @@ function createWindow(): void {
     const ctrl = input.control || input.meta
     const shift = input.shift
     const key = input.key.toLowerCase()
+
+    if (input.alt && !input.control && !input.meta && !input.shift && key === 'i') {
+      event.preventDefault()
+      sendToUi('browser:toggle-ai-panel')
+      return
+    }
 
     if (ctrl && key === 'w') {
       event.preventDefault()
@@ -269,6 +334,11 @@ function createWindow(): void {
       uiView.webContents.send('browser:toggle-bookmark')
       return
     }
+    if (ctrl && shift && !input.alt && key === 'b') {
+      event.preventDefault()
+      toggleBookmarkBarVisible()
+      return
+    }
     if (ctrl && key === 'h') {
       event.preventDefault()
       openSidePanelFromShortcut('history')
@@ -281,7 +351,7 @@ function createWindow(): void {
     }
     if (ctrl && key === ',') {
       event.preventDefault()
-      sendToUi('browser:open-settings-panel')
+      openPanelFromCommand('settings')
       return
     }
     if (ctrl && (key === '+' || key === '=' || key === 'add')) {
@@ -527,13 +597,17 @@ function setupIPC(): void {
   })
 
   ipcMain.on('panel:show', (event, args: { type?: unknown }) => {
-    if (!validateUiSender(event)) return
+    if (!validateSender(event)) return
     if (!isSidePanelType(args?.type)) return
+    const panelType = args.type
     if (panelCloseTimeout) {
       clearTimeout(panelCloseTimeout)
       panelCloseTimeout = null
     }
-    showPanelView(args.type)
+    showPanelView(panelType)
+    if (event.sender === panelView?.webContents) {
+      sendToUi('browser:open-panel', panelType)
+    }
   })
 
   ipcMain.on('panel:hide', (event) => {
@@ -662,6 +736,16 @@ function setupIPC(): void {
     return tabManager.getBrowserState()
   })
 
+  ipcMain.handle('bookmarkBar:toggle', (event) => {
+    if (!validateSender(event)) return getPreferences().showBookmarkBar
+    return toggleBookmarkBarVisible()
+  })
+
+  ipcMain.handle('bookmarkBar:get-visible', (event) => {
+    if (!validateSender(event)) return true
+    return getPreferences().showBookmarkBar
+  })
+
   // Find
   ipcMain.on(
     'find:start',
@@ -692,13 +776,16 @@ function setupIPC(): void {
     'bookmark:add-current',
     (event, args: { url: string; title: string; favicon: string }) => {
       if (!validateSender(event)) return null
-      return addBookmark(args)
+      const bookmark = addBookmark(args)
+      broadcastBookmarksChanged()
+      return bookmark
     }
   )
 
   ipcMain.handle('bookmark:remove', (event, args: { url: string }) => {
     if (!validateSender(event)) return
     removeBookmark(args.url)
+    broadcastBookmarksChanged()
   })
 
   ipcMain.handle('bookmark:list', (event) => {
@@ -712,12 +799,15 @@ function setupIPC(): void {
     const nextUrl = typeof url === 'string' ? url.trim() : ''
     if (!id || !nextTitle || !nextUrl) return getBookmarks()
     if (!nextUrl.includes('.') && !nextUrl.includes('://')) return getBookmarks()
-    return updateBookmark(id, { title: nextTitle, url: nextUrl })
+    const updated = updateBookmark(id, { title: nextTitle, url: nextUrl })
+    broadcastBookmarksChanged()
+    return updated
   })
 
   ipcMain.handle('bookmarks:clear', (event) => {
     if (!validateSender(event)) return
     clearBookmarks()
+    broadcastBookmarksChanged()
   })
 
   // History
@@ -786,6 +876,7 @@ function setupIPC(): void {
     installAppMenu()
     sendToUi('browser:settings', updated)
     sendToPanel('browser:settings', updated)
+    broadcastBookmarkBarVisibility(updated.showBookmarkBar)
     return updated
   })
 
@@ -795,6 +886,7 @@ function setupIPC(): void {
     installAppMenu()
     sendToUi('browser:settings', updated)
     sendToPanel('browser:settings', updated)
+    broadcastBookmarkBarVisibility(updated.showBookmarkBar)
     return updated
   })
 
@@ -804,6 +896,7 @@ function setupIPC(): void {
     installAppMenu()
     sendToUi('browser:settings', updated)
     sendToPanel('browser:settings', updated)
+    broadcastBookmarkBarVisibility(updated.showBookmarkBar)
     return updated
   })
 
@@ -819,6 +912,7 @@ function setupIPC(): void {
       installAppMenu()
       sendToUi('browser:settings', result.prefs)
       sendToPanel('browser:settings', result.prefs)
+      broadcastBookmarkBarVisibility(result.prefs.showBookmarkBar)
     }
     return result
   })

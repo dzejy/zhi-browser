@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { AIResponse, AISelectionAction, AIStatus } from '../../shared/aiTypes'
 
 // ===== Types (mirrored from shared/types for renderer use) =====
 interface TabState {
@@ -69,8 +70,11 @@ interface ToastMessage {
   text: string
   duration: number
 }
+type AISearchMode = 'none' | 'xiaomi_web_search' | 'gemini_google_search'
+
 interface BrowserSettings {
   _schemaVersion: number
+  showBookmarkBar: boolean
   startup: {
     behavior: 'homepage' | 'newtab' | 'restoreSession' | 'specificPages'
     homepageUrl: string
@@ -110,6 +114,17 @@ interface BrowserSettings {
     devToolsEnabled: boolean
   }
   adblock: AdBlockState
+  ai: {
+    enabled: boolean
+    providerName: string
+    baseUrl: string
+    apiKey: string
+    model: string
+    temperature: number
+    maxInputChars: number
+    stream: boolean
+    searchMode?: AISearchMode
+  }
   searchEngine: 'google' | 'bing' | 'baidu' | 'duckduckgo' | 'custom'
   homepage: string
   newTabBehavior: 'homepage' | 'blank'
@@ -162,9 +177,29 @@ interface ConfirmDialogState {
   onConfirm: () => void | Promise<void>
 }
 
-type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about'
+type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about' | 'ai'
 
+const SIDE_PANEL_TYPES = new Set<SidePanelType>([
+  'bookmarks',
+  'history',
+  'downloads',
+  'settings',
+  'about',
+  'ai'
+])
+
+function isSidePanelType(value: unknown): value is SidePanelType {
+  return typeof value === 'string' && SIDE_PANEL_TYPES.has(value as SidePanelType)
+}
+
+interface AIChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+const UI_TEST_SCALE = 1.5
 const TOP_CHROME_HEIGHT = 92
+const BOOKMARK_BAR_HEIGHT = 28
 const FIND_BAR_HEIGHT = 40
 const ERROR_BAR_HEIGHT = 38
 
@@ -211,21 +246,6 @@ function formatAboutInfo(aboutInfo: AboutInfo): string {
   return `${aboutInfo.appName} ${aboutInfo.appVersion}\nElectron ${aboutInfo.electronVersion}\nChromium ${aboutInfo.chromiumVersion}\nNode.js ${aboutInfo.nodeVersion}\n数据目录 ${aboutInfo.userDataPath}`
 }
 
-function getOpenPanelType(
-  showBookmarks: boolean,
-  showHistory: boolean,
-  showDownloads: boolean,
-  showSettings: boolean,
-  showAbout: boolean
-): SidePanelType | null {
-  if (showBookmarks) return 'bookmarks'
-  if (showHistory) return 'history'
-  if (showDownloads) return 'downloads'
-  if (showSettings) return 'settings'
-  if (showAbout) return 'about'
-  return null
-}
-
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -238,6 +258,171 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 
+function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
+  return text
+    .split(/(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*)/g)
+    .filter(Boolean)
+    .flatMap((part, index): React.ReactNode[] => {
+      const key = `${keyPrefix}-inline-${index}`
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+      if (linkMatch) {
+        const href = linkMatch[2]
+        const safeHref = /^https?:\/\//i.test(href) ? href : undefined
+        return [
+          safeHref ? (
+            <a key={key} href={safeHref} target="_blank" rel="noreferrer">
+              {linkMatch[1]}
+            </a>
+          ) : (
+            linkMatch[1]
+          )
+        ]
+      }
+
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return [<code key={key}>{part.slice(1, -1)}</code>]
+      }
+
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return [<strong key={key}>{part.slice(2, -2)}</strong>]
+      }
+
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return [<em key={key}>{part.slice(1, -1)}</em>]
+      }
+
+      return part.split('\n').flatMap((piece, pieceIndex): React.ReactNode[] => {
+        if (pieceIndex === 0) return [piece]
+        return [<br key={`${key}-br-${pieceIndex}`} />, piece]
+      })
+    })
+}
+
+function renderMarkdownMessage(content: string): React.ReactNode {
+  const blocks: React.ReactNode[] = []
+  const lines = content.split('\n')
+  let paragraph: string[] = []
+  let index = 0
+
+  const flushParagraph = (): void => {
+    if (paragraph.length === 0) return
+    const blockIndex = blocks.length
+    blocks.push(
+      <p key={`p-${blockIndex}`}>{renderInlineMarkdown(paragraph.join('\n'), `p-${blockIndex}`)}</p>
+    )
+    paragraph = []
+  }
+
+  while (index < lines.length) {
+    const line = lines[index]
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      flushParagraph()
+      index += 1
+      continue
+    }
+
+    if (trimmed.startsWith('```')) {
+      flushParagraph()
+      const codeLines: string[] = []
+      index += 1
+      while (index < lines.length && !lines[index].trim().startsWith('```')) {
+        codeLines.push(lines[index])
+        index += 1
+      }
+      if (index < lines.length) index += 1
+      blocks.push(
+        <pre key={`code-${blocks.length}`}>
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      )
+      continue
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/)
+    if (headingMatch) {
+      flushParagraph()
+      const blockIndex = blocks.length
+      const headingContent = renderInlineMarkdown(headingMatch[2], `h-${blockIndex}`)
+      const headingLevel = Math.min(headingMatch[1].length, 4)
+      if (headingLevel === 1) {
+        blocks.push(<h1 key={`h-${blockIndex}`}>{headingContent}</h1>)
+      } else if (headingLevel === 2) {
+        blocks.push(<h2 key={`h-${blockIndex}`}>{headingContent}</h2>)
+      } else if (headingLevel === 3) {
+        blocks.push(<h3 key={`h-${blockIndex}`}>{headingContent}</h3>)
+      } else {
+        blocks.push(<h4 key={`h-${blockIndex}`}>{headingContent}</h4>)
+      }
+      index += 1
+      continue
+    }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      flushParagraph()
+      const items: string[] = []
+      const blockIndex = blocks.length
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*]\s+/, ''))
+        index += 1
+      }
+      blocks.push(
+        <ul key={`ul-${blockIndex}`}>
+          {items.map((item, itemIndex) => (
+            <li key={`ul-${blockIndex}-${itemIndex}`}>
+              {renderInlineMarkdown(item, `ul-${blockIndex}-${itemIndex}`)}
+            </li>
+          ))}
+        </ul>
+      )
+      continue
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      flushParagraph()
+      const items: string[] = []
+      const blockIndex = blocks.length
+      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*\d+\.\s+/, ''))
+        index += 1
+      }
+      blocks.push(
+        <ol key={`ol-${blockIndex}`}>
+          {items.map((item, itemIndex) => (
+            <li key={`ol-${blockIndex}-${itemIndex}`}>
+              {renderInlineMarkdown(item, `ol-${blockIndex}-${itemIndex}`)}
+            </li>
+          ))}
+        </ol>
+      )
+      continue
+    }
+
+    if (/^\s*>\s?/.test(line)) {
+      flushParagraph()
+      const quoteLines: string[] = []
+      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+        quoteLines.push(lines[index].replace(/^\s*>\s?/, ''))
+        index += 1
+      }
+      const blockIndex = blocks.length
+      blocks.push(
+        <blockquote key={`quote-${blockIndex}`}>
+          {renderInlineMarkdown(quoteLines.join('\n'), `quote-${blockIndex}`)}
+        </blockquote>
+      )
+      continue
+    }
+
+    paragraph.push(line)
+    index += 1
+  }
+
+  flushParagraph()
+  return <div className="ai-markdown">{blocks}</div>
+}
+
 const DENSITY_VALUES = {
   compact: { chrome: 84, tabbar: 36, toolbar: 48, tab: 32, address: 34 },
   normal: { chrome: 92, tabbar: 40, toolbar: 52, tab: 36, address: 38 },
@@ -248,11 +433,12 @@ function applyAppearance(settings: BrowserSettings | null): (() => void) | undef
   if (!settings) return undefined
   const root = document.documentElement
   const values = DENSITY_VALUES[settings.appearance.density]
-  root.style.setProperty('--chrome-height', `${values.chrome}px`)
-  root.style.setProperty('--tabbar-height', `${values.tabbar}px`)
-  root.style.setProperty('--toolbar-height', `${values.toolbar}px`)
-  root.style.setProperty('--tab-height', `${values.tab}px`)
-  root.style.setProperty('--address-bar-height', `${values.address}px`)
+  root.style.setProperty('--ui-scale', `${UI_TEST_SCALE}`)
+  root.style.setProperty('--chrome-height', `${scaleUiSize(values.chrome)}px`)
+  root.style.setProperty('--tabbar-height', `${scaleUiSize(values.tabbar)}px`)
+  root.style.setProperty('--toolbar-height', `${scaleUiSize(values.toolbar)}px`)
+  root.style.setProperty('--tab-height', `${scaleUiSize(values.tab)}px`)
+  root.style.setProperty('--address-bar-height', `${scaleUiSize(values.address)}px`)
   root.style.setProperty('--color-accent', settings.appearance.accentColor)
 
   const setTheme = (mode: 'dark' | 'light'): void => {
@@ -272,6 +458,10 @@ function applyAppearance(settings: BrowserSettings | null): (() => void) | undef
   return undefined
 }
 
+function scaleUiSize(value: number): number {
+  return Math.round(value * UI_TEST_SCALE)
+}
+
 function App(): React.ReactElement {
   return window.location.search.includes('panel=true') ? <App_PanelOnly /> : <BrowserApp />
 }
@@ -285,11 +475,7 @@ function BrowserApp(): React.ReactElement {
     recentlyClosed: []
   })
   const [inputUrl, setInputUrl] = useState('')
-  const [showBookmarks, setShowBookmarks] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-  const [showDownloads, setShowDownloads] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showAbout, setShowAbout] = useState(false)
+  const [activePanel, setActivePanel] = useState<SidePanelType | null>(null)
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
   const [hoverUrl, setHoverUrl] = useState('')
 
@@ -309,6 +495,7 @@ function BrowserApp(): React.ReactElement {
   const [adBlockState, setAdBlockState] = useState<AdBlockState | null>(null)
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [isEditingAddress, setIsEditingAddress] = useState(false)
+  const [showBookmarkBar, setShowBookmarkBar] = useState(true)
 
   const urlInputRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
@@ -328,6 +515,36 @@ function BrowserApp(): React.ReactElement {
     activeTabRef.current = activeTab
   }, [activeTab])
 
+  const openPanel = useCallback((panel: SidePanelType): void => {
+    setActivePanel(panel)
+  }, [])
+
+  const closePanel = useCallback((): void => {
+    setActivePanel(null)
+  }, [])
+
+  const togglePanel = useCallback((panel: SidePanelType): void => {
+    setActivePanel((current) => (current === panel ? null : panel))
+  }, [])
+
+  const openAIPanel = useCallback((): void => {
+    openPanel('ai')
+  }, [openPanel])
+
+  const toggleAIPanel = useCallback((): void => {
+    togglePanel('ai')
+  }, [togglePanel])
+
+  const loadPanelData = useCallback((panel: SidePanelType): void => {
+    if (panel === 'bookmarks') {
+      window.api.getBookmarks().then(setBookmarks).catch(console.error)
+    } else if (panel === 'history') {
+      window.api.getHistory(200).then(setHistoryItems).catch(console.error)
+    } else if (panel === 'settings') {
+      window.api.getSettings().then(setSettings).catch(console.error)
+    }
+  }, [])
+
   const handleToggleBookmark = useCallback(async () => {
     const tab = activeTabRef.current
     if (!tab || tab.isNewTab) return
@@ -344,12 +561,18 @@ function BrowserApp(): React.ReactElement {
     setBookmarks(updated)
   }, [showToast])
 
+  const handleToggleBookmarkBar = useCallback(async () => {
+    const visible = await window.api.toggleBookmarkBar()
+    setShowBookmarkBar(visible)
+  }, [])
+
   // Initial load — get state synchronously on mount so tab bar appears immediately
   useEffect(() => {
     window.api.getBrowserState().then((state: BrowserState) => {
       setBrowserState(state)
     })
     window.api.getBookmarks().then(setBookmarks)
+    window.api.getBookmarkBarVisible().then(setShowBookmarkBar)
     window.api.getSettings().then(setSettings)
     window.api.getAdBlockState().then(setAdBlockState).catch(console.error)
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
@@ -377,7 +600,7 @@ function BrowserApp(): React.ReactElement {
       handleToggleBookmark()
     })
     const unsub5 = window.api.onFindResult((result) => setFindResult(result))
-    const unsub6 = window.api.onDownloadUpdate(() => setShowDownloads(true))
+    const unsub6 = window.api.onDownloadUpdate(() => openPanel('downloads'))
     const unsub7 = window.api.onToast((msg: ToastMessage) => {
       setToast(msg)
       if (msg.duration > 0) {
@@ -386,51 +609,14 @@ function BrowserApp(): React.ReactElement {
       }
     })
 
-    const unsub8 = window.api.onOpenHistoryPanel(() => {
-      setShowHistory(true)
-      setShowBookmarks(false)
-      setShowDownloads(false)
-      setShowSettings(false)
-      setShowAbout(false)
-      window.api.getHistory(200).then(setHistoryItems)
-    })
-    const unsub9 = window.api.onOpenDownloadsPanel(() => {
-      setShowDownloads(true)
-      setShowBookmarks(false)
-      setShowHistory(false)
-      setShowSettings(false)
-      setShowAbout(false)
-    })
+    const unsub8 = window.api.onOpenHistoryPanel(() => openPanel('history'))
+    const unsub9 = window.api.onOpenDownloadsPanel(() => openPanel('downloads'))
     const unsub10 = window.api.onPanelClosed(() => {
-      setShowBookmarks(false)
-      setShowHistory(false)
-      setShowDownloads(false)
-      setShowSettings(false)
-      setShowAbout(false)
+      closePanel()
     })
-    const unsub11 = window.api.onOpenBookmarksPanel(() => {
-      setShowBookmarks(true)
-      setShowHistory(false)
-      setShowDownloads(false)
-      setShowSettings(false)
-      setShowAbout(false)
-      window.api.getBookmarks().then(setBookmarks).catch(console.error)
-    })
-    const unsub12 = window.api.onOpenSettingsPanel(() => {
-      setShowSettings(true)
-      setShowBookmarks(false)
-      setShowHistory(false)
-      setShowDownloads(false)
-      setShowAbout(false)
-      window.api.getSettings().then(setSettings).catch(console.error)
-    })
-    const unsub13 = window.api.onOpenAboutPanel(() => {
-      setShowAbout(true)
-      setShowBookmarks(false)
-      setShowHistory(false)
-      setShowDownloads(false)
-      setShowSettings(false)
-    })
+    const unsub11 = window.api.onOpenBookmarksPanel(() => openPanel('bookmarks'))
+    const unsub12 = window.api.onOpenSettingsPanel(() => openPanel('settings'))
+    const unsub13 = window.api.onOpenAboutPanel(() => openPanel('about'))
     const unsub14 = window.api.onAddBookmark(() => {
       handleToggleBookmark()
     })
@@ -444,6 +630,19 @@ function BrowserApp(): React.ReactElement {
     const unsub18 = window.api.onAdBlockStateChanged((state: AdBlockState) => {
       setAdBlockState(state)
       window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
+    })
+    const unsub19 = window.api.onOpenAIPanel(openAIPanel)
+    const unsub20 = window.api.onToggleAIPanel(toggleAIPanel)
+    const unsub21 = window.api.onOpenPanel((panel) => {
+      if (isSidePanelType(panel)) {
+        openPanel(panel)
+      }
+    })
+    const unsub22 = window.api.onBookmarkBarChanged((visible) => {
+      setShowBookmarkBar(visible)
+    })
+    const unsub23 = window.api.onBookmarksChanged((updatedBookmarks) => {
+      setBookmarks(updatedBookmarks)
     })
 
     return () => {
@@ -465,47 +664,46 @@ function BrowserApp(): React.ReactElement {
       unsub16()
       unsub17()
       unsub18()
+      unsub19()
+      unsub20()
+      unsub21()
+      unsub22()
+      unsub23()
     }
-  }, [handleToggleBookmark, showToast])
+  }, [closePanel, handleToggleBookmark, openAIPanel, openPanel, showToast, toggleAIPanel])
 
   const appearanceDensity = settings?.appearance.density
 
+  useEffect(() => {
+    if (activePanel) {
+      loadPanelData(activePanel)
+    }
+  }, [activePanel, loadPanelData])
+
   // Dynamic layout: chrome/page positioning is independent from side-panel visibility.
   useEffect(() => {
-    const chromeHeight = appearanceDensity
+    const baseChromeHeight = appearanceDensity
       ? DENSITY_VALUES[appearanceDensity].chrome
       : TOP_CHROME_HEIGHT
+    const chromeHeight = scaleUiSize(baseChromeHeight)
+    const bookmarkBarHeight = showBookmarkBar ? scaleUiSize(BOOKMARK_BAR_HEIGHT) : 0
     const uiViewHeight =
-      chromeHeight + (showFind ? FIND_BAR_HEIGHT : 0) + (activeTab?.error ? ERROR_BAR_HEIGHT : 0)
+      chromeHeight +
+      bookmarkBarHeight +
+      (showFind ? scaleUiSize(FIND_BAR_HEIGHT) : 0) +
+      (activeTab?.error ? scaleUiSize(ERROR_BAR_HEIGHT) : 0)
 
     window.api.setLayout({
       uiViewHeight,
       pageTop: uiViewHeight
     })
 
-    const openPanelType = getOpenPanelType(
-      showBookmarks,
-      showHistory,
-      showDownloads,
-      showSettings,
-      showAbout
-    )
-    if (openPanelType) {
-      window.api.showPanel(openPanelType)
+    if (activePanel) {
+      window.api.showPanel(activePanel)
     } else {
       window.api.hidePanel()
     }
-  }, [
-    showFind,
-    activeTab?.id,
-    activeTab?.error,
-    appearanceDensity,
-    showBookmarks,
-    showHistory,
-    showDownloads,
-    showSettings,
-    showAbout
-  ])
+  }, [showBookmarkBar, showFind, activeTab?.id, activeTab?.error, appearanceDensity, activePanel])
 
   useEffect(() => {
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
@@ -600,36 +798,24 @@ function BrowserApp(): React.ReactElement {
   async function handleShowBookmarks(): Promise<void> {
     const bms = await window.api.getBookmarks()
     setBookmarks(bms)
-    setShowBookmarks(!showBookmarks)
-    setShowHistory(false)
-    setShowDownloads(false)
-    setShowSettings(false)
-    setShowAbout(false)
+    togglePanel('bookmarks')
   }
 
   async function handleShowHistory(): Promise<void> {
     const items = await window.api.getHistory(200)
     setHistoryItems(items)
-    setShowHistory(!showHistory)
-    setShowBookmarks(false)
-    setShowDownloads(false)
-    setShowSettings(false)
-    setShowAbout(false)
+    togglePanel('history')
   }
 
   function handleShowDownloads(): void {
-    setShowDownloads(!showDownloads)
-    setShowBookmarks(false)
-    setShowHistory(false)
-    setShowSettings(false)
-    setShowAbout(false)
+    togglePanel('downloads')
   }
   function handleShowSettings(): void {
-    setShowSettings(!showSettings)
-    setShowBookmarks(false)
-    setShowHistory(false)
-    setShowDownloads(false)
-    setShowAbout(false)
+    togglePanel('settings')
+  }
+
+  function handleShowAI(): void {
+    toggleAIPanel()
   }
 
   async function handleAdBlockQuickToggle(): Promise<void> {
@@ -645,11 +831,14 @@ function BrowserApp(): React.ReactElement {
 
   function handleOpenBookmark(url: string): void {
     window.api.openUrl(url, false)
-    setShowBookmarks(false)
+    closePanel()
+  }
+  function handleOpenBookmarkFromBar(url: string): void {
+    window.api.openUrl(url, false)
   }
   function handleOpenHistory(url: string): void {
     window.api.openUrl(url, false)
-    setShowHistory(false)
+    closePanel()
   }
 
   async function handleDeleteBookmark(url: string, e: React.MouseEvent): Promise<void> {
@@ -688,7 +877,10 @@ function BrowserApp(): React.ReactElement {
     function handleKeyDown(e: KeyboardEvent): void {
       const ctrl = e.ctrlKey || e.metaKey
       const key = e.key.toLowerCase()
-      if (ctrl && key === 'l') {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && key === 'i') {
+        e.preventDefault()
+        toggleAIPanel()
+      } else if (ctrl && key === 'l') {
         e.preventDefault()
         urlInputRef.current?.focus()
         urlInputRef.current?.select()
@@ -704,32 +896,18 @@ function BrowserApp(): React.ReactElement {
         handleToggleBookmark()
       } else if (ctrl && key === 'h') {
         e.preventDefault()
-        setShowHistory(true)
-        setShowBookmarks(false)
-        setShowDownloads(false)
-        setShowSettings(false)
-        setShowAbout(false)
-        window.api.getHistory(200).then(setHistoryItems)
+        openPanel('history')
       } else if (ctrl && key === 'j') {
         e.preventDefault()
-        setShowDownloads(true)
-        setShowBookmarks(false)
-        setShowHistory(false)
-        setShowSettings(false)
-        setShowAbout(false)
+        openPanel('downloads')
       } else if (ctrl && key === ',') {
         e.preventDefault()
-        setShowSettings(true)
-        setShowBookmarks(false)
-        setShowHistory(false)
-        setShowDownloads(false)
-        setShowAbout(false)
-        window.api.getSettings().then(setSettings).catch(console.error)
+        openPanel('settings')
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleToggleBookmark])
+  }, [handleToggleBookmark, openPanel, toggleAIPanel])
 
   const isCurrentBookmarked = bookmarks.some((b) => activeTab && b.url === activeTab.url)
   const currentAdBlockHostname = currentAdBlockSite?.hostname || ''
@@ -936,25 +1114,82 @@ function BrowserApp(): React.ReactElement {
                 {isCurrentBookmarked ? '★' : '☆'}
               </button>
             )}
-            <button className="action-btn" onClick={handleShowBookmarks} title="书签">
+            <button
+              className={`action-btn ${activePanel === 'bookmarks' ? 'active' : ''}`}
+              onClick={handleShowBookmarks}
+              title="书签"
+              aria-pressed={activePanel === 'bookmarks'}
+            >
               ▤
             </button>
-            <button className="action-btn" onClick={handleShowHistory} title="历史">
+            <button
+              className={`action-btn ${activePanel === 'history' ? 'active' : ''}`}
+              onClick={handleShowHistory}
+              title="历史"
+              aria-pressed={activePanel === 'history'}
+            >
               ◷
             </button>
             {settings?.toolbar.downloadsButton !== false && (
-              <button className="action-btn" onClick={handleShowDownloads} title="下载">
+              <button
+                className={`action-btn ${activePanel === 'downloads' ? 'active' : ''}`}
+                onClick={handleShowDownloads}
+                title="下载"
+                aria-pressed={activePanel === 'downloads'}
+              >
                 ↓
               </button>
             )}
+            <button
+              className={`action-btn toolbar-ai-btn ${activePanel === 'ai' ? 'active' : ''}`}
+              onClick={handleShowAI}
+              title="AI 助手"
+              aria-pressed={activePanel === 'ai'}
+            >
+              ✦
+            </button>
             {settings?.toolbar.settingsButton !== false && (
-              <button className="action-btn" onClick={handleShowSettings} title="设置">
+              <button
+                className={`action-btn ${activePanel === 'settings' ? 'active' : ''}`}
+                onClick={handleShowSettings}
+                title="设置"
+                aria-pressed={activePanel === 'settings'}
+              >
                 ⚙
               </button>
             )}
           </div>
         </div>
       </div>
+
+      {showBookmarkBar && (
+        <div className="bookmark-bar" aria-label="书签栏">
+          {bookmarks.length > 0 ? (
+            bookmarks.map((bookmark) => (
+              <button
+                key={bookmark.id || bookmark.url}
+                className="bookmark-bar-item"
+                onClick={() => handleOpenBookmarkFromBar(bookmark.url)}
+                title={bookmark.url}
+              >
+                {bookmark.favicon && (
+                  <img
+                    className="bookmark-bar-item-icon"
+                    src={bookmark.favicon}
+                    alt=""
+                    onError={(e) => {
+                      ;(e.target as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                )}
+                <span className="bookmark-bar-item-title">{bookmark.title || bookmark.url}</span>
+              </button>
+            ))
+          ) : (
+            <span className="bookmark-bar-empty">将书签添加到书签栏以便快速访问</span>
+          )}
+        </div>
+      )}
 
       {showFind && (
         <div className="find-bar">
@@ -1023,8 +1258,8 @@ function BrowserApp(): React.ReactElement {
         </div>
       )}
 
-      {showBookmarks && <div className="panel-overlay" onClick={() => setShowBookmarks(false)} />}
-      {showBookmarks && (
+      {activePanel === 'bookmarks' && <div className="panel-overlay" onClick={closePanel} />}
+      {activePanel === 'bookmarks' && (
         <div className="panel bookmarks-panel">
           <div className="panel-header">
             <h3>书签</h3>
@@ -1035,7 +1270,14 @@ function BrowserApp(): React.ReactElement {
               onChange={(e) => setBookmarkQuery(e.target.value)}
               placeholder="搜索书签"
             />
-            <button className="panel-close" onClick={() => setShowBookmarks(false)}>
+            <button
+              className={`panel-header-btn ${showBookmarkBar ? 'active' : ''}`}
+              onClick={() => handleToggleBookmarkBar().catch(console.error)}
+              title={showBookmarkBar ? '隐藏书签栏 (Ctrl+Shift+B)' : '显示书签栏 (Ctrl+Shift+B)'}
+            >
+              {showBookmarkBar ? '隐藏书签栏' : '显示书签栏'}
+            </button>
+            <button className="panel-close" onClick={closePanel}>
               ✕
             </button>
           </div>
@@ -1076,8 +1318,8 @@ function BrowserApp(): React.ReactElement {
         </div>
       )}
 
-      {showHistory && <div className="panel-overlay" onClick={() => setShowHistory(false)} />}
-      {showHistory && (
+      {activePanel === 'history' && <div className="panel-overlay" onClick={closePanel} />}
+      {activePanel === 'history' && (
         <div className="panel history-panel">
           <div className="panel-header">
             <h3>历史</h3>
@@ -1091,7 +1333,7 @@ function BrowserApp(): React.ReactElement {
             <button className="panel-clear" onClick={handleClearHistory}>
               清空全部
             </button>
-            <button className="panel-close" onClick={() => setShowHistory(false)}>
+            <button className="panel-close" onClick={closePanel}>
               ✕
             </button>
           </div>
@@ -1121,12 +1363,12 @@ function BrowserApp(): React.ReactElement {
         </div>
       )}
 
-      {showDownloads && <div className="panel-overlay" onClick={() => setShowDownloads(false)} />}
-      {showDownloads && (
+      {activePanel === 'downloads' && <div className="panel-overlay" onClick={closePanel} />}
+      {activePanel === 'downloads' && (
         <div className="panel downloads-panel">
           <div className="panel-header">
             <h3>下载</h3>
-            <button className="panel-close" onClick={() => setShowDownloads(false)}>
+            <button className="panel-close" onClick={closePanel}>
               ✕
             </button>
           </div>
@@ -1158,14 +1400,14 @@ function BrowserApp(): React.ReactElement {
         </div>
       )}
 
-      {showSettings && settings && (
-        <div className="panel-overlay" onClick={() => setShowSettings(false)} />
+      {activePanel === 'settings' && settings && (
+        <div className="panel-overlay" onClick={closePanel} />
       )}
-      {showSettings && settings && (
+      {activePanel === 'settings' && settings && (
         <div className="panel settings-panel">
           <div className="panel-header">
             <h3>设置</h3>
-            <button className="panel-close" onClick={() => setShowSettings(false)}>
+            <button className="panel-close" onClick={closePanel}>
               ✕
             </button>
           </div>
@@ -1284,6 +1526,7 @@ function App_PanelOnly(): React.ReactElement {
   const [bookmarkQuery, setBookmarkQuery] = useState('')
   const [downloadQuery, setDownloadQuery] = useState('')
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
+  const [showBookmarkBar, setShowBookmarkBar] = useState(true)
   const [adBlockState, setAdBlockState] = useState<AdBlockState | null>(null)
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [editingBookmark, setEditingBookmark] = useState<BookmarkEditState | null>(null)
@@ -1291,7 +1534,15 @@ function App_PanelOnly(): React.ReactElement {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [aboutInfo, setAboutInfo] = useState<AboutInfo | null>(null)
   const [toast, setToast] = useState<LocalToastMessage | null>(null)
+  const [aiMessages, setAiMessages] = useState<AIChatMessage[]>([])
+  const [aiInput, setAiInput] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiStatus, setAiStatus] = useState<AIStatus | null>(null)
+  const [aiContextLoading, setAiContextLoading] = useState(false)
+  const [aiShowSettings, setAiShowSettings] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const aiMessageListRef = useRef<HTMLDivElement | null>(null)
 
   const showToast = useCallback((text: string, tone: ToastTone = 'success', duration = 2200) => {
     setToast({ id: `${Date.now()}`, text, duration, tone })
@@ -1313,9 +1564,144 @@ function App_PanelOnly(): React.ReactElement {
     []
   )
 
+  const refreshAIContext = useCallback(async (): Promise<void> => {
+    setAiContextLoading(true)
+    try {
+      try {
+        const status = await window.api.getAIStatus()
+        setAiStatus(status)
+      } catch {
+        setAiStatus(null)
+      }
+    } finally {
+      setAiContextLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (panelType !== 'ai' || aiShowSettings) return undefined
+
+    const frameId = window.requestAnimationFrame(() => {
+      const messageList = aiMessageListRef.current
+      if (messageList) {
+        messageList.scrollTop = messageList.scrollHeight
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [aiError, aiLoading, aiMessages, aiShowSettings, panelType])
+
+  const runAIAction = useCallback(
+    async (userLabel: string, request: () => Promise<AIResponse | null>): Promise<void> => {
+      if (aiLoading) return
+      setAiLoading(true)
+      setAiError(null)
+      setAiMessages((current) => [...current, { role: 'user', content: userLabel }])
+
+      try {
+        const result = await request()
+        const text = result?.text
+        if (result?.success && text) {
+          setAiMessages((current) => [...current, { role: 'assistant', content: text }])
+        } else {
+          setAiError(result?.error || '请求失败')
+        }
+      } catch {
+        setAiError('请求异常')
+      } finally {
+        setAiLoading(false)
+      }
+    },
+    [aiLoading]
+  )
+
+  const handleAISummarizePage = useCallback(async (): Promise<void> => {
+    if (aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    await runAIAction('省流版本', () => window.api.summarizeCurrentPage())
+  }, [aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleAIVerifyPage = useCallback(async (): Promise<void> => {
+    if (aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    await runAIAction('丁真一下', () => window.api.verifyCurrentPage())
+  }, [aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleAISearchPage = useCallback(async (): Promise<void> => {
+    if (aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    await runAIAction('全网通缉', () => window.api.searchCurrentPage())
+  }, [aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleAIDebatePage = useCallback(async (): Promise<void> => {
+    if (aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    await runAIAction('大司马模式', () => window.api.debateCurrentPage())
+  }, [aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleAIYouAskPage = useCallback(async (): Promise<void> => {
+    if (aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    await runAIAction('你问我答', () => window.api.youAskCurrentPage())
+  }, [aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleAITranslateSelection = useCallback(async (): Promise<void> => {
+    await runAIAction('翻译选中内容', () => window.api.translateSelection())
+  }, [runAIAction])
+
+  const handleAIExplainSelection = useCallback(async (): Promise<void> => {
+    await runAIAction('解释选中内容', () => window.api.explainSelection())
+  }, [runAIAction])
+
+  const handleAISummarizeSelection = useCallback(async (): Promise<void> => {
+    await runAIAction('总结选中内容', () => window.api.summarizeSelection())
+  }, [runAIAction])
+
+  const handleAIChat = useCallback(async (): Promise<void> => {
+    const message = aiInput.trim()
+    if (!message || aiLoading || !aiStatus?.enabled || !aiStatus?.configured) return
+    setAiInput('')
+    await runAIAction(message, () => window.api.chatWithAI(message))
+  }, [aiInput, aiLoading, aiStatus?.configured, aiStatus?.enabled, runAIAction])
+
+  const handleClearAIMessages = useCallback((): void => {
+    setAiMessages([])
+    setAiError(null)
+  }, [])
+
+  const handleCopyAIMessage = useCallback(
+    async (content: string): Promise<void> => {
+      await window.api.copyToClipboard(content)
+      showToast('已复制')
+    },
+    [showToast]
+  )
+
+  const handleAITriggeredAction = useCallback(
+    (action: AISelectionAction): void => {
+      setPanelType('ai')
+      setAiShowSettings(false)
+      setAiError(null)
+      refreshAIContext().catch(() => {
+        /* panel context will retry when opened */
+      })
+
+      if (action === 'explain-selection') {
+        handleAIExplainSelection().catch(() => setAiError('请求异常'))
+      } else if (action === 'translate-selection') {
+        handleAITranslateSelection().catch(() => setAiError('请求异常'))
+      } else if (action === 'summarize-selection') {
+        handleAISummarizeSelection().catch(() => setAiError('请求异常'))
+      }
+    },
+    [
+      handleAIExplainSelection,
+      handleAISummarizeSelection,
+      handleAITranslateSelection,
+      refreshAIContext
+    ]
+  )
+
   useEffect(() => {
     const unsubPanelType = window.api.onPanelType((type) => {
       setPanelType(type)
+      setAiShowSettings(false)
+      setAiError(null)
       setEditingBookmark(null)
       setBookmarkEditError('')
       setConfirmDialog(null)
@@ -1327,6 +1713,12 @@ function App_PanelOnly(): React.ReactElement {
       window.api.getBrowserState().then(setBrowserState)
     })
     const unsubSettings = window.api.onSettings((updated) => setSettings(updated))
+    const unsubBookmarkBar = window.api.onBookmarkBarChanged((visible) => {
+      setShowBookmarkBar(visible)
+    })
+    const unsubBookmarksChanged = window.api.onBookmarksChanged((updatedBookmarks) => {
+      setBookmarks(updatedBookmarks)
+    })
     const unsubClearData = window.api.onClearDataConfirm(() => {
       requestConfirm(
         '清除浏览数据？',
@@ -1346,6 +1738,7 @@ function App_PanelOnly(): React.ReactElement {
 
     window.api.getBrowserState().then(setBrowserState)
     window.api.getBookmarks().then(setBookmarks)
+    window.api.getBookmarkBarVisible().then(setShowBookmarkBar)
     window.api.getSettings().then(setSettings)
     window.api.getAdBlockState().then(setAdBlockState).catch(console.error)
     window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
@@ -1360,11 +1753,18 @@ function App_PanelOnly(): React.ReactElement {
       unsubBrowserState()
       unsubDownloadUpdate()
       unsubSettings()
+      unsubBookmarkBar()
+      unsubBookmarksChanged()
       unsubClearData()
       unsubAdBlock()
       if (toastTimer.current) clearTimeout(toastTimer.current)
     }
   }, [requestConfirm, showToast])
+
+  useEffect(() => {
+    const unsubscribe = window.api.onAITriggerAction(handleAITriggeredAction)
+    return () => unsubscribe()
+  }, [handleAITriggeredAction])
 
   useEffect(() => {
     return applyAppearance(settings)
@@ -1376,6 +1776,35 @@ function App_PanelOnly(): React.ReactElement {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
+      const ctrl = e.ctrlKey || e.metaKey
+      const key = e.key.toLowerCase()
+
+      if (ctrl && e.shiftKey && !e.altKey && key === 'b') {
+        e.preventDefault()
+        window.api
+          .toggleBookmarkBar()
+          .then((visible) => {
+            setShowBookmarkBar(visible)
+            showToast(visible ? '已显示书签栏' : '已隐藏书签栏')
+          })
+          .catch(console.error)
+        return
+      }
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && key === 'i') {
+        e.preventDefault()
+        setAiShowSettings(false)
+        if (panelType === 'ai') {
+          setAiError(null)
+          window.api.hidePanel()
+        } else {
+          setPanelType('ai')
+          setAiError(null)
+          window.api.showPanel('ai')
+        }
+        return
+      }
+
       if (e.key !== 'Escape') return
       if (editingBookmark) {
         setEditingBookmark(null)
@@ -1386,7 +1815,7 @@ function App_PanelOnly(): React.ReactElement {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editingBookmark, confirmDialog])
+  }, [editingBookmark, confirmDialog, panelType, showToast])
 
   useEffect(() => {
     if (panelType === 'bookmarks') {
@@ -1399,8 +1828,22 @@ function App_PanelOnly(): React.ReactElement {
       window.api.getSettings().then(setSettings)
     } else if (panelType === 'about') {
       window.api.getAboutInfo().then(setAboutInfo).catch(console.error)
+    } else if (panelType === 'ai') {
+      Promise.resolve()
+        .then(refreshAIContext)
+        .catch(() => {
+          /* context is optional */
+        })
     }
-  }, [panelType])
+  }, [
+    panelType,
+    refreshAIContext,
+    settings?.ai.enabled,
+    settings?.ai.baseUrl,
+    settings?.ai.apiKey,
+    settings?.ai.model,
+    settings?.ai.maxInputChars
+  ])
 
   const filteredBookmarks = bookmarkQuery
     ? bookmarks.filter(
@@ -1424,8 +1867,25 @@ function App_PanelOnly(): React.ReactElement {
           d.savePath.toLowerCase().includes(downloadQuery.toLowerCase())
       )
     : browserState.downloads
+  const canUseAI = Boolean(aiStatus?.enabled && aiStatus.configured)
+  const aiUnavailableText = !aiStatus?.enabled
+    ? '请在 AI 设置中启用 AI 功能。'
+    : !aiStatus?.configured
+      ? '请在 AI 设置中完成 Base URL、API Key 和模型名称。'
+      : ''
+  const activeAIPageTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId)
+  const aiPageInfo = activeAIPageTab
+    ? {
+        title: activeAIPageTab.title || '无标题',
+        url: activeAIPageTab.url || '当前页面'
+      }
+    : null
 
   function closePanel(): void {
+    if (panelType === 'ai') {
+      setAiShowSettings(false)
+      setAiError(null)
+    }
     window.api.hidePanel()
   }
 
@@ -1489,6 +1949,12 @@ function App_PanelOnly(): React.ReactElement {
       setBookmarks([])
       showToast('已处理')
     })
+  }
+
+  async function handleToggleBookmarkBar(): Promise<void> {
+    const visible = await window.api.toggleBookmarkBar()
+    setShowBookmarkBar(visible)
+    showToast(visible ? '已显示书签栏' : '已隐藏书签栏')
   }
 
   function handleRemoveHistoryEntry(item: HistoryItem, e: React.MouseEvent): void {
@@ -1566,6 +2032,32 @@ function App_PanelOnly(): React.ReactElement {
         showToast('已保存')
       })
       .catch(console.error)
+  }
+
+  function handleUpdateAISettings(patch: Partial<BrowserSettings['ai']>): void {
+    if (!settings) return
+    const nextAI = { ...settings.ai, ...patch }
+    setAiError(null)
+    setAiStatus({
+      enabled: nextAI.enabled,
+      configured: Boolean(nextAI.baseUrl && nextAI.apiKey && nextAI.model)
+    })
+    handleUpdateSettings({ ai: nextAI })
+  }
+
+  async function handleTestAIConnection(): Promise<void> {
+    try {
+      const result = await window.api.testAIConnection()
+      if (result?.success) {
+        showToast('AI 连接测试成功')
+      } else {
+        showToast(result?.error || 'AI 连接测试失败', 'error')
+      }
+    } catch {
+      showToast('AI 连接测试失败', 'error')
+    } finally {
+      refreshAIContext().catch(() => undefined)
+    }
   }
 
   async function handleSelectDownloadPath(): Promise<void> {
@@ -1666,6 +2158,13 @@ function App_PanelOnly(): React.ReactElement {
           <>
             <div className="panel-header">
               <h3>书签</h3>
+              <button
+                className={`panel-header-btn ${showBookmarkBar ? 'active' : ''}`}
+                onClick={() => handleToggleBookmarkBar().catch(console.error)}
+                title={showBookmarkBar ? '隐藏书签栏 (Ctrl+Shift+B)' : '显示书签栏 (Ctrl+Shift+B)'}
+              >
+                {showBookmarkBar ? '隐藏书签栏' : '显示书签栏'}
+              </button>
               <button className="panel-close" onClick={closePanel}>
                 ✕
               </button>
@@ -2364,6 +2863,7 @@ function App_PanelOnly(): React.ReactElement {
                       </ul>
                     )}
                   </div>
+
                   <div className="settings-row">
                     <div className="settings-copy">
                       <label>数据目录</label>
@@ -2386,6 +2886,337 @@ function App_PanelOnly(): React.ReactElement {
                   恢复默认
                 </button>
               </div>
+            )}
+          </>
+        )}
+
+        {panelType === 'ai' && (
+          <>
+            <div className="panel-header">
+              <div className="ai-panel-header-left">
+                <h3>AI 助手</h3>
+                <button
+                  className={`ai-settings-icon ${aiShowSettings ? 'active' : ''}`}
+                  onClick={() => setAiShowSettings((current) => !current)}
+                  title={aiShowSettings ? '返回 AI 助手' : 'AI 设置'}
+                  aria-pressed={aiShowSettings}
+                >
+                  ⚙
+                </button>
+              </div>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            {aiShowSettings ? (
+              <div className="ai-settings-content">
+                {!settings && <div className="panel-empty">加载中</div>}
+                {settings && (
+                  <div className="ai-settings-section">
+                    <label className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-label">启用 AI 功能</span>
+                        <span className="settings-desc">
+                          控制 AI 请求和右键选中文字 AI 操作是否可用。
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.ai.enabled}
+                        onChange={(e) => handleUpdateAISettings({ enabled: e.target.checked })}
+                      />
+                    </label>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">Provider 名称</label>
+                        <span className="settings-desc">用于标记当前 OpenAI-compatible 服务。</span>
+                      </div>
+                      <input
+                        className="settings-input"
+                        key={`ai-provider-${settings.ai.providerName}`}
+                        type="text"
+                        defaultValue={settings.ai.providerName}
+                        placeholder="OpenAI Compatible"
+                        onBlur={(e) => {
+                          if (e.target.value !== settings.ai.providerName) {
+                            handleUpdateAISettings({ providerName: e.target.value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">Base URL</label>
+                        <span className="settings-desc">例如 https://api.openai.com/v1。</span>
+                      </div>
+                      <input
+                        className="settings-input"
+                        key={`ai-base-url-${settings.ai.baseUrl}`}
+                        type="text"
+                        defaultValue={settings.ai.baseUrl}
+                        placeholder="https://api.openai.com/v1"
+                        onBlur={(e) => {
+                          if (e.target.value !== settings.ai.baseUrl) {
+                            handleUpdateAISettings({ baseUrl: e.target.value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">API Key</label>
+                        <span className="settings-desc">
+                          本阶段保存在本机 preferences.json 中。
+                        </span>
+                      </div>
+                      <input
+                        className="settings-input"
+                        key={`ai-api-key-${settings.ai.apiKey ? 'set' : 'empty'}`}
+                        type="password"
+                        defaultValue={settings.ai.apiKey}
+                        placeholder="sk-..."
+                        onBlur={(e) => {
+                          if (e.target.value !== settings.ai.apiKey) {
+                            handleUpdateAISettings({ apiKey: e.target.value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">模型名称</label>
+                        <span className="settings-desc">
+                          填写服务支持的 chat completions 模型。
+                        </span>
+                      </div>
+                      <input
+                        className="settings-input"
+                        key={`ai-model-${settings.ai.model}`}
+                        type="text"
+                        defaultValue={settings.ai.model}
+                        placeholder="gpt-4o-mini"
+                        onBlur={(e) => {
+                          if (e.target.value !== settings.ai.model) {
+                            handleUpdateAISettings({ model: e.target.value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">Temperature</label>
+                        <span className="settings-desc">数值越低越稳定，范围 0 到 2。</span>
+                      </div>
+                      <input
+                        className="settings-input settings-input-narrow"
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={settings.ai.temperature}
+                        onChange={(e) => {
+                          const value = Number.parseFloat(e.target.value)
+                          if (Number.isFinite(value) && value >= 0 && value <= 2) {
+                            handleUpdateAISettings({ temperature: value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">最大页面输入长度</label>
+                        <span className="settings-desc">长网页会在这个字符数后截断。</span>
+                      </div>
+                      <input
+                        className="settings-input settings-input-narrow"
+                        type="number"
+                        min={1000}
+                        max={100000}
+                        step={1000}
+                        value={settings.ai.maxInputChars}
+                        onChange={(e) => {
+                          const value = Number.parseInt(e.target.value, 10)
+                          if (Number.isFinite(value) && value >= 1000) {
+                            handleUpdateAISettings({ maxInputChars: value })
+                          }
+                        }}
+                      />
+                    </div>
+                    <label className="settings-item">
+                      <div className="settings-item-info">
+                        <span className="settings-label">流式输出</span>
+                        <span className="settings-desc">已预留，后续版本启用。</span>
+                      </div>
+                      <input type="checkbox" checked={settings.ai.stream} disabled />
+                    </label>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">联网搜索模式</label>
+                        <span className="settings-desc">
+                          只有支持搜索工具的 Provider 才会生效；DeepSeek API 默认不带内置联网搜索。
+                        </span>
+                      </div>
+                      <select
+                        className="settings-input"
+                        value={settings.ai.searchMode ?? 'none'}
+                        onChange={(e) =>
+                          handleUpdateAISettings({ searchMode: e.target.value as AISearchMode })
+                        }
+                      >
+                        <option value="none">不使用联网搜索</option>
+                        <option value="xiaomi_web_search">小米 MiMo Web Search</option>
+                        <option value="gemini_google_search">Google Gemini Grounding</option>
+                      </select>
+                    </div>
+                    <div className="settings-item">
+                      <div className="settings-item-info">
+                        <label className="settings-label">连接测试</label>
+                        <span className="settings-desc">使用当前配置发送一次非流式测试请求。</span>
+                      </div>
+                      <button onClick={() => handleTestAIConnection().catch(() => undefined)}>
+                        测试连接
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : !aiStatus ? (
+              <div className="panel-list ai-panel-body">
+                <div className="panel-empty">加载中</div>
+              </div>
+            ) : (
+              <>
+                <div className="ai-page-context">
+                  <div className="ai-page-context-main">
+                    <div className="ai-page-title">
+                      {aiContextLoading ? '正在刷新 AI 状态...' : aiPageInfo?.title || '无标题'}
+                    </div>
+                    <div className="ai-page-url">{aiPageInfo?.url || '当前页面'}</div>
+                  </div>
+                  <button
+                    className="ai-refresh-context"
+                    onClick={() => refreshAIContext().catch(() => undefined)}
+                    disabled={aiContextLoading || aiLoading}
+                    title="刷新 AI 状态"
+                  >
+                    ↻
+                  </button>
+                </div>
+                <div className="ai-actions">
+                  <button
+                    className="ai-action-btn"
+                    onClick={() => handleAISummarizePage().catch(() => setAiError('请求异常'))}
+                    disabled={aiLoading || !canUseAI}
+                  >
+                    省流版本
+                  </button>
+                  <button
+                    className="ai-action-btn"
+                    onClick={() => handleAIVerifyPage().catch(() => setAiError('请求异常'))}
+                    disabled={aiLoading || !canUseAI}
+                  >
+                    丁真一下
+                  </button>
+                  <button
+                    className="ai-action-btn"
+                    onClick={() => handleAISearchPage().catch(() => setAiError('请求异常'))}
+                    disabled={aiLoading || !canUseAI}
+                  >
+                    全网通缉
+                  </button>
+                  <button
+                    className="ai-action-btn"
+                    onClick={() => handleAIDebatePage().catch(() => setAiError('请求异常'))}
+                    disabled={aiLoading || !canUseAI}
+                  >
+                    大司马模式
+                  </button>
+                  <button
+                    className="ai-action-btn ai-action-btn-wide"
+                    onClick={() => handleAIYouAskPage().catch(() => setAiError('请求异常'))}
+                    disabled={aiLoading || !canUseAI}
+                  >
+                    你问我答
+                  </button>
+                </div>
+                <div className="panel-list ai-message-list" ref={aiMessageListRef}>
+                  {aiMessages.length === 0 && !aiLoading && !aiError && (
+                    <div className="ai-empty-hint">
+                      {aiUnavailableText || '选择一个网页动作，或直接聊天。'}
+                    </div>
+                  )}
+                  {aiUnavailableText && aiMessages.length > 0 && (
+                    <div className="ai-placeholder">{aiUnavailableText}</div>
+                  )}
+                  {aiMessages.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      className={`ai-message ai-message-${message.role}`}
+                    >
+                      <div className="ai-message-label">
+                        {message.role === 'user' ? '你' : 'AI'}
+                      </div>
+                      <div className="ai-message-content">
+                        {message.role === 'assistant'
+                          ? renderMarkdownMessage(message.content)
+                          : message.content}
+                        {message.role === 'assistant' && (
+                          <button
+                            className="ai-message-copy"
+                            onClick={() =>
+                              handleCopyAIMessage(message.content).catch(() =>
+                                showToast('复制失败', 'error')
+                              )
+                            }
+                            title="复制这条回答"
+                          >
+                            复制
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {aiLoading && (
+                    <div className="ai-message ai-message-assistant">
+                      <div className="ai-message-label">AI</div>
+                      <div className="ai-message-content ai-loading">思考中...</div>
+                    </div>
+                  )}
+                </div>
+                {aiError && <div className="ai-error">{aiError}</div>}
+                <div className="ai-input-area">
+                  <textarea
+                    className="ai-input"
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="问我任何问题..."
+                    disabled={!canUseAI}
+                    rows={3}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleAIChat().catch(() => setAiError('请求异常'))
+                      }
+                    }}
+                  />
+                  <div className="ai-input-buttons">
+                    <button
+                      className="ai-send-button"
+                      onClick={() => handleAIChat().catch(() => setAiError('请求异常'))}
+                      disabled={aiLoading || !aiInput.trim() || !canUseAI}
+                    >
+                      发送
+                    </button>
+                    <button
+                      className="ai-clear-button"
+                      onClick={handleClearAIMessages}
+                      disabled={aiMessages.length === 0 && !aiError}
+                    >
+                      清空
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </>
         )}

@@ -9,10 +9,14 @@ import {
   BrowserLayout,
   SidePanelType
 } from '../shared/types'
+import type { AISelectionAction } from '../shared/aiTypes'
 import { classifyInput, getWwwFallbackUrl } from './navigation'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
 import { getPreferences, getSettings } from './settings'
+
+const UI_SCALE = 1.5
+const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
 
 interface ManagedTab {
   id: string
@@ -53,24 +57,30 @@ export class TabManager {
   private activeTabId: string = ''
   private win: BaseWindow
   private uiView: WebContentsView
-  private uiViewHeight: number = 74
-  private pageTop: number = 74
+  private uiViewHeight: number = DEFAULT_UI_VIEW_HEIGHT
+  private pageTop: number = DEFAULT_UI_VIEW_HEIGHT
   private findState: FindState | null = null
   private recentlyClosed: RecentlyClosedTab[] = []
   private lastAccessedTabId: string = ''
   private onStateChange: () => void
   private onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
+  private onAIAction?: (action: AISelectionAction) => void
+  private onToggleBookmarkBar?: () => void
 
   constructor(
     win: BaseWindow,
     uiView: WebContentsView,
     onStateChange: () => void,
-    onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
+    onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void,
+    onAIAction?: (action: AISelectionAction) => void,
+    onToggleBookmarkBar?: () => void
   ) {
     this.win = win
     this.uiView = uiView
     this.onStateChange = onStateChange
     this.onOpenPanel = onOpenPanel
+    this.onAIAction = onAIAction
+    this.onToggleBookmarkBar = onToggleBookmarkBar
   }
 
   // ===== State aggregation =====
@@ -121,6 +131,17 @@ export class TabManager {
 
   getActiveTabUrl(): string {
     return this.tabs.get(this.activeTabId)?.url || ''
+  }
+
+  getActiveWebContents(): Electron.WebContents | null {
+    const tab = this.tabs.get(this.activeTabId)
+    if (!tab) return null
+    try {
+      if (tab.view.webContents.isDestroyed()) return null
+      return tab.view.webContents
+    } catch {
+      return null
+    }
   }
 
   // ===== Tab creation =====
@@ -845,6 +866,17 @@ button.primary:hover{background:#4d6faa}
 
     wc.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
+      if (
+        input.alt &&
+        !input.control &&
+        !input.meta &&
+        !input.shift &&
+        input.key.toLowerCase() === 'i'
+      ) {
+        event.preventDefault()
+        this.uiView.webContents.send('browser:toggle-ai-panel')
+        return
+      }
       if (this.handlePageKeyboard(event, input)) {
         event.preventDefault()
       }
@@ -965,6 +997,30 @@ button.primary:hover{background:#4d6faa}
         )
       }
 
+      if (params.selectionText && getPreferences().ai.enabled) {
+        menuItems.push(
+          { type: 'separator' },
+          {
+            label: '用 AI 解释',
+            click: () => {
+              this.onAIAction?.('explain-selection')
+            }
+          },
+          {
+            label: '用 AI 翻译',
+            click: () => {
+              this.onAIAction?.('translate-selection')
+            }
+          },
+          {
+            label: '用 AI 总结',
+            click: () => {
+              this.onAIAction?.('summarize-selection')
+            }
+          }
+        )
+      }
+
       if (getSettings().devToolsEnabled) {
         menuItems.push({
           type: 'separator'
@@ -1060,11 +1116,16 @@ button.primary:hover{background:#4d6faa}
       return true
     }
 
+    if (ctrl && shift && !alt && key === 'b') {
+      this.onToggleBookmarkBar?.()
+      return true
+    }
+
     if (ctrl && key === 'h') {
       if (this.onOpenPanel) {
         this.onOpenPanel('history')
       } else {
-        this.uiView.webContents.send('browser:open-history-panel')
+        this.uiView.webContents.send('browser:open-panel', 'history')
       }
       return true
     }
@@ -1073,13 +1134,13 @@ button.primary:hover{background:#4d6faa}
       if (this.onOpenPanel) {
         this.onOpenPanel('downloads')
       } else {
-        this.uiView.webContents.send('browser:open-downloads-panel')
+        this.uiView.webContents.send('browser:open-panel', 'downloads')
       }
       return true
     }
 
     if (ctrl && key === ',') {
-      this.uiView.webContents.send('browser:open-settings-panel')
+      this.uiView.webContents.send('browser:open-panel', 'settings')
       return true
     }
 

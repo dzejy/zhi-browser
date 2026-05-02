@@ -20,90 +20,106 @@ export interface MenuActions {
   openUserDataFolder: () => void
   clearBrowsingData: () => void
   isDevToolsEnabled: () => boolean
+  isBookmarkBarVisible: () => boolean
+  setBookmarkBarVisible: (visible: boolean) => void
 }
+
+let applicationMenu: Menu | null = null
 
 export function buildMenu(actions: MenuActions): void {
   const template: MenuItemConstructorOptions[] = [
     {
-      label: '&File',
+      label: '文件',
       submenu: [
-        { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: actions.newTab },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: actions.closeTab },
+        { label: '新标签页', accelerator: 'CmdOrCtrl+T', click: actions.newTab },
+        { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: actions.closeTab },
         { type: 'separator' },
-        { label: 'Quit', accelerator: 'Alt+F4', click: () => app.quit() }
+        { label: '退出', accelerator: 'Alt+F4', click: () => app.quit() }
       ]
     },
     {
-      label: '&Edit',
+      label: '编辑',
       submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', role: 'undo' },
-        { label: 'Redo', accelerator: 'CmdOrCtrl+Y', role: 'redo' },
+        { label: '撤销', accelerator: 'CmdOrCtrl+Z', role: 'undo' },
+        { label: '重做', accelerator: 'CmdOrCtrl+Y', role: 'redo' },
         { type: 'separator' },
-        { label: 'Cut', accelerator: 'CmdOrCtrl+X', role: 'cut' },
-        { label: 'Copy', accelerator: 'CmdOrCtrl+C', role: 'copy' },
-        { label: 'Paste', accelerator: 'CmdOrCtrl+V', role: 'paste' },
-        { label: 'Select All', accelerator: 'CmdOrCtrl+A', role: 'selectAll' },
+        { label: '剪切', accelerator: 'CmdOrCtrl+X', role: 'cut' },
+        { label: '复制', accelerator: 'CmdOrCtrl+C', role: 'copy' },
+        { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
+        { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find', accelerator: 'CmdOrCtrl+F', click: actions.findInPage }
+        { label: '查找', accelerator: 'CmdOrCtrl+F', click: actions.findInPage }
       ]
     },
     {
-      label: '&View',
+      label: '视图',
       submenu: [
-        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: actions.reload },
+        { label: '刷新', accelerator: 'CmdOrCtrl+R', click: actions.reload },
         { type: 'separator' },
-        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: actions.zoomIn },
-        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: actions.zoomOut },
-        { label: 'Reset Zoom', accelerator: 'CmdOrCtrl+0', click: actions.zoomReset },
+        { label: '放大', accelerator: 'CmdOrCtrl+=', click: actions.zoomIn },
+        { label: '缩小', accelerator: 'CmdOrCtrl+-', click: actions.zoomOut },
+        { label: '重置缩放', accelerator: 'CmdOrCtrl+0', click: actions.zoomReset },
         { type: 'separator' },
         {
-          label: 'Toggle DevTools',
+          label: '显示书签栏',
+          accelerator: 'CmdOrCtrl+Shift+B',
+          type: 'checkbox',
+          checked: actions.isBookmarkBarVisible(),
+          click: (menuItem) => actions.setBookmarkBarVisible(menuItem.checked)
+        },
+        { type: 'separator' },
+        {
+          label: '开发者工具',
           accelerator: 'F12',
           enabled: actions.isDevToolsEnabled(),
           click: actions.toggleDevTools
         },
         { type: 'separator' },
-        { label: 'Focus Address Bar', accelerator: 'CmdOrCtrl+L', click: actions.focusAddressBar }
+        { label: '聚焦地址栏', accelerator: 'CmdOrCtrl+L', click: actions.focusAddressBar }
       ]
     },
     {
-      label: '&History',
+      label: '历史',
       submenu: [
-        { label: 'Show History', accelerator: 'CmdOrCtrl+H', click: actions.showHistory },
+        { label: '浏览历史', accelerator: 'CmdOrCtrl+H', click: actions.showHistory },
         {
-          label: 'Reopen Closed Tab',
+          label: '恢复关闭的标签',
           accelerator: 'CmdOrCtrl+Shift+T',
           click: actions.reopenClosedTab
         }
       ]
     },
     {
-      label: '&Bookmarks',
+      label: '书签',
       submenu: [
-        { label: 'Add Bookmark', accelerator: 'CmdOrCtrl+D', click: actions.addBookmark },
-        { label: 'Show Bookmarks', accelerator: 'CmdOrCtrl+Shift+B', click: actions.showBookmarks }
+        { label: '收藏此页', accelerator: 'CmdOrCtrl+D', click: actions.addBookmark },
+        { label: '书签管理', accelerator: 'CmdOrCtrl+Shift+O', click: actions.showBookmarks }
       ]
     },
     {
-      label: '&Downloads',
-      submenu: [
-        { label: 'Show Downloads', accelerator: 'CmdOrCtrl+J', click: actions.showDownloads }
-      ]
+      label: '下载',
+      submenu: [{ label: '下载管理', accelerator: 'CmdOrCtrl+J', click: actions.showDownloads }]
     },
     {
-      label: '&Tools',
+      label: '工具',
       submenu: [
-        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: actions.showSettings },
-        { label: 'Open User Data Folder', click: actions.openUserDataFolder },
+        { label: '设置', accelerator: 'CmdOrCtrl+,', click: actions.showSettings },
+        { label: '打开数据目录', click: actions.openUserDataFolder },
         { type: 'separator' },
-        { label: 'Clear Browsing Data', click: actions.clearBrowsingData }
+        { label: '清除浏览数据', click: actions.clearBrowsingData }
       ]
     },
     {
-      label: '&Help',
-      submenu: [{ label: 'About Zhi Browser', click: actions.showAbout }]
+      label: '帮助',
+      submenu: [{ label: '关于 Zhi Browser', click: actions.showAbout }]
     }
   ]
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  applicationMenu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(applicationMenu)
+}
+
+export function popupMenu(options?: Electron.PopupOptions): void {
+  const menu = applicationMenu || Menu.getApplicationMenu()
+  menu?.popup(options)
 }

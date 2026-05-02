@@ -1,4 +1,15 @@
 // src/shared/types.ts
+import type {
+  CloseTabActivate,
+  DeepPartial,
+  NewTabFocus,
+  NewTabPosition,
+  Preferences,
+  SearchEngineId,
+  StartupBehavior,
+  ThemeMode,
+  UIDensity
+} from './preferences'
 
 export interface TabState {
   id: string
@@ -12,6 +23,8 @@ export interface TabState {
   isPinned: boolean
   zoomFactor: number
   isNewTab: boolean
+  isAudible: boolean
+  isMuted: boolean
 }
 
 export interface LoadError {
@@ -70,8 +83,8 @@ export interface DownloadItem {
   startedAt: number
 }
 
-export interface BrowserSettings {
-  searchEngine: 'google' | 'bing' | 'baidu' | 'duckduckgo'
+export interface BrowserSettings extends Preferences {
+  searchEngine: SearchEngineId
   homepage: string
   newTabBehavior: 'homepage' | 'blank'
   restoreSession: boolean
@@ -80,6 +93,36 @@ export interface BrowserSettings {
   saveHistory: boolean
   saveDownloadsHistory: boolean
   devToolsEnabled: boolean
+}
+
+export type BrowserSettingsPatch = DeepPartial<Preferences> &
+  Partial<{
+    searchEngine: SearchEngineId
+    homepage: string
+    newTabBehavior: 'homepage' | 'blank'
+    restoreSession: boolean
+    downloadPath: string
+    askWhereToSaveBeforeDownloading: boolean
+    saveHistory: boolean
+    saveDownloadsHistory: boolean
+    devToolsEnabled: boolean
+    startupBehavior: StartupBehavior
+    themeMode: ThemeMode
+    density: UIDensity
+    newTabPosition: NewTabPosition
+    newTabFocus: NewTabFocus
+    closeTabActivate: CloseTabActivate
+  }>
+
+export interface AdBlockState {
+  enabled: boolean
+  whitelist: string[]
+  blockedCount: number
+}
+
+export interface AdBlockCurrentSite {
+  hostname: string
+  canWhitelist: boolean
 }
 
 export interface AboutInfo {
@@ -104,7 +147,7 @@ export interface PersistedSession {
 
 export type ZoomAction = 'in' | 'out' | 'reset'
 
-export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about'
+export type SidePanelType = 'bookmarks' | 'history' | 'downloads' | 'settings' | 'about' | 'ai'
 
 export interface BrowserLayout {
   uiViewHeight: number
