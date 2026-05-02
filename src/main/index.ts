@@ -47,6 +47,7 @@ import { normalizeUrl, isValidNavigableUrl } from '../shared/preferences'
 import { AdBlockController } from './adblockController'
 import { registerAdBlockIPC } from './adblockIPC'
 import { registerAIIPC } from './aiIPC'
+import { setAsDefaultBrowser, isDefaultBrowser } from './default-browser'
 import type { AISelectionAction } from '../shared/aiTypes'
 
 let win: BaseWindow
@@ -184,9 +185,14 @@ function openAIPanelFromAction(action?: AISelectionAction): void {
 }
 
 function createWindow(): void {
+  const prefs = getPreferences()
+  const bounds = prefs.windowBounds
+
   win = new BaseWindow({
-    width: 1280,
-    height: 860,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
     minWidth: 600,
     minHeight: 400,
     title: 'Zhi Browser',
@@ -198,6 +204,10 @@ function createWindow(): void {
       height: TITLE_BAR_OVERLAY_HEIGHT
     }
   })
+
+  if (bounds.isMaximized) {
+    win.maximize()
+  }
 
   uiView = new WebContentsView({
     webPreferences: {
@@ -405,6 +415,18 @@ function createWindow(): void {
   })
 
   win.on('close', () => {
+    const isMaximized = win.isMaximized()
+    if (!isMaximized) {
+      const [width, height] = win.getSize()
+      const [x, y] = win.getPosition()
+      updatePreferences({
+        windowBounds: { x, y, width, height, isMaximized: false }
+      })
+    } else {
+      updatePreferences({
+        windowBounds: { ...getPreferences().windowBounds, isMaximized: true }
+      })
+    }
     saveSession()
     tabManager.destroyAll()
   })
@@ -532,6 +554,7 @@ function showPanelView(type: SidePanelType): void {
   }
   win.contentView.addChildView(panelView)
   panelVisible = true
+  panelView.webContents.focus()
 }
 
 function hidePanelView(notifyRenderer = true): void {
@@ -622,6 +645,16 @@ function setupIPC(): void {
   ipcMain.handle('menu:popup', (event) => {
     if (!validateUiSender(event)) return
     popupMenu({ window: win })
+  })
+
+  ipcMain.handle('default-browser:set', (event) => {
+    if (!validateSender(event)) return
+    setAsDefaultBrowser()
+  })
+
+  ipcMain.handle('default-browser:is-default', (event) => {
+    if (!validateSender(event)) return false
+    return isDefaultBrowser()
   })
 
   // Tab commands

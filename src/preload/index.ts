@@ -77,6 +77,8 @@ const api = {
   importSettings: () => ipcRenderer.invoke('settings:import'),
   selectDownloadPath: () => ipcRenderer.invoke('settings:select-download-path'),
   openUserDataFolder: () => ipcRenderer.invoke('settings:open-user-data'),
+  setDefaultBrowser: (): Promise<void> => ipcRenderer.invoke('default-browser:set'),
+  isDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('default-browser:is-default'),
 
   // ===== AdBlock Zhi =====
   getAdBlockState: () => ipcRenderer.invoke('adblock:get-state'),

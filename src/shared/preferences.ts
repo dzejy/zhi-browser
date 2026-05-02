@@ -92,6 +92,13 @@ export interface Preferences {
     stream: boolean
     searchMode?: AISearchMode
   }
+  windowBounds: {
+    x: number | undefined
+    y: number | undefined
+    width: number
+    height: number
+    isMaximized: boolean
+  }
 }
 
 export const BUILTIN_ENGINES: Record<
@@ -166,6 +173,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
     maxInputChars: 12000,
     stream: false,
     searchMode: 'none'
+  },
+  windowBounds: {
+    x: undefined,
+    y: undefined,
+    width: 1280,
+    height: 800,
+    isMaximized: false
   }
 }
 
@@ -370,6 +384,21 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   } else {
     prefs.ai.searchMode = prefs.ai.searchMode ?? 'none'
   }
+
+  if (!isPlainRecord(raw.windowBounds)) {
+    prefs.windowBounds = defaults.windowBounds
+  } else {
+    if (typeof prefs.windowBounds.width !== 'number') {
+      prefs.windowBounds.width = defaults.windowBounds.width
+    }
+    if (typeof prefs.windowBounds.height !== 'number') {
+      prefs.windowBounds.height = defaults.windowBounds.height
+    }
+    if (typeof prefs.windowBounds.isMaximized !== 'boolean') {
+      prefs.windowBounds.isMaximized = defaults.windowBounds.isMaximized
+    }
+  }
+
   prefs._schemaVersion = PREFERENCES_SCHEMA_VERSION
   return prefs
 }
