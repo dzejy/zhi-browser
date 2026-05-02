@@ -14,6 +14,7 @@ export type NewTabPosition = 'afterCurrent' | 'atEnd'
 export type NewTabFocus = 'foreground' | 'background'
 export type CloseTabActivate = 'left' | 'right' | 'recent'
 export type AISearchMode = 'none' | 'xiaomi_web_search' | 'gemini_google_search'
+export type DownloaderType = 'idm' | 'fdm' | 'ndm' | 'custom' | 'builtin'
 
 export interface SearchEngineConfig {
   name: string
@@ -46,6 +47,7 @@ export interface AIProviderProfile {
 export interface Preferences {
   _schemaVersion: number
   showBookmarkBar: boolean
+  webDarkMode: boolean
   startup: {
     behavior: StartupBehavior
     homepageUrl: string
@@ -71,6 +73,12 @@ export interface Preferences {
     defaultDirectory: string
     askBeforeDownload: boolean
   }
+  downloader: {
+    enabled: boolean
+    type: DownloaderType
+    path: string
+  }
+  webPanels: Array<{ url: string; title: string; pinned: boolean }>
   advanced: {
     saveHistory: boolean
     saveDownloadsHistory: boolean
@@ -120,6 +128,7 @@ export const DENSITY_VALUES = {
 export const DEFAULT_PREFERENCES: Preferences = {
   _schemaVersion: PREFERENCES_SCHEMA_VERSION,
   showBookmarkBar: true,
+  webDarkMode: false,
   startup: {
     behavior: 'newtab',
     homepageUrl: 'https://www.baidu.com',
@@ -153,6 +162,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
     defaultDirectory: '',
     askBeforeDownload: false
   },
+  downloader: {
+    enabled: false,
+    type: 'builtin',
+    path: ''
+  },
+  webPanels: [],
   advanced: {
     saveHistory: true,
     saveDownloadsHistory: true,
@@ -280,11 +295,16 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   if (!isPlainRecord(raw.toolbar)) prefs.toolbar = defaults.toolbar
   if (!isPlainRecord(raw.tabs)) prefs.tabs = defaults.tabs
   if (!isPlainRecord(raw.downloads)) prefs.downloads = defaults.downloads
+  if (!isPlainRecord(raw.downloader)) prefs.downloader = defaults.downloader
+  if (!Array.isArray(raw.webPanels)) prefs.webPanels = defaults.webPanels
   if (!isPlainRecord(raw.advanced)) prefs.advanced = defaults.advanced
   if (!isPlainRecord(raw.adblock)) prefs.adblock = defaults.adblock
   if (!isPlainRecord(raw.ai)) prefs.ai = defaults.ai
   if (typeof prefs.showBookmarkBar !== 'boolean') {
     prefs.showBookmarkBar = defaults.showBookmarkBar
+  }
+  if (typeof prefs.webDarkMode !== 'boolean') {
+    prefs.webDarkMode = defaults.webDarkMode
   }
 
   const startupBehaviors: StartupBehavior[] = [
@@ -338,6 +358,24 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   if (typeof prefs.downloads.askBeforeDownload !== 'boolean') {
     prefs.downloads.askBeforeDownload = defaults.downloads.askBeforeDownload
   }
+  const downloaderTypes: DownloaderType[] = ['idm', 'fdm', 'ndm', 'custom', 'builtin']
+  if (typeof prefs.downloader.enabled !== 'boolean') {
+    prefs.downloader.enabled = defaults.downloader.enabled
+  }
+  if (!downloaderTypes.includes(prefs.downloader.type)) {
+    prefs.downloader.type = defaults.downloader.type
+  }
+  if (typeof prefs.downloader.path !== 'string') {
+    prefs.downloader.path = defaults.downloader.path
+  }
+  prefs.webPanels = prefs.webPanels
+    .filter((panel) => isPlainRecord(panel))
+    .map((panel) => ({
+      url: typeof panel.url === 'string' ? panel.url : '',
+      title: typeof panel.title === 'string' ? panel.title : '',
+      pinned: typeof panel.pinned === 'boolean' ? panel.pinned : true
+    }))
+    .filter((panel) => panel.url)
   if (typeof prefs.advanced.saveHistory !== 'boolean') {
     prefs.advanced.saveHistory = defaults.advanced.saveHistory
   }

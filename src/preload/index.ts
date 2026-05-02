@@ -3,6 +3,35 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { BrowserLayout, SidePanelType } from '../shared/types'
 import type { AISelectionAction } from '../shared/aiTypes'
 
+const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+const normalizedPath = window.location.pathname.replace(/\\/g, '/')
+const isRendererApp = rendererUrl
+  ? window.location.href.startsWith(rendererUrl)
+  : window.location.protocol === 'file:' && normalizedPath.endsWith('/renderer/index.html')
+
+interface UserScriptSummary {
+  id: string
+  meta: {
+    name: string
+    version: string
+    description: string
+    author: string
+    match: string[]
+    [key: string]: unknown
+  }
+  enabled: boolean
+  installTime: number
+  updateTime: number
+}
+
+interface UserScriptInstallResult {
+  id?: string
+  meta?: Record<string, unknown>
+  enabled?: boolean
+  success?: boolean
+  error?: string
+}
+
 const api = {
   // ===== Tab commands =====
   createTab: (url?: string) => ipcRenderer.send('tab:create', { url }),
@@ -79,6 +108,8 @@ const api = {
   openUserDataFolder: () => ipcRenderer.invoke('settings:open-user-data'),
   setDefaultBrowser: (): Promise<void> => ipcRenderer.invoke('default-browser:set'),
   isDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('default-browser:is-default'),
+  toggleDarkMode: (): Promise<boolean> => ipcRenderer.invoke('darkMode:toggle'),
+  getDarkMode: (): Promise<boolean> => ipcRenderer.invoke('darkMode:get'),
 
   // ===== AdBlock Zhi =====
   getAdBlockState: () => ipcRenderer.invoke('adblock:get-state'),
@@ -107,6 +138,74 @@ const api = {
   translateSelection: () => ipcRenderer.invoke('ai:translate-selection'),
   explainSelection: () => ipcRenderer.invoke('ai:explain-selection'),
   summarizeSelection: () => ipcRenderer.invoke('ai:summarize-selection'),
+  translatePage: (enable: boolean): Promise<void> => ipcRenderer.invoke('translate:page', enable),
+
+  // ===== User scripts =====
+  userscriptGetAll: (): Promise<UserScriptSummary[]> => ipcRenderer.invoke('userscript:get-all'),
+  userscriptGetCode: (id: string): Promise<string> => ipcRenderer.invoke('userscript:get-code', id),
+  userscriptInstall: (code: string): Promise<UserScriptInstallResult> =>
+    ipcRenderer.invoke('userscript:install', code),
+  userscriptInstallFromUrl: (url: string): Promise<UserScriptInstallResult> =>
+    ipcRenderer.invoke('userscript:install-from-url', url),
+  userscriptRemove: (id: string): Promise<boolean> => ipcRenderer.invoke('userscript:remove', id),
+  userscriptToggle: (id: string, enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('userscript:toggle', id, enabled),
+  userscriptUpdate: (id: string): Promise<{ success: boolean; newVersion?: string; error?: string }> =>
+    ipcRenderer.invoke('userscript:update', id),
+
+  // ===== Reader mode =====
+  readerEnter: () => ipcRenderer.invoke('reader:enter'),
+  readerExit: () => ipcRenderer.invoke('reader:exit'),
+  readerCanExtract: () => ipcRenderer.invoke('reader:canExtract'),
+
+  // ===== Resource sniffer =====
+  snifferGetResources: () => ipcRenderer.invoke('sniffer:getResources'),
+  snifferGetResourcesForTab: (tabId: number) =>
+    ipcRenderer.invoke('sniffer:getResourcesForTab', tabId),
+  snifferClearTab: (tabId: number) => ipcRenderer.invoke('sniffer:clearTab', tabId),
+
+  // ===== External downloader =====
+  downloaderSend: (task: { url: string; filename?: string; referer?: string }) =>
+    ipcRenderer.invoke('downloader:send', task),
+  downloaderDetect: () => ipcRenderer.invoke('downloader:detect'),
+  downloaderGetConfig: () => ipcRenderer.invoke('downloader:getConfig'),
+
+  // ===== Tab preview =====
+  tabPreviewCapture: (tabId: number): Promise<string | null> =>
+    ipcRenderer.invoke('tabPreview:capture', tabId),
+  tabPreviewClear: (tabId: number): Promise<void> => ipcRenderer.invoke('tabPreview:clear', tabId),
+
+  // ===== Web panel =====
+  webPanelOpen: (url: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('webPanel:open', url),
+  webPanelClose: (): Promise<boolean> => ipcRenderer.invoke('webPanel:close'),
+  webPanelToggle: (): Promise<boolean> => ipcRenderer.invoke('webPanel:toggle'),
+  webPanelNavigate: (url: string): Promise<boolean> => ipcRenderer.invoke('webPanel:navigate', url),
+  webPanelIsVisible: (): Promise<boolean> => ipcRenderer.invoke('webPanel:isVisible'),
+  webPanelGetUrl: (): Promise<string | null> => ipcRenderer.invoke('webPanel:getUrl'),
+  webPanelGetSaved: (): Promise<Array<{ url: string; title: string; pinned: boolean }>> =>
+    ipcRenderer.invoke('webPanel:getSaved'),
+  webPanelSave: (panels: Array<{ url: string; title: string; pinned: boolean }>): Promise<boolean> =>
+    ipcRenderer.invoke('webPanel:save', panels),
+  webPanelRemove: (url: string): Promise<boolean> => ipcRenderer.invoke('webPanel:remove', url),
+
+  // ===== Mouse gestures =====
+  gestureExecute: (action: string, webContentsId: number): Promise<boolean> =>
+    ipcRenderer.invoke('gesture:execute', action, webContentsId),
+  gestureGetConfig: (): Promise<Array<{ pattern: string; action: string; label: string }>> =>
+    ipcRenderer.invoke('gesture:getConfig'),
+
+  // ===== Split view =====
+  splitViewOpen: (url: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('splitView:open', url),
+  splitViewClose: (): Promise<boolean> => ipcRenderer.invoke('splitView:close'),
+  splitViewGetState: (): Promise<{ active: boolean; rightUrl: string | null }> =>
+    ipcRenderer.invoke('splitView:getState'),
+  splitViewNavigate: (url: string): Promise<boolean> => ipcRenderer.invoke('splitView:navigate', url),
+  splitViewGoBack: (): Promise<boolean> => ipcRenderer.invoke('splitView:goBack'),
+  splitViewGoForward: (): Promise<boolean> => ipcRenderer.invoke('splitView:goForward'),
+  splitViewReload: (): Promise<boolean> => ipcRenderer.invoke('splitView:reload'),
+  splitViewSwap: (): Promise<string | false> => ipcRenderer.invoke('splitView:swap'),
 
   // ===== Browser state =====
   getBrowserState: () => ipcRenderer.invoke('browser:get-state'),
@@ -250,16 +349,177 @@ const api = {
     const handler = () => callback()
     ipcRenderer.on('browser:panel-closed', handler)
     return () => ipcRenderer.removeListener('browser:panel-closed', handler)
+  },
+  onResourceFound: (callback: (data: { tabId: number; count: number }) => void): (() => void) => {
+    const handler = (_event: unknown, data: { tabId: number; count: number }): void =>
+      callback(data)
+    ipcRenderer.on('sniffer:resource-found', handler)
+    return () => ipcRenderer.removeListener('sniffer:resource-found', handler)
+  },
+  onUserScriptInstalled: (callback: (data: { name: string }) => void): (() => void) => {
+    const handler = (_event: unknown, data: { name: string }): void => callback(data)
+    ipcRenderer.on('userscript:installed', handler)
+    return () => ipcRenderer.removeListener('userscript:installed', handler)
   }
 }
 
-if (process.contextIsolated) {
+window.addEventListener('message', async (event) => {
+  if (event.source !== window) return
+  if (event.data && event.data.type === 'zhi-userscript-gm-call') {
+    const { scriptId, callId, method, args } = event.data
+    try {
+      const result = await ipcRenderer.invoke('userscript:gm-call', scriptId, method, args)
+      window.postMessage(
+        {
+          type: 'zhi-userscript-gm-response',
+          scriptId,
+          callId,
+          result,
+          error: null
+        },
+        '*'
+      )
+    } catch (error) {
+      window.postMessage(
+        {
+          type: 'zhi-userscript-gm-response',
+          scriptId,
+          callId,
+          result: null,
+          error: String(error)
+        },
+        '*'
+      )
+    }
+  }
+})
+
+ipcRenderer.on('splitView:openFromMenu', (_event, url: string) => {
+  ipcRenderer.invoke('splitView:open', url).catch(() => {})
+})
+
+if (!isRendererApp) {
+  void (function setupMouseGesture() {
+    const threshold = 30
+    const knownGestures = new Set(['L', 'R', 'D', 'U', 'DR', 'UD', 'DU', 'LR', 'RD'])
+    let isGesturing = false
+    let startX = 0
+    let startY = 0
+    let lastX = 0
+    let lastY = 0
+    let directions: string[] = []
+    let suppressContextMenu = false
+    let gestureTrail: HTMLCanvasElement | null = null
+    let trailCtx: CanvasRenderingContext2D | null = null
+
+    function createTrailCanvas(): void {
+      gestureTrail = document.createElement('canvas')
+      gestureTrail.id = 'zhi-gesture-trail'
+      gestureTrail.style.cssText =
+        'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;pointer-events:none;'
+      gestureTrail.width = window.innerWidth
+      gestureTrail.height = window.innerHeight
+      const parent = document.body || document.documentElement
+      parent.appendChild(gestureTrail)
+      trailCtx = gestureTrail.getContext('2d')
+      if (trailCtx) {
+        trailCtx.strokeStyle = 'rgba(99, 102, 241, 0.6)'
+        trailCtx.lineWidth = 3
+        trailCtx.lineCap = 'round'
+        trailCtx.lineJoin = 'round'
+      }
+    }
+
+    function removeTrailCanvas(): void {
+      if (gestureTrail) {
+        gestureTrail.remove()
+        gestureTrail = null
+        trailCtx = null
+      }
+    }
+
+    function getDirection(dx: number, dy: number): string | null {
+      const absDx = Math.abs(dx)
+      const absDy = Math.abs(dy)
+      if (absDx < threshold && absDy < threshold) return null
+      if (absDx > absDy) return dx > 0 ? 'R' : 'L'
+      return dy > 0 ? 'D' : 'U'
+    }
+
+    document.addEventListener('mousedown', (event) => {
+      if (event.button !== 2) return
+      isGesturing = true
+      suppressContextMenu = false
+      startX = event.clientX
+      startY = event.clientY
+      lastX = event.clientX
+      lastY = event.clientY
+      directions = []
+    })
+
+    document.addEventListener('mousemove', (event) => {
+      if (!isGesturing) return
+
+      const dx = event.clientX - lastX
+      const dy = event.clientY - lastY
+
+      if (
+        !gestureTrail &&
+        (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10)
+      ) {
+        createTrailCanvas()
+        if (trailCtx) {
+          trailCtx.beginPath()
+          trailCtx.moveTo(startX, startY)
+        }
+      }
+      if (trailCtx) {
+        trailCtx.lineTo(event.clientX, event.clientY)
+        trailCtx.stroke()
+      }
+
+      const dir = getDirection(dx, dy)
+      if (dir && dir !== directions[directions.length - 1]) {
+        directions.push(dir)
+        lastX = event.clientX
+        lastY = event.clientY
+      }
+    })
+
+    document.addEventListener('mouseup', (event) => {
+      if (event.button !== 2) return
+      if (!isGesturing) return
+      isGesturing = false
+
+      removeTrailCanvas()
+
+      if (directions.length > 0) {
+        const pattern = directions.join('')
+        suppressContextMenu = knownGestures.has(pattern)
+        if (suppressContextMenu) {
+          ipcRenderer.invoke('gesture:execute', pattern, 0).catch(() => {})
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      }
+    })
+
+    document.addEventListener('contextmenu', (event) => {
+      if (suppressContextMenu) {
+        event.preventDefault()
+        suppressContextMenu = false
+      }
+    })
+  })()
+}
+
+if (isRendererApp && process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error('Failed to expose API:', error)
   }
-} else {
+} else if (isRendererApp) {
   // @ts-ignore: Expose API to window for fallback usage
   window.api = api
 }

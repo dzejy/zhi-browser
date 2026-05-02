@@ -60,6 +60,8 @@ export function resetPreferenceGroup(group: string): BrowserSettings {
     'toolbar',
     'tabs',
     'downloads',
+    'downloader',
+    'webPanels',
     'advanced',
     'adblock',
     'ai'
@@ -197,12 +199,15 @@ function toPreferencePatch(partial: BrowserSettingsPatch): DeepPartial<Preferenc
   const preferenceKeys: Array<keyof Preferences> = [
     '_schemaVersion',
     'showBookmarkBar',
+    'webDarkMode',
     'startup',
     'search',
     'appearance',
     'toolbar',
     'tabs',
     'downloads',
+    'downloader',
+    'webPanels',
     'advanced',
     'adblock',
     'ai'

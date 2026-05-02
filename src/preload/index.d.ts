@@ -93,6 +93,8 @@ export interface PreloadAPI {
   openUserDataFolder(): Promise<void>
   setDefaultBrowser(): Promise<void>
   isDefaultBrowser(): Promise<boolean>
+  toggleDarkMode(): Promise<boolean>
+  getDarkMode(): Promise<boolean>
 
   // AdBlock Zhi
   getAdBlockState(): Promise<AdBlockState>
@@ -119,6 +121,60 @@ export interface PreloadAPI {
   translateSelection(): Promise<AIResponse>
   explainSelection(): Promise<AIResponse>
   summarizeSelection(): Promise<AIResponse>
+  translatePage(enable: boolean): Promise<void>
+
+  // User scripts
+  userscriptGetAll(): Promise<Array<{ id: string; meta: { name: string; version: string; description: string; author: string; match: string[]; [key: string]: unknown }; enabled: boolean; installTime: number; updateTime: number }>>
+  userscriptGetCode(id: string): Promise<string>
+  userscriptInstall(code: string): Promise<{ id?: string; meta?: Record<string, unknown>; enabled?: boolean; error?: string }>
+  userscriptInstallFromUrl(url: string): Promise<{ success?: boolean; id?: string; meta?: Record<string, unknown>; error?: string }>
+  userscriptRemove(id: string): Promise<boolean>
+  userscriptToggle(id: string, enabled: boolean): Promise<boolean>
+  userscriptUpdate(id: string): Promise<{ success: boolean; newVersion?: string; error?: string }>
+
+  // Reader mode
+  readerEnter(): Promise<{ success: boolean; article?: unknown; error?: string }>
+  readerExit(): Promise<boolean>
+  readerCanExtract(): Promise<boolean>
+
+  // Resource sniffer
+  snifferGetResources(): Promise<Array<{ id: string; url: string; contentType: string; size: string | null; filename: string; tabId: number; timestamp: number; resourceType: 'video' | 'audio' | 'document' | 'archive' | 'other' }>>
+  snifferGetResourcesForTab(tabId: number): Promise<Array<{ id: string; url: string; contentType: string; size: string | null; filename: string; tabId: number; timestamp: number; resourceType: 'video' | 'audio' | 'document' | 'archive' | 'other' }>>
+  snifferClearTab(tabId: number): Promise<boolean>
+
+  // External downloader
+  downloaderSend(task: { url: string; filename?: string; referer?: string }): Promise<{ success: boolean; error?: string }>
+  downloaderDetect(): Promise<Record<string, string | null>>
+  downloaderGetConfig(): Promise<{ enabled: boolean; type: string; path: string }>
+
+  // Tab preview
+  tabPreviewCapture(tabId: number): Promise<string | null>
+  tabPreviewClear(tabId: number): Promise<void>
+
+  // Web panel
+  webPanelOpen(url: string): Promise<{ success: boolean }>
+  webPanelClose(): Promise<boolean>
+  webPanelToggle(): Promise<boolean>
+  webPanelNavigate(url: string): Promise<boolean>
+  webPanelIsVisible(): Promise<boolean>
+  webPanelGetUrl(): Promise<string | null>
+  webPanelGetSaved(): Promise<Array<{ url: string; title: string; pinned: boolean }>>
+  webPanelSave(panels: Array<{ url: string; title: string; pinned: boolean }>): Promise<boolean>
+  webPanelRemove(url: string): Promise<boolean>
+
+  // Mouse gestures
+  gestureExecute(action: string, webContentsId: number): Promise<boolean>
+  gestureGetConfig(): Promise<Array<{ pattern: string; action: string; label: string }>>
+
+  // Split view
+  splitViewOpen(url: string): Promise<{ success: boolean }>
+  splitViewClose(): Promise<boolean>
+  splitViewGetState(): Promise<{ active: boolean; rightUrl: string | null }>
+  splitViewNavigate(url: string): Promise<boolean>
+  splitViewGoBack(): Promise<boolean>
+  splitViewGoForward(): Promise<boolean>
+  splitViewReload(): Promise<boolean>
+  splitViewSwap(): Promise<string | false>
 
   // Browser state
   getBrowserState(): Promise<BrowserState>
@@ -152,6 +208,8 @@ export interface PreloadAPI {
   onClearDataConfirm(callback: () => void): () => void
   onPanelType(callback: (type: SidePanelType) => void): () => void
   onPanelClosed(callback: () => void): () => void
+  onResourceFound(callback: (data: { tabId: number; count: number }) => void): () => void
+  onUserScriptInstalled(callback: (data: { name: string }) => void): () => void
 }
 
 declare global {

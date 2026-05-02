@@ -1,4 +1,5 @@
 import { WebContentsView, BaseWindow, Menu, MenuItemConstructorOptions, clipboard } from 'electron'
+import { join } from 'path'
 import type { Input, Event } from 'electron'
 import {
   TabState,
@@ -14,6 +15,16 @@ import { classifyInput, getWwwFallbackUrl } from './navigation'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
 import { getPreferences, getSettings } from './settings'
+import {
+  applyViewBackgroundColor,
+  bindDarkModeToWebContents,
+  cleanupDarkMode,
+  injectDarkMode
+} from './darkMode'
+import { setupScriptInjection } from './userscript/injector'
+import { setupInstallInterceptor } from './userscript/install-interceptor'
+import { resourceSniffer } from './sniffer'
+import { clearTabPreview } from './tab-preview'
 
 const UI_SCALE = 1.5
 const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
@@ -21,6 +32,7 @@ const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
 interface ManagedTab {
   id: string
   view: WebContentsView
+  darkModeHiddenUntilReady: boolean
   url: string
   title: string
   favicon: string
@@ -40,6 +52,13 @@ interface CreateTabOptions {
   background?: boolean
   insertMode?: 'afterCurrent' | 'atEnd'
   pinned?: boolean
+}
+
+interface PageBounds {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 function escapeHtml(value: string): string {
@@ -66,6 +85,8 @@ export class TabManager {
   private onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
   private onAIAction?: (action: AISelectionAction) => void
   private onToggleBookmarkBar?: () => void
+  private onUserScriptInstalled?: (payload: { name: string }) => void
+  private pageBoundsProvider: ((bounds: PageBounds) => PageBounds) | null = null
 
   constructor(
     win: BaseWindow,
@@ -73,7 +94,8 @@ export class TabManager {
     onStateChange: () => void,
     onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void,
     onAIAction?: (action: AISelectionAction) => void,
-    onToggleBookmarkBar?: () => void
+    onToggleBookmarkBar?: () => void,
+    onUserScriptInstalled?: (payload: { name: string }) => void
   ) {
     this.win = win
     this.uiView = uiView
@@ -81,6 +103,7 @@ export class TabManager {
     this.onOpenPanel = onOpenPanel
     this.onAIAction = onAIAction
     this.onToggleBookmarkBar = onToggleBookmarkBar
+    this.onUserScriptInstalled = onUserScriptInstalled
   }
 
   // ===== State aggregation =====
@@ -90,6 +113,7 @@ export class TabManager {
       const tab = this.tabs.get(id)!
       return {
         id: tab.id,
+        webContentsId: tab.view.webContents.id,
         url: tab.url,
         title: tab.title,
         favicon: tab.favicon,
@@ -144,6 +168,56 @@ export class TabManager {
     }
   }
 
+  getActiveTabView(): WebContentsView | null {
+    const tab = this.tabs.get(this.activeTabId)
+    if (!tab) return null
+    try {
+      if (tab.view.webContents.isDestroyed()) return null
+      return tab.view
+    } catch {
+      return null
+    }
+  }
+
+  getAllTabViews(): WebContentsView[] {
+    return [...this.tabs.values()]
+      .filter((tab) => {
+        try {
+          return !tab.view.webContents.isDestroyed()
+        } catch {
+          return false
+        }
+      })
+      .map((tab) => tab.view)
+  }
+
+  getTabViewByWebContentsId(webContentsId: number): WebContentsView | null {
+    for (const tab of this.tabs.values()) {
+      try {
+        if (!tab.view.webContents.isDestroyed() && tab.view.webContents.id === webContentsId) {
+          return tab.view
+        }
+      } catch {
+        /* ignore destroyed views */
+      }
+    }
+    return null
+  }
+
+  setPageBoundsProvider(provider: ((bounds: PageBounds) => PageBounds) | null): void {
+    this.pageBoundsProvider = provider
+    this.updateLayout()
+  }
+
+  releaseDarkModeHiddenViews(): void {
+    for (const tab of this.tabs.values()) {
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(true)
+      applyViewBackgroundColor(tab.view)
+    }
+    this.updateLayout()
+  }
+
   // ===== Tab creation =====
 
   createTab(url?: string, options?: CreateTabOptions): string {
@@ -159,15 +233,19 @@ export class TabManager {
 
     const view = new WebContentsView({
       webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true
       }
     })
+    applyViewBackgroundColor(view)
+    bindDarkModeToWebContents(view.webContents)
 
     const tab: ManagedTab = {
       id,
       view,
+      darkModeHiddenUntilReady: Boolean(!isNewTab && targetUrl && prefs.webDarkMode),
       url: targetUrl || 'about:blank',
       title: isNewTab ? '新标签页' : '',
       favicon: '',
@@ -190,6 +268,17 @@ export class TabManager {
     this.bindWebContentsEvents(tab)
     this.setupWindowOpenHandler(tab)
     this.setupContextMenu(tab)
+    setupScriptInjection(view.webContents)
+    setupInstallInterceptor(
+      view.webContents,
+      () => this.win,
+      (targetUrl) => this.createTab(targetUrl),
+      (payload) => this.onUserScriptInstalled?.(payload)
+    )
+
+    if (tab.darkModeHiddenUntilReady) {
+      tab.view.setVisible(false)
+    }
 
     const openInBackground = options?.background ?? prefs.tabs.newTabFocus === 'background'
     if (!openInBackground || !this.activeTabId) {
@@ -200,6 +289,7 @@ export class TabManager {
     }
 
     if (!isNewTab && targetUrl) {
+      this.prepareDarkModeForNavigation(tab)
       view.webContents.loadURL(targetUrl).catch(() => {
         /* did-fail-load renders the error page */
       })
@@ -212,6 +302,7 @@ export class TabManager {
   closeTab(tabId: string): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    const closedWebContentsId = tab.view.webContents.id
     const closedIndex = this.tabOrder.indexOf(tabId)
     const wasActive = tabId === this.activeTabId
 
@@ -239,6 +330,9 @@ export class TabManager {
     } catch {
       // already closed
     }
+
+    resourceSniffer.clearResourcesForTab(closedWebContentsId)
+    clearTabPreview(closedWebContentsId)
 
     this.tabs.delete(tabId)
     this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
@@ -379,6 +473,8 @@ export class TabManager {
     this.activeTabId = tabId
     const newTab = this.tabs.get(tabId)!
 
+    applyViewBackgroundColor(newTab.view)
+    newTab.view.setVisible(!newTab.darkModeHiddenUntilReady)
     this.win.contentView.addChildView(newTab.view)
     this.updateLayout()
 
@@ -402,6 +498,9 @@ export class TabManager {
       tab.url = 'about:blank'
       tab.title = '新标签页'
       tab.error = null
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(true)
+      applyViewBackgroundColor(tab.view)
       this.pushState()
       return
     }
@@ -410,6 +509,7 @@ export class TabManager {
     tab.error = null
     tab.wwwFallbackAttempted = false
     tab.url = classified.value
+    this.prepareDarkModeForNavigation(tab)
     tab.view.webContents.loadURL(classified.value)
     this.pushState()
   }
@@ -417,6 +517,7 @@ export class TabManager {
   goBack(tabId: string): void {
     const tab = this.tabs.get(tabId)
     if (tab && tab.view.webContents.navigationHistory.canGoBack()) {
+      this.prepareDarkModeForNavigation(tab)
       tab.view.webContents.navigationHistory.goBack()
     }
   }
@@ -424,6 +525,7 @@ export class TabManager {
   goForward(tabId: string): void {
     const tab = this.tabs.get(tabId)
     if (tab && tab.view.webContents.navigationHistory.canGoForward()) {
+      this.prepareDarkModeForNavigation(tab)
       tab.view.webContents.navigationHistory.goForward()
     }
   }
@@ -433,6 +535,7 @@ export class TabManager {
     if (tab) {
       tab.error = null
       tab.wwwFallbackAttempted = false
+      this.prepareDarkModeForNavigation(tab)
       tab.view.webContents.reload()
       this.pushState()
     }
@@ -451,6 +554,7 @@ export class TabManager {
     const url = tab.error.url || tab.url
     tab.error = null
     tab.wwwFallbackAttempted = false
+    this.prepareDarkModeForNavigation(tab)
     tab.view.webContents.loadURL(url)
     this.pushState()
   }
@@ -613,12 +717,14 @@ export class TabManager {
 
     const activeTab = this.tabs.get(this.activeTabId)
     if (activeTab) {
-      activeTab.view.setBounds({
+      const pageHeight = Math.max(0, height - this.pageTop)
+      const pageBounds = {
         x: 0,
         y: this.pageTop,
         width,
-        height: Math.max(0, height - this.pageTop)
-      })
+        height: pageHeight
+      }
+      activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
     }
   }
 
@@ -719,6 +825,7 @@ button.primary:hover{background:#4d6faa}
     let lastErrorAt = 0
 
     wc.on('did-start-loading', () => {
+      this.prepareDarkModeForNavigation(tab)
       tab.isLoading = true
       tab.isNewTab = false
       this.uiView.webContents.send('browser:hover-url', '')
@@ -730,7 +837,21 @@ button.primary:hover{background:#4d6faa}
       tab.isLoading = false
       tab.canGoBack = wc.navigationHistory.canGoBack()
       tab.canGoForward = wc.navigationHistory.canGoForward()
+      this.revealAfterDarkModeNavigation(tab)
       this.pushState()
+    })
+
+    wc.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame) return
+      this.prepareDarkModeForNavigation(tab, !isInPlace)
+    })
+
+    wc.on('dom-ready', () => {
+      this.revealAfterDarkModeNavigation(tab)
+    })
+
+    wc.on('destroyed', () => {
+      cleanupDarkMode(wc)
     })
 
     wc.on('did-navigate', (_event, url) => {
@@ -883,6 +1004,46 @@ button.primary:hover{background:#4d6faa}
     })
   }
 
+  private prepareDarkModeForNavigation(tab: ManagedTab, hideUntilReady = true): void {
+    const enabled = getPreferences().webDarkMode
+    applyViewBackgroundColor(tab.view)
+    if (enabled) {
+      if (hideUntilReady) {
+        tab.darkModeHiddenUntilReady = true
+        tab.view.setVisible(false)
+      }
+      injectDarkMode(tab.view.webContents).catch(() => {
+        /* page may reject user CSS while navigating */
+      })
+    } else {
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(true)
+    }
+  }
+
+  private revealAfterDarkModeNavigation(tab: ManagedTab): void {
+    const enabled = getPreferences().webDarkMode
+    if (enabled) {
+      injectDarkMode(tab.view.webContents)
+        .catch(() => {
+          /* page may reject user CSS while navigating */
+        })
+        .then(() => {
+          tab.darkModeHiddenUntilReady = false
+          tab.view.setVisible(true)
+          if (tab.id === this.activeTabId) {
+            this.updateLayout()
+          }
+        })
+        .catch(() => {
+          /* a later dom-ready or did-stop-loading event can reveal the view */
+        })
+    } else {
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(true)
+    }
+  }
+
   private setupWindowOpenHandler(tab: ManagedTab): void {
     tab.view.webContents.setWindowOpenHandler(({ url }) => {
       if (url && url !== 'about:blank') {
@@ -962,6 +1123,12 @@ button.primary:hover{background:#4d6faa}
       if (params.linkURL) {
         menuItems.push(
           { label: '在新标签页打开', click: () => this.createTab(params.linkURL) },
+          {
+            label: '在右侧分屏打开',
+            click: () => {
+              this.uiView.webContents.send('splitView:openFromMenu', params.linkURL)
+            }
+          },
           {
             label: '复制链接',
             click: () => {
