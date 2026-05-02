@@ -1,4 +1,5 @@
 import { app, shell, dialog } from 'electron'
+import { execSync } from 'child_process'
 
 export function setAsDefaultBrowser(): void {
   const protocols = ['http', 'https']
@@ -11,6 +12,48 @@ export function setAsDefaultBrowser(): void {
   }
 
   if (process.platform === 'win32') {
+    try {
+      const exePath = process.execPath
+
+      // 1. 注册为 StartMenuInternet 候选浏览器
+      const browserPath = 'HKCU\\Software\\Clients\\StartMenuInternet\\ZhiBrowser'
+      execSync(`reg add "${browserPath}" /ve /d "Zhi Browser" /f`)
+      
+      const capabilitiesPath = `${browserPath}\\Capabilities`
+      execSync(`reg add "${capabilitiesPath}" /v ApplicationName /d "Zhi Browser" /f`)
+      execSync(`reg add "${capabilitiesPath}" /v ApplicationDescription /d "Zhi Browser 个人 AI 浏览器" /f`)
+      
+      const urlAssocPath = `${capabilitiesPath}\\URLAssociations`
+      execSync(`reg add "${urlAssocPath}" /v http /d "ZhiBrowserURL" /f`)
+      execSync(`reg add "${urlAssocPath}" /v https /d "ZhiBrowserURL" /f`)
+      
+      const browserDefaultIconPath = `${browserPath}\\DefaultIcon`
+      execSync(`reg add "${browserDefaultIconPath}" /ve /d "${exePath},0" /f`)
+      
+      const browserCommandPath = `${browserPath}\\shell\\open\\command`
+      execSync(`reg add "${browserCommandPath}" /ve /d "\\"${exePath}\\"" /f`)
+
+      // 2. 注册 URL 协议类
+      const urlClassPath = 'HKCU\\Software\\Classes\\ZhiBrowserURL'
+      execSync(`reg add "${urlClassPath}" /ve /d "Zhi Browser URL" /f`)
+      execSync(`reg add "${urlClassPath}" /v "URL Protocol" /d "" /f`)
+      
+      const urlClassDefaultIconPath = `${urlClassPath}\\DefaultIcon`
+      execSync(`reg add "${urlClassDefaultIconPath}" /ve /d "${exePath},0" /f`)
+      
+      const urlClassCommandPath = `${urlClassPath}\\shell\\open\\command`
+      execSync(`reg add "${urlClassCommandPath}" /ve /d "\\"${exePath}\\" \\"%1\\"" /f`)
+
+      // 3. 注册 RegisteredApplications
+      execSync(`reg add "HKCU\\Software\\RegisteredApplications" /v ZhiBrowser /d "Software\\Clients\\StartMenuInternet\\ZhiBrowser\\Capabilities" /f`)
+
+      // 4. 注册文件关联 Capabilities
+      execSync(`reg add "HKCU\\Software\\Classes\\.htm\\OpenWithProgids" /v ZhiBrowserURL /d "" /f`)
+      execSync(`reg add "HKCU\\Software\\Classes\\.html\\OpenWithProgids" /v ZhiBrowserURL /d "" /f`)
+    } catch (error) {
+      console.error('[default-browser] Failed to write registry:', error)
+    }
+
     dialog
       .showMessageBox({
         type: 'info',
