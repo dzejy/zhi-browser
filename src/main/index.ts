@@ -1,4 +1,4 @@
-import { app, BaseWindow, WebContentsView, ipcMain, clipboard } from 'electron'
+import { app, BaseWindow, WebContentsView, ipcMain, clipboard, session } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { TabManager } from './tabs'
@@ -14,6 +14,7 @@ import { getHistory, clearHistory, removeHistoryEntry } from './history'
 import {
   setupDownloadHandler,
   setOnDownloadUpdate,
+  setOnDownloadCompleted,
   openDownloadFile,
   showInFolder,
   loadCompletedDownloads,
@@ -24,14 +25,27 @@ import {
 } from './downloads'
 import {
   getSettings,
+  getPreferences,
+  updatePreferences,
   updateSettings,
   resetSettings,
+  resetPreferenceGroup,
+  exportPreferencesToFile,
+  importPreferencesFromFile,
   selectDownloadPath,
   openUserDataFolder,
   getUserDataPath
 } from './settings'
-import { buildMenu } from './menu'
-import { PersistedSession, BrowserSettings, BrowserLayout, SidePanelType } from '../shared/types'
+import { buildMenu, popupMenu } from './menu'
+import {
+  PersistedSession,
+  BrowserSettingsPatch,
+  BrowserLayout,
+  SidePanelType
+} from '../shared/types'
+import { normalizeUrl, isValidNavigableUrl } from '../shared/preferences'
+import { AdBlockController } from './adblockController'
+import { registerAdBlockIPC } from './adblockIPC'
 
 let win: BaseWindow
 let uiView: WebContentsView
@@ -43,11 +57,11 @@ let panelCloseTimeout: ReturnType<typeof setTimeout> | null = null
 let currentPanelType: SidePanelType = 'bookmarks'
 let panelReady = false
 
-const TOP_CHROME_HEIGHT = 74
-const PANEL_WIDTH = 380
-const PANEL_HEIGHT = 386
+const TOP_CHROME_HEIGHT = 92
+const MIN_CHROME_HEIGHT = 84
+const PANEL_WIDTH = 400
 const PANEL_RIGHT_MARGIN = 8
-const PANEL_TOP = TOP_CHROME_HEIGHT
+let currentChromeHeight = TOP_CHROME_HEIGHT
 const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'bookmarks',
   'history',
@@ -123,7 +137,14 @@ function createWindow(): void {
     height: 860,
     minWidth: 600,
     minHeight: 400,
-    title: 'Zhi Browser'
+    title: 'Zhi Browser',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#1f2127',
+      symbolColor: '#9498a3',
+      height: 34
+    }
   })
 
   uiView = new WebContentsView({
@@ -166,13 +187,35 @@ function createWindow(): void {
       sandbox: true
     }
   })
-  panelView.setBackgroundColor('#2a2a2a')
+  panelView.setBackgroundColor('#1e2026')
   panelView.webContents.on('did-finish-load', () => {
     panelReady = true
     sendPanelType()
   })
   panelView.webContents.on('did-start-loading', () => {
     panelReady = false
+  })
+
+  const adBlockController = new AdBlockController({
+    session: session.defaultSession,
+    getPreferences,
+    updatePreferences,
+    sendToUI: (channel, payload) => {
+      if (!uiView.webContents.isDestroyed()) {
+        uiView.webContents.send(channel, payload)
+      }
+      if (panelView && !panelView.webContents.isDestroyed()) {
+        panelView.webContents.send(channel, payload)
+      }
+    },
+    ignoredWebContentsIds: [uiView.webContents.id, panelView.webContents.id]
+  })
+  adBlockController.start()
+  registerAdBlockIPC({
+    controller: adBlockController,
+    uiView,
+    panelView,
+    getActiveTabUrl: () => tabManager.getActiveTabUrl()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -199,6 +242,11 @@ function createWindow(): void {
       event.preventDefault()
       tabManager.createTab()
       uiView.webContents.send('browser:focus-address-bar')
+      return
+    }
+    if (ctrl && shift && key === 't') {
+      event.preventDefault()
+      tabManager.restoreClosed()
       return
     }
     if (ctrl && key === 'l') {
@@ -229,6 +277,26 @@ function createWindow(): void {
     if (ctrl && key === 'j') {
       event.preventDefault()
       openSidePanelFromShortcut('downloads')
+      return
+    }
+    if (ctrl && key === ',') {
+      event.preventDefault()
+      sendToUi('browser:open-settings-panel')
+      return
+    }
+    if (ctrl && (key === '+' || key === '=' || key === 'add')) {
+      event.preventDefault()
+      tabManager.zoomIn(tabManager.getActiveTabId())
+      return
+    }
+    if (ctrl && (key === '-' || key === 'subtract')) {
+      event.preventDefault()
+      tabManager.zoomOut(tabManager.getActiveTabId())
+      return
+    }
+    if (ctrl && key === '0') {
+      event.preventDefault()
+      tabManager.zoomReset(tabManager.getActiveTabId())
       return
     }
     if (ctrl && key === 'tab') {
@@ -275,12 +343,12 @@ function createWindow(): void {
 function updateLayout(): void {
   tabManager.updateLayout()
   if (panelVisible && panelView) {
-    const { width } = win.getContentBounds()
+    const { width, height } = win.getContentBounds()
     panelView.setBounds({
       x: width - PANEL_WIDTH - PANEL_RIGHT_MARGIN,
-      y: PANEL_TOP,
+      y: currentChromeHeight,
       width: PANEL_WIDTH,
-      height: PANEL_HEIGHT
+      height: Math.max(0, height - currentChromeHeight)
     })
   }
 }
@@ -297,6 +365,13 @@ function pushBrowserState(): void {
   } catch {
     // uiView may not be ready yet
   }
+  if (panelReady && panelView && !panelView.webContents.isDestroyed()) {
+    try {
+      panelView.webContents.send('browser:state', state)
+    } catch {
+      // panel view may not be ready yet
+    }
+  }
 
   const activeTab = tabManager.getActiveTab()
   if (activeTab) {
@@ -308,62 +383,85 @@ function saveSession(): void {
   if (sessionSaved) return
   sessionSaved = true
 
-  const settings = getSettings()
-  if (!settings.restoreSession) return
-
   const sessionData = tabManager.getSessionData()
   writeJSON('session.json', sessionData)
 }
 
 function restoreSession(): void {
-  const settings = getSettings()
-  if (!settings.restoreSession) {
-    tabManager.createTab()
+  const prefs = getPreferences()
+
+  if (prefs.startup.behavior === 'homepage') {
+    const normalized = normalizeUrl(prefs.startup.homepageUrl)
+    const url = isValidNavigableUrl(prefs.startup.homepageUrl)
+      ? normalized || prefs.startup.homepageUrl
+      : 'https://www.baidu.com'
+    tabManager.createTab(url)
     return
   }
 
-  const saved = readJSON<PersistedSession>('session.json', { tabs: [], activeIndex: 0 })
-
-  if (saved.tabs.length === 0) {
-    tabManager.createTab()
+  if (prefs.startup.behavior === 'specificPages') {
+    const pages = prefs.startup.specificPages
+      .map((page) => normalizeUrl(page) || page)
+      .filter((page) => isValidNavigableUrl(page))
+    if (pages.length > 0) {
+      pages.forEach((page, index) => {
+        tabManager.createTab(page, { background: index > 0, insertMode: 'atEnd' })
+      })
+    } else {
+      tabManager.createTab(prefs.startup.newTabUrl || undefined)
+    }
     return
   }
 
-  for (let i = 0; i < saved.tabs.length; i++) {
-    const tabData = saved.tabs[i]
-    const url = tabData.url && tabData.url !== 'about:blank' ? tabData.url : undefined
-    const id = tabManager.createTab(url)
-    if (tabData.isPinned) {
-      tabManager.togglePin(id)
+  if (prefs.startup.behavior === 'restoreSession') {
+    const saved = readJSON<PersistedSession>('session.json', { tabs: [], activeIndex: 0 })
+    if (saved.tabs.length > 0) {
+      for (let i = 0; i < saved.tabs.length; i++) {
+        const tabData = saved.tabs[i]
+        const url = tabData.url && tabData.url !== 'about:blank' ? tabData.url : undefined
+        tabManager.createTab(url, {
+          background: true,
+          insertMode: 'atEnd',
+          pinned: Boolean(tabData.isPinned)
+        })
+      }
+
+      const tabOrder = tabManager.getTabOrder()
+      const targetIdx = Math.min(saved.activeIndex, tabOrder.length - 1)
+      if (targetIdx >= 0 && tabOrder[targetIdx]) {
+        tabManager.switchTab(tabOrder[targetIdx])
+      }
+      return
     }
   }
 
-  const tabOrder = tabManager.getTabOrder()
-  const targetIdx = Math.min(saved.activeIndex, tabOrder.length - 1)
-  if (targetIdx >= 0 && tabOrder[targetIdx]) {
-    tabManager.switchTab(tabOrder[targetIdx])
-  }
+  tabManager.createTab(prefs.startup.newTabUrl || undefined)
 }
 
 function showPanelView(type: SidePanelType): void {
   if (!panelView) return
 
-  const { width } = win.getContentBounds()
+  const { width, height } = win.getContentBounds()
   currentPanelType = type
 
   panelView.setBounds({
     x: width - PANEL_WIDTH - PANEL_RIGHT_MARGIN,
-    y: PANEL_TOP,
+    y: currentChromeHeight,
     width: PANEL_WIDTH,
-    height: PANEL_HEIGHT
+    height: Math.max(0, height - currentChromeHeight)
   })
 
   sendPanelType()
 
-  if (!panelVisible) {
-    win.contentView.addChildView(panelView)
-    panelVisible = true
+  if (panelVisible) {
+    try {
+      win.contentView.removeChildView(panelView)
+    } catch {
+      // may not be attached
+    }
   }
+  win.contentView.addChildView(panelView)
+  panelVisible = true
 }
 
 function hidePanelView(notifyRenderer = true): void {
@@ -398,10 +496,10 @@ function setupIPC(): void {
 
   const normalizeLayout = (layout: BrowserLayout): BrowserLayout => {
     const uiViewHeight = Number.isFinite(layout.uiViewHeight)
-      ? Math.max(TOP_CHROME_HEIGHT, Math.round(layout.uiViewHeight))
+      ? Math.max(MIN_CHROME_HEIGHT, Math.round(layout.uiViewHeight))
       : TOP_CHROME_HEIGHT
     const pageTop = Number.isFinite(layout.pageTop)
-      ? Math.max(TOP_CHROME_HEIGHT, Math.round(layout.pageTop))
+      ? Math.max(MIN_CHROME_HEIGHT, Math.round(layout.pageTop))
       : uiViewHeight
 
     return { uiViewHeight, pageTop }
@@ -410,17 +508,22 @@ function setupIPC(): void {
   ipcMain.on('ui:set-height', (event, height: number) => {
     if (!validateUiSender(event)) return
     const normalizedHeight = Number.isFinite(height)
-      ? Math.max(TOP_CHROME_HEIGHT, Math.round(height))
+      ? Math.max(MIN_CHROME_HEIGHT, Math.round(height))
       : TOP_CHROME_HEIGHT
+    currentChromeHeight = normalizedHeight
     tabManager.setLayout({
       uiViewHeight: normalizedHeight,
       pageTop: normalizedHeight
     })
+    updateLayout()
   })
 
   ipcMain.on('ui:set-layout', (event, layout: BrowserLayout) => {
     if (!validateUiSender(event)) return
-    tabManager.setLayout(normalizeLayout(layout))
+    const normalized = normalizeLayout(layout)
+    currentChromeHeight = normalized.pageTop
+    tabManager.setLayout(normalized)
+    updateLayout()
   })
 
   ipcMain.on('panel:show', (event, args: { type?: unknown }) => {
@@ -440,6 +543,11 @@ function setupIPC(): void {
       panelCloseTimeout = null
     }
     hidePanelView(event.sender !== uiView.webContents)
+  })
+
+  ipcMain.handle('menu:popup', (event) => {
+    if (!validateUiSender(event)) return
+    popupMenu({ window: win })
   })
 
   // Tab commands
@@ -501,6 +609,11 @@ function setupIPC(): void {
   ipcMain.on('tab:toggle-pin', (event, args: { tabId: string }) => {
     if (!validateSender(event)) return
     tabManager.togglePin(args.tabId)
+  })
+
+  ipcMain.handle('tab:toggle-mute', (event, tabId: string) => {
+    if (!validateSender(event)) return
+    tabManager.toggleMuteTab(tabId)
   })
 
   ipcMain.on('tab:restore-closed', (event) => {
@@ -667,7 +780,7 @@ function setupIPC(): void {
     return getSettings()
   })
 
-  ipcMain.handle('settings:update', (event, args: Partial<BrowserSettings>) => {
+  ipcMain.handle('settings:update', (event, args: BrowserSettingsPatch) => {
     if (!validateSender(event)) return null
     const updated = updateSettings(args)
     installAppMenu()
@@ -683,6 +796,31 @@ function setupIPC(): void {
     sendToUi('browser:settings', updated)
     sendToPanel('browser:settings', updated)
     return updated
+  })
+
+  ipcMain.handle('settings:reset-group', (event, group: string) => {
+    if (!validateSender(event)) return null
+    const updated = resetPreferenceGroup(group)
+    installAppMenu()
+    sendToUi('browser:settings', updated)
+    sendToPanel('browser:settings', updated)
+    return updated
+  })
+
+  ipcMain.handle('settings:export', async (event) => {
+    if (!validateSender(event)) return { success: false }
+    return exportPreferencesToFile()
+  })
+
+  ipcMain.handle('settings:import', async (event) => {
+    if (!validateSender(event)) return { success: false }
+    const result = await importPreferencesFromFile()
+    if (result.success && result.prefs) {
+      installAppMenu()
+      sendToUi('browser:settings', result.prefs)
+      sendToPanel('browser:settings', result.prefs)
+    }
+    return result
   })
 
   ipcMain.handle('settings:select-download-path', async (event) => {
@@ -723,6 +861,19 @@ app.whenReady().then(() => {
   setOnDownloadUpdate((item) => {
     try {
       uiView.webContents.send('browser:download-update', item)
+      pushBrowserState()
+    } catch {
+      /* ignore */
+    }
+  })
+  setOnDownloadCompleted((item) => {
+    try {
+      uiView.webContents.send('browser:download-completed', item)
+      uiView.webContents.send('browser:toast', {
+        id: `download-${item.id}`,
+        text: `下载完成：${item.filename}`,
+        duration: 2600
+      })
       pushBrowserState()
     } catch {
       /* ignore */

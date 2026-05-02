@@ -12,7 +12,7 @@ import {
 import { classifyInput, getWwwFallbackUrl } from './navigation'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
-import { getSettings } from './settings'
+import { getPreferences, getSettings } from './settings'
 
 interface ManagedTab {
   id: string
@@ -27,7 +27,24 @@ interface ManagedTab {
   isPinned: boolean
   zoomFactor: number
   isNewTab: boolean
+  isAudible: boolean
+  isMuted: boolean
   wwwFallbackAttempted: boolean
+}
+
+interface CreateTabOptions {
+  background?: boolean
+  insertMode?: 'afterCurrent' | 'atEnd'
+  pinned?: boolean
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 export class TabManager {
@@ -40,6 +57,7 @@ export class TabManager {
   private pageTop: number = 74
   private findState: FindState | null = null
   private recentlyClosed: RecentlyClosedTab[] = []
+  private lastAccessedTabId: string = ''
   private onStateChange: () => void
   private onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
 
@@ -71,7 +89,9 @@ export class TabManager {
         error: tab.error,
         isPinned: tab.isPinned,
         zoomFactor: tab.zoomFactor,
-        isNewTab: tab.isNewTab
+        isNewTab: tab.isNewTab,
+        isAudible: tab.isAudible,
+        isMuted: tab.isMuted
       }
     })
     return {
@@ -99,15 +119,19 @@ export class TabManager {
     return this.tabs.get(tabId)
   }
 
+  getActiveTabUrl(): string {
+    return this.tabs.get(this.activeTabId)?.url || ''
+  }
+
   // ===== Tab creation =====
 
-  createTab(url?: string): string {
+  createTab(url?: string, options?: CreateTabOptions): string {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     let targetUrl = url
-    const settings = getSettings()
+    const prefs = getPreferences()
 
-    if (!targetUrl && settings.newTabBehavior === 'homepage' && settings.homepage.trim()) {
-      targetUrl = classifyInput(settings.homepage).value
+    if (!targetUrl && prefs.startup.newTabUrl.trim()) {
+      targetUrl = classifyInput(prefs.startup.newTabUrl).value
     }
 
     const isNewTab = !targetUrl || targetUrl === 'about:blank'
@@ -124,33 +148,41 @@ export class TabManager {
       id,
       view,
       url: targetUrl || 'about:blank',
-      title: isNewTab ? 'New Tab' : '',
+      title: isNewTab ? '新标签页' : '',
       favicon: '',
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
       error: null,
-      isPinned: false,
+      isPinned: Boolean(options?.pinned),
       zoomFactor: 1.0,
       isNewTab,
+      isAudible: false,
+      isMuted: false,
       wwwFallbackAttempted: false
     }
 
     this.tabs.set(id, tab)
 
-    const activeIndex = this.tabOrder.indexOf(this.activeTabId)
-    const insertIndex = activeIndex === -1 ? this.tabOrder.length : activeIndex + 1
-    this.tabOrder.splice(insertIndex, 0, id)
+    this.insertTabId(id, tab.isPinned, options?.insertMode || prefs.tabs.newTabPosition)
 
     this.bindWebContentsEvents(tab)
     this.setupWindowOpenHandler(tab)
     this.setupContextMenu(tab)
 
-    if (!isNewTab && targetUrl) {
-      view.webContents.loadURL(targetUrl)
+    const openInBackground = options?.background ?? prefs.tabs.newTabFocus === 'background'
+    if (!openInBackground || !this.activeTabId) {
+      this.switchTab(id)
+    } else {
+      this.updateLayout()
+      this.pushState()
     }
 
-    this.switchTab(id)
+    if (!isNewTab && targetUrl) {
+      view.webContents.loadURL(targetUrl).catch(() => {
+        /* did-fail-load renders the error page */
+      })
+    }
     return id
   }
 
@@ -159,9 +191,11 @@ export class TabManager {
   closeTab(tabId: string): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
+    const closedIndex = this.tabOrder.indexOf(tabId)
+    const wasActive = tabId === this.activeTabId
 
     // Record to recently closed
-    if (tab.url && tab.url !== 'about:blank') {
+    if (tab.url && tab.url !== 'about:blank' && !tab.url.startsWith('data:')) {
       this.recentlyClosed.unshift({
         url: tab.url,
         title: tab.title,
@@ -171,17 +205,6 @@ export class TabManager {
       if (this.recentlyClosed.length > 20) {
         this.recentlyClosed.length = 20
       }
-    }
-
-    // If this is the last tab, create a new one first
-    if (this.tabOrder.length <= 1) {
-      this.createTab()
-      // createTab already switched active, now close the old one
-    } else if (tabId === this.activeTabId) {
-      // Switch to adjacent tab
-      const idx = this.tabOrder.indexOf(tabId)
-      const nextIdx = idx === this.tabOrder.length - 1 ? idx - 1 : idx + 1
-      this.switchTab(this.tabOrder[nextIdx])
     }
 
     try {
@@ -199,7 +222,30 @@ export class TabManager {
     this.tabs.delete(tabId)
     this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
 
-    this.pushState()
+    if (this.tabOrder.length === 0) {
+      this.createTab()
+      return
+    }
+
+    if (wasActive) {
+      const prefs = getPreferences()
+      let nextId = ''
+      if (
+        prefs.tabs.closeTabActivate === 'recent' &&
+        this.lastAccessedTabId &&
+        this.tabOrder.includes(this.lastAccessedTabId)
+      ) {
+        nextId = this.lastAccessedTabId
+      } else if (prefs.tabs.closeTabActivate === 'left') {
+        nextId = this.tabOrder[Math.max(0, closedIndex - 1)]
+      } else {
+        nextId = this.tabOrder[Math.min(closedIndex, this.tabOrder.length - 1)]
+      }
+      this.switchTab(nextId)
+    } else {
+      this.updateLayout()
+      this.pushState()
+    }
   }
 
   duplicateTab(tabId: string): void {
@@ -210,7 +256,10 @@ export class TabManager {
 
   closeOtherTabs(tabId: string): void {
     if (!this.tabs.has(tabId)) return
-    const tabsToClose = this.tabOrder.filter((id) => id !== tabId)
+    const tabsToClose = this.tabOrder.filter((id) => {
+      const tab = this.tabs.get(id)
+      return id !== tabId && tab && !tab.isPinned
+    })
     for (const id of tabsToClose) {
       this.closeTab(id)
     }
@@ -220,7 +269,7 @@ export class TabManager {
   closeTabsToRight(tabId: string): void {
     const index = this.tabOrder.indexOf(tabId)
     if (index === -1) return
-    const tabsToClose = this.tabOrder.slice(index + 1)
+    const tabsToClose = this.tabOrder.slice(index + 1).filter((id) => !this.tabs.get(id)?.isPinned)
     for (const id of tabsToClose) {
       this.closeTab(id)
     }
@@ -231,31 +280,45 @@ export class TabManager {
     if (!tab) return
 
     const menu = Menu.buildFromTemplate([
-      { label: 'Reload', click: () => this.reload(tabId) },
-      { label: 'Duplicate', click: () => this.duplicateTab(tabId) },
-      { type: 'separator' },
-      { label: 'Close', click: () => this.closeTab(tabId) },
+      { label: '刷新', click: () => this.reload(tabId) },
       {
-        label: 'Close Others',
+        label: '复制网址',
+        enabled: Boolean(tab.url && tab.url !== 'about:blank'),
+        click: () => clipboard.writeText(tab.url)
+      },
+      {
+        label: '复制标题和网址',
+        enabled: Boolean(tab.url && tab.url !== 'about:blank'),
+        click: () => clipboard.writeText(`${tab.title || tab.url}\n${tab.url}`)
+      },
+      { type: 'separator' },
+      { label: '复制标签页', click: () => this.duplicateTab(tabId) },
+      {
+        label: tab.isPinned ? '取消固定' : '固定标签页',
+        click: () => this.togglePin(tabId)
+      },
+      {
+        label: tab.isMuted ? '取消静音' : '静音标签页',
+        enabled: tab.isAudible || tab.isMuted,
+        click: () => this.toggleMuteTab(tabId)
+      },
+      { type: 'separator' },
+      { label: '关闭标签页', click: () => this.closeTab(tabId) },
+      {
+        label: '关闭其他标签页',
         enabled: this.tabOrder.length > 1,
         click: () => this.closeOtherTabs(tabId)
       },
       {
-        label: 'Close Tabs to the Right',
+        label: '关闭右侧标签页',
         enabled: this.tabOrder.indexOf(tabId) < this.tabOrder.length - 1,
         click: () => this.closeTabsToRight(tabId)
       },
       { type: 'separator' },
       {
-        label: 'Reopen Closed Tab',
+        label: '恢复关闭的标签页',
         enabled: this.recentlyClosed.length > 0,
         click: () => this.restoreClosed()
-      },
-      { type: 'separator' },
-      {
-        label: 'Copy URL',
-        enabled: Boolean(tab.url && tab.url !== 'about:blank'),
-        click: () => clipboard.writeText(tab.url)
       }
     ])
 
@@ -279,6 +342,9 @@ export class TabManager {
 
   switchTab(tabId: string): void {
     if (!this.tabs.has(tabId)) return
+    if (this.activeTabId && this.activeTabId !== tabId) {
+      this.lastAccessedTabId = this.activeTabId
+    }
 
     const oldTab = this.tabs.get(this.activeTabId)
     if (oldTab) {
@@ -313,7 +379,7 @@ export class TabManager {
     if (classified.type === 'newtab') {
       tab.isNewTab = true
       tab.url = 'about:blank'
-      tab.title = 'New Tab'
+      tab.title = '新标签页'
       tab.error = null
       this.pushState()
       return
@@ -399,23 +465,50 @@ export class TabManager {
   togglePin(tabId: string): void {
     const tab = this.tabs.get(tabId)
     if (!tab) return
-    tab.isPinned = !tab.isPinned
+    if (tab.isPinned) {
+      this.unpinTab(tabId)
+    } else {
+      this.pinTab(tabId)
+    }
+  }
+
+  pinTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || tab.isPinned) return
+    tab.isPinned = true
 
     this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
-    if (tab.isPinned) {
-      const lastPinnedIdx = this.tabOrder.findIndex((id) => {
-        const t = this.tabs.get(id)
-        return t && !t.isPinned
-      })
-      this.tabOrder.splice(lastPinnedIdx === -1 ? this.tabOrder.length : lastPinnedIdx, 0, tabId)
-    } else {
-      const lastPinnedIdx = this.tabOrder.findIndex((id) => {
-        const t = this.tabs.get(id)
-        return t && !t.isPinned
-      })
-      this.tabOrder.splice(lastPinnedIdx === -1 ? this.tabOrder.length : lastPinnedIdx, 0, tabId)
-    }
+    const firstUnpinnedIdx = this.tabOrder.findIndex((id) => !this.tabs.get(id)?.isPinned)
+    this.tabOrder.splice(
+      firstUnpinnedIdx === -1 ? this.tabOrder.length : firstUnpinnedIdx,
+      0,
+      tabId
+    )
+    this.pushState()
+  }
 
+  unpinTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab || !tab.isPinned) return
+    tab.isPinned = false
+    this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
+    const firstUnpinnedIdx = this.tabOrder.findIndex((id) => !this.tabs.get(id)?.isPinned)
+    this.tabOrder.splice(
+      firstUnpinnedIdx === -1 ? this.tabOrder.length : firstUnpinnedIdx,
+      0,
+      tabId
+    )
+    this.pushState()
+  }
+
+  toggleMuteTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+    const wc = tab.view.webContents
+    const muted = !wc.isAudioMuted()
+    wc.setAudioMuted(muted)
+    tab.isMuted = muted
+    tab.isAudible = wc.isCurrentlyAudible()
     this.pushState()
   }
 
@@ -494,12 +587,8 @@ export class TabManager {
 
   updateLayout(): void {
     const { width, height } = this.win.getContentBounds()
-    this.uiView.setBounds({
-      x: 0,
-      y: 0,
-      width,
-      height: Math.max(0, Math.min(height, this.uiViewHeight))
-    })
+    const uiHeight = Math.max(0, Math.min(this.uiViewHeight, height))
+    this.uiView.setBounds({ x: 0, y: 0, width, height: uiHeight })
 
     const activeTab = this.tabs.get(this.activeTabId)
     if (activeTab) {
@@ -537,30 +626,82 @@ export class TabManager {
     tabs: { url: string; title: string; isPinned: boolean }[]
     activeIndex: number
   } {
-    const tabs = this.tabOrder
-      .map((id) => this.tabs.get(id)!)
-      .filter((t) => !t.isNewTab && t.url !== 'about:blank')
-      .map((t) => ({ url: t.url, title: t.title, isPinned: t.isPinned }))
+    const entries = this.tabOrder
+      .map((id) => {
+        const tab = this.tabs.get(id)
+        if (!tab || tab.isNewTab || tab.url === 'about:blank' || tab.url.startsWith('data:')) {
+          return null
+        }
+        return { id, url: tab.url, title: tab.title, isPinned: tab.isPinned }
+      })
+      .filter(
+        (entry): entry is { id: string; url: string; title: string; isPinned: boolean } =>
+          entry !== null
+      )
 
     const activeIndex = Math.max(
       0,
-      tabs.findIndex((t) => {
-        const activeTab = this.tabs.get(this.activeTabId)
-        return activeTab && t.url === activeTab.url
-      })
+      entries.findIndex((entry) => entry.id === this.activeTabId)
     )
+    const tabs = entries.map(({ url, title, isPinned }) => ({ url, title, isPinned }))
 
     return { tabs, activeIndex }
+  }
+
+  private insertTabId(id: string, isPinned: boolean, insertMode: 'afterCurrent' | 'atEnd'): void {
+    if (isPinned) {
+      const firstUnpinnedIdx = this.tabOrder.findIndex((tabId) => !this.tabs.get(tabId)?.isPinned)
+      this.tabOrder.splice(firstUnpinnedIdx === -1 ? this.tabOrder.length : firstUnpinnedIdx, 0, id)
+      return
+    }
+
+    const firstUnpinnedIdx = this.tabOrder.findIndex((tabId) => !this.tabs.get(tabId)?.isPinned)
+    const unpinnedStart = firstUnpinnedIdx === -1 ? this.tabOrder.length : firstUnpinnedIdx
+    if (insertMode === 'afterCurrent' && this.activeTabId) {
+      const activeIndex = this.tabOrder.indexOf(this.activeTabId)
+      if (activeIndex >= unpinnedStart) {
+        this.tabOrder.splice(activeIndex + 1, 0, id)
+        return
+      }
+    }
+    this.tabOrder.push(id)
+  }
+
+  private renderErrorPage(url: string, errorCode: number, errorDescription: string): string {
+    const safeUrl = JSON.stringify(url)
+    const escapedUrl = escapeHtml(url)
+    const escapedDescription = escapeHtml(errorDescription)
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>无法访问此页面</title><style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#191b20;color:#d8dae0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.error-page{max-width:460px;padding:40px}
+h1{font-size:18px;font-weight:500;margin:0 0 8px;color:#d8dae0}
+p{font-size:13px;color:#9498a3;line-height:1.6;margin:8px 0}
+.error-details{margin-top:16px;padding:12px 14px;background:#282b33;border:1px solid rgba(255,255,255,.06);border-radius:6px;color:#9498a3;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}
+.actions{display:flex;gap:10px;margin-top:24px}
+button{height:28px;padding:0 14px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#d8dae0;cursor:pointer}
+button.primary{border-color:#5a7fbf;background:#5a7fbf;color:#fff}
+button:hover{background:#2a2d36}
+button.primary:hover{background:#4d6faa}
+</style></head><body><main class="error-page">
+<h1>无法访问此页面</h1>
+<p>请检查网址是否正确，或稍后重试。</p>
+<div class="error-details">${escapedUrl}<br>错误代码：${errorCode}<br>${escapedDescription}</div>
+<div class="actions"><button class="primary" onclick="location.href=${safeUrl}">重新加载</button><button onclick="history.back()">返回上一页</button></div>
+</main></body></html>`
   }
 
   // ===== Private: event binding =====
 
   private bindWebContentsEvents(tab: ManagedTab): void {
     const wc = tab.view.webContents
+    let lastErrorKey = ''
+    let lastErrorAt = 0
 
     wc.on('did-start-loading', () => {
       tab.isLoading = true
       tab.isNewTab = false
+      this.uiView.webContents.send('browser:hover-url', '')
+      this.updatePageHoverUrl(tab, '')
       this.pushState()
     })
 
@@ -572,6 +713,11 @@ export class TabManager {
     })
 
     wc.on('did-navigate', (_event, url) => {
+      if (url.startsWith('data:text/html') && tab.error) {
+        tab.isLoading = false
+        this.pushState()
+        return
+      }
       tab.url = url
       tab.error = null
       tab.canGoBack = wc.navigationHistory.canGoBack()
@@ -609,8 +755,23 @@ export class TabManager {
       }
     })
 
-    wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    const handleLoadError = (
+      _event: Electron.Event,
+      errorCode: number,
+      errorDescription: string,
+      validatedURL: string,
+      isMainFrame: boolean
+    ): void => {
       if (!isMainFrame || errorCode === -3) return
+      if (!validatedURL || validatedURL === 'about:blank' || validatedURL.startsWith('data:')) {
+        return
+      }
+
+      const errorKey = `${validatedURL}:${errorCode}`
+      const now = Date.now()
+      if (lastErrorKey === errorKey && now - lastErrorAt < 500) return
+      lastErrorKey = errorKey
+      lastErrorAt = now
 
       if (!tab.wwwFallbackAttempted) {
         const fallbackUrl = getWwwFallbackUrl(validatedURL)
@@ -627,8 +788,24 @@ export class TabManager {
         errorDescription
       }
       tab.isLoading = false
+      tab.url = validatedURL
+      tab.isNewTab = false
       this.pushState()
-    })
+      wc.loadURL(
+        'data:text/html;charset=utf-8,' +
+          encodeURIComponent(this.renderErrorPage(validatedURL, errorCode, errorDescription))
+      ).catch(() => {
+        /* ignore secondary failure */
+      })
+    }
+
+    wc.on('did-fail-load', handleLoadError)
+    wc.on(
+      'did-fail-provisional-load',
+      (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        handleLoadError(event, errorCode, errorDescription, validatedURL, isMainFrame)
+      }
+    )
 
     wc.on('found-in-page', (_event, result) => {
       if (this.findState && this.findState.tabId === tab.id) {
@@ -640,6 +817,30 @@ export class TabManager {
         })
         this.pushState()
       }
+    })
+
+    wc.on('zoom-changed', (_event, zoomDirection) => {
+      if (zoomDirection === 'in') {
+        this.zoomIn(tab.id)
+      } else {
+        this.zoomOut(tab.id)
+      }
+      this.uiView.webContents.send('browser:toast', {
+        id: 'zoom',
+        text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
+        duration: 2000
+      })
+    })
+
+    wc.on('before-input-event', () => {
+      tab.isAudible = wc.isCurrentlyAudible()
+      tab.isMuted = wc.isAudioMuted()
+      this.pushState()
+    })
+
+    wc.on('update-target-url', (_event, url) => {
+      this.uiView.webContents.send('browser:hover-url', url)
+      this.updatePageHoverUrl(tab, url)
     })
 
     wc.on('before-input-event', (event, input) => {
@@ -659,30 +860,78 @@ export class TabManager {
     })
   }
 
+  private updatePageHoverUrl(tab: ManagedTab, url: string): void {
+    const script = `
+      (() => {
+        const id = 'zhi-hover-url-overlay'
+        const value = ${JSON.stringify(url)}
+        let overlay = document.getElementById(id)
+
+        if (!value) {
+          overlay?.remove()
+          return
+        }
+
+        const parent = document.body || document.documentElement
+        if (!parent) return
+
+        if (!overlay) {
+          overlay = document.createElement('div')
+          overlay.id = id
+          overlay.className = 'hover-url-overlay'
+          parent.appendChild(overlay)
+        }
+
+        overlay.textContent = value
+        const style = overlay.style
+        style.position = 'fixed'
+        style.left = '0'
+        style.bottom = '0'
+        style.zIndex = '2147483647'
+        style.maxWidth = '60vw'
+        style.padding = '4px 10px'
+        style.overflow = 'hidden'
+        style.color = '#d8dae0'
+        style.background = 'rgba(32, 34, 40, 0.96)'
+        style.border = '1px solid rgba(255, 255, 255, 0.14)'
+        style.borderRadius = '0 6px 0 0'
+        style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.35)'
+        style.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+        style.textOverflow = 'ellipsis'
+        style.whiteSpace = 'nowrap'
+        style.pointerEvents = 'none'
+      })()
+    `
+
+    tab.view.webContents.executeJavaScript(script, true).catch(() => {
+      /* page may be navigating or unavailable */
+    })
+  }
+
   private setupContextMenu(tab: ManagedTab): void {
     tab.view.webContents.on('context-menu', (_event, params) => {
       const menuItems: MenuItemConstructorOptions[] = []
 
       menuItems.push(
         {
-          label: 'Back',
+          label: '后退',
           enabled: tab.view.webContents.navigationHistory.canGoBack(),
           click: () => this.goBack(tab.id)
         },
         {
-          label: 'Forward',
+          label: '前进',
           enabled: tab.view.webContents.navigationHistory.canGoForward(),
           click: () => this.goForward(tab.id)
         },
-        { label: 'Reload', click: () => this.reload(tab.id) },
+        { label: '刷新', click: () => this.reload(tab.id) },
         { type: 'separator' }
       )
 
       if (params.linkURL) {
         menuItems.push(
-          { label: 'Open link in new tab', click: () => this.createTab(params.linkURL) },
+          { label: '在新标签页打开', click: () => this.createTab(params.linkURL) },
           {
-            label: 'Copy link address',
+            label: '复制链接',
             click: () => {
               clipboard.writeText(params.linkURL)
             }
@@ -694,7 +943,7 @@ export class TabManager {
       if (params.hasImageContents && params.srcURL) {
         menuItems.push(
           {
-            label: 'Save image as...',
+            label: '保存图片',
             click: () => tab.view.webContents.downloadURL(params.srcURL)
           },
           { type: 'separator' }
@@ -703,16 +952,16 @@ export class TabManager {
 
       if (params.isEditable) {
         menuItems.push(
-          { label: 'Cut', role: 'cut' },
-          { label: 'Copy', role: 'copy' },
-          { label: 'Paste', role: 'paste' },
-          { label: 'Select All', role: 'selectAll' }
+          { label: '剪切', role: 'cut' },
+          { label: '复制', role: 'copy' },
+          { label: '粘贴', role: 'paste' },
+          { label: '全选', role: 'selectAll' }
         )
       } else {
         menuItems.push(
-          { label: 'Copy', role: 'copy', enabled: Boolean(params.selectionText) },
-          { label: 'Paste', role: 'paste', enabled: false },
-          { label: 'Select All', role: 'selectAll' }
+          { label: '复制', role: 'copy', enabled: Boolean(params.selectionText) },
+          { label: '粘贴', role: 'paste', enabled: false },
+          { label: '全选', role: 'selectAll' }
         )
       }
 
@@ -721,7 +970,7 @@ export class TabManager {
           type: 'separator'
         })
         menuItems.push({
-          label: 'Inspect Element',
+          label: '检查元素',
           click: () => {
             tab.view.webContents.inspectElement(params.x, params.y)
           }
@@ -829,13 +1078,18 @@ export class TabManager {
       return true
     }
 
+    if (ctrl && key === ',') {
+      this.uiView.webContents.send('browser:open-settings-panel')
+      return true
+    }
+
     if (ctrl && (key === '+' || key === '=' || key === 'add')) {
       this.zoomIn(this.activeTabId)
       const tab = this.getActiveTab()
       if (tab) {
         this.uiView.webContents.send('browser:toast', {
           id: 'zoom',
-          text: `Zoom: ${Math.round(tab.zoomFactor * 100)}%`,
+          text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
           duration: 2000
         })
       }
@@ -848,7 +1102,7 @@ export class TabManager {
       if (tab) {
         this.uiView.webContents.send('browser:toast', {
           id: 'zoom',
-          text: `Zoom: ${Math.round(tab.zoomFactor * 100)}%`,
+          text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
           duration: 2000
         })
       }
@@ -859,7 +1113,7 @@ export class TabManager {
       this.zoomReset(this.activeTabId)
       this.uiView.webContents.send('browser:toast', {
         id: 'zoom',
-        text: 'Zoom: 100%',
+        text: '缩放：100%',
         duration: 2000
       })
       return true
