@@ -1,0 +1,145 @@
+.shortcut-root {
+  min-height: 100vh;
+  padding: 18px;
+  box-sizing: border-box;
+  color: #eceef7;
+  background: #15161d;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.shortcut-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.shortcut-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.shortcut-header p {
+  margin: 5px 0 0;
+  color: #9297aa;
+  font-size: 12px;
+}
+
+.shortcut-close,
+.shortcut-reset {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: #d8dbea;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.shortcut-close:hover,
+.shortcut-reset:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.shortcut-reset:disabled {
+  color: #666b7a;
+  cursor: not-allowed;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shortcut-item {
+  display: grid;
+  grid-template-columns: 36px 1fr 170px 64px;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.shortcut-enable {
+  display: flex;
+  justify-content: center;
+}
+
+.shortcut-enable input {
+  width: 16px;
+  height: 16px;
+  accent-color: #6366f1;
+}
+
+.shortcut-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.shortcut-meta strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-meta small {
+  overflow: hidden;
+  color: #777d8f;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-key {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 7px;
+  color: #f4f5fb;
+  background: rgba(0, 0, 0, 0.18);
+  outline: none;
+  text-align: center;
+}
+
+.shortcut-key:focus,
+.shortcut-key.recording {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.shortcut-message {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: 280px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #f1f2f8;
+  background: rgba(32, 33, 42, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .shortcut-item {
+    grid-template-columns: 28px 1fr;
+  }
+
+  .shortcut-key,
+  .shortcut-reset {
+    grid-column: 2;
+  }
+}

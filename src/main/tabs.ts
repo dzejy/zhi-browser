@@ -1,4 +1,11 @@
-import { WebContentsView, BaseWindow, Menu, MenuItemConstructorOptions, clipboard } from 'electron'
+import {
+  WebContentsView,
+  BaseWindow,
+  Menu,
+  MenuItemConstructorOptions,
+  clipboard,
+  Session
+} from 'electron'
 import { join } from 'path'
 import type { Input, Event } from 'electron'
 import {
@@ -25,6 +32,16 @@ import { setupScriptInjection } from './userscript/injector'
 import { setupInstallInterceptor } from './userscript/install-interceptor'
 import { resourceSniffer } from './sniffer'
 import { clearTabPreview } from './tab-preview'
+import { getIncognitoSession, noteIncognitoTabCreated, noteIncognitoTabClosed } from './incognito'
+import {
+  getHibernatedTabState,
+  hibernateTab,
+  isTabHibernated,
+  notifyTabClosed,
+  recordTabActive,
+  wakeTab
+} from './hibernation/manager'
+import { bindPasswordDetection } from './password'
 
 const UI_SCALE = 1.5
 const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
@@ -45,6 +62,7 @@ interface ManagedTab {
   isNewTab: boolean
   isAudible: boolean
   isMuted: boolean
+  isIncognito: boolean
   wwwFallbackAttempted: boolean
 }
 
@@ -52,6 +70,8 @@ interface CreateTabOptions {
   background?: boolean
   insertMode?: 'afterCurrent' | 'atEnd'
   pinned?: boolean
+  session?: Session
+  incognito?: boolean
 }
 
 interface PageBounds {
@@ -77,6 +97,7 @@ export class TabManager {
   private win: BaseWindow
   private uiView: WebContentsView
   private uiViewHeight: number = DEFAULT_UI_VIEW_HEIGHT
+  private uiViewWidth: number | null = null
   private pageTop: number = DEFAULT_UI_VIEW_HEIGHT
   private findState: FindState | null = null
   private recentlyClosed: RecentlyClosedTab[] = []
@@ -111,12 +132,13 @@ export class TabManager {
   getBrowserState(): BrowserState {
     const tabs: TabState[] = this.tabOrder.map((id) => {
       const tab = this.tabs.get(id)!
+      const hibernatedState = getHibernatedTabState(tab.id)
       return {
         id: tab.id,
         webContentsId: tab.view.webContents.id,
-        url: tab.url,
-        title: tab.title,
-        favicon: tab.favicon,
+        url: hibernatedState?.url ?? tab.url,
+        title: hibernatedState?.title ?? tab.title,
+        favicon: hibernatedState?.favicon ?? tab.favicon,
         isLoading: tab.isLoading,
         canGoBack: tab.canGoBack,
         canGoForward: tab.canGoForward,
@@ -125,7 +147,9 @@ export class TabManager {
         zoomFactor: tab.zoomFactor,
         isNewTab: tab.isNewTab,
         isAudible: tab.isAudible,
-        isMuted: tab.isMuted
+        isMuted: tab.isMuted,
+        isIncognito: tab.isIncognito,
+        isHibernated: Boolean(hibernatedState)
       }
     })
     return {
@@ -230,13 +254,15 @@ export class TabManager {
     }
 
     const isNewTab = !targetUrl || targetUrl === 'about:blank'
+    const isIncognito = Boolean(options?.incognito && options.session)
 
     const view = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true
+        sandbox: true,
+        ...(options?.session ? { session: options.session } : {})
       }
     })
     applyViewBackgroundColor(view)
@@ -258,10 +284,15 @@ export class TabManager {
       isNewTab,
       isAudible: false,
       isMuted: false,
+      isIncognito,
       wwwFallbackAttempted: false
     }
 
     this.tabs.set(id, tab)
+    recordTabActive(id)
+    if (isIncognito) {
+      noteIncognitoTabCreated()
+    }
 
     this.insertTabId(id, tab.isPinned, options?.insertMode || prefs.tabs.newTabPosition)
 
@@ -269,10 +300,15 @@ export class TabManager {
     this.setupWindowOpenHandler(tab)
     this.setupContextMenu(tab)
     setupScriptInjection(view.webContents)
+    bindPasswordDetection(view.webContents)
     setupInstallInterceptor(
       view.webContents,
       () => this.win,
-      (targetUrl) => this.createTab(targetUrl),
+      (targetUrl) =>
+        this.createTab(
+          targetUrl,
+          isIncognito ? { session: options?.session, incognito: true } : {}
+        ),
       (payload) => this.onUserScriptInstalled?.(payload)
     )
 
@@ -307,7 +343,7 @@ export class TabManager {
     const wasActive = tabId === this.activeTabId
 
     // Record to recently closed
-    if (tab.url && tab.url !== 'about:blank' && !tab.url.startsWith('data:')) {
+    if (!tab.isIncognito && tab.url && tab.url !== 'about:blank' && !tab.url.startsWith('data:')) {
       this.recentlyClosed.unshift({
         url: tab.url,
         title: tab.title,
@@ -333,9 +369,13 @@ export class TabManager {
 
     resourceSniffer.clearResourcesForTab(closedWebContentsId)
     clearTabPreview(closedWebContentsId)
+    notifyTabClosed(tabId)
 
     this.tabs.delete(tabId)
     this.tabOrder = this.tabOrder.filter((id) => id !== tabId)
+    if (tab.isIncognito) {
+      noteIncognitoTabClosed()
+    }
 
     if (this.tabOrder.length === 0) {
       this.createTab()
@@ -407,6 +447,22 @@ export class TabManager {
         click: () => clipboard.writeText(`${tab.title || tab.url}\n${tab.url}`)
       },
       { type: 'separator' },
+      {
+        label: isTabHibernated(tabId) ? '唤醒标签页' : '休眠标签页',
+        enabled:
+          isTabHibernated(tabId) ||
+          Boolean(tab.url && tab.url !== 'about:blank' && !tab.isAudible),
+        click: () => {
+          if (isTabHibernated(tabId)) {
+            wakeTab(tabId)
+            this.pushState()
+          } else {
+            hibernateTab(tabId)
+              .then(() => this.pushState())
+              .catch(() => {})
+          }
+        }
+      },
       { label: '复制标签页', click: () => this.duplicateTab(tabId) },
       {
         label: tab.isPinned ? '取消固定' : '固定标签页',
@@ -457,6 +513,9 @@ export class TabManager {
 
   switchTab(tabId: string): void {
     if (!this.tabs.has(tabId)) return
+    if (isTabHibernated(tabId)) {
+      wakeTab(tabId)
+    }
     if (this.activeTabId && this.activeTabId !== tabId) {
       this.lastAccessedTabId = this.activeTabId
     }
@@ -471,6 +530,7 @@ export class TabManager {
     }
 
     this.activeTabId = tabId
+    recordTabActive(tabId)
     const newTab = this.tabs.get(tabId)!
 
     applyViewBackgroundColor(newTab.view)
@@ -704,8 +764,16 @@ export class TabManager {
   }
 
   setLayout(layout: BrowserLayout): void {
-    if (this.uiViewHeight === layout.uiViewHeight && this.pageTop === layout.pageTop) return
+    const uiViewWidth = layout.uiViewWidth ?? null
+    if (
+      this.uiViewHeight === layout.uiViewHeight &&
+      this.uiViewWidth === uiViewWidth &&
+      this.pageTop === layout.pageTop
+    ) {
+      return
+    }
     this.uiViewHeight = layout.uiViewHeight
+    this.uiViewWidth = uiViewWidth
     this.pageTop = layout.pageTop
     this.updateLayout()
   }
@@ -713,7 +781,9 @@ export class TabManager {
   updateLayout(): void {
     const { width, height } = this.win.getContentBounds()
     const uiHeight = Math.max(0, Math.min(this.uiViewHeight, height))
-    this.uiView.setBounds({ x: 0, y: 0, width, height: uiHeight })
+    const uiWidth =
+      this.uiViewWidth === null ? width : Math.max(0, Math.min(this.uiViewWidth, width))
+    this.uiView.setBounds({ x: 0, y: 0, width: uiWidth, height: uiHeight })
 
     const activeTab = this.tabs.get(this.activeTabId)
     if (activeTab) {
@@ -725,6 +795,15 @@ export class TabManager {
         height: pageHeight
       }
       activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
+    }
+
+    if (this.pageTop === 0) {
+      try {
+        this.win.contentView.removeChildView(this.uiView)
+      } catch {
+        // may not be attached yet
+      }
+      this.win.contentView.addChildView(this.uiView)
     }
   }
 
@@ -742,6 +821,9 @@ export class TabManager {
       } catch {
         /* ignore */
       }
+      if (tab.isIncognito) {
+        noteIncognitoTabClosed()
+      }
     }
     this.tabs.clear()
     this.tabOrder = []
@@ -756,7 +838,13 @@ export class TabManager {
     const entries = this.tabOrder
       .map((id) => {
         const tab = this.tabs.get(id)
-        if (!tab || tab.isNewTab || tab.url === 'about:blank' || tab.url.startsWith('data:')) {
+        if (
+          !tab ||
+          tab.isIncognito ||
+          tab.isNewTab ||
+          tab.url === 'about:blank' ||
+          tab.url.startsWith('data:')
+        ) {
           return null
         }
         return { id, url: tab.url, title: tab.title, isPinned: tab.isPinned }
@@ -841,6 +929,17 @@ button.primary:hover{background:#4d6faa}
       this.pushState()
     })
 
+    wc.on('did-finish-load', () => {
+      if (
+        !tab.isIncognito &&
+        tab.url &&
+        tab.url !== 'about:blank' &&
+        !tab.url.startsWith('data:')
+      ) {
+        addHistory(tab.url, wc.getTitle() || tab.title || tab.url, tab.favicon)
+      }
+    })
+
     wc.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
       if (!isMainFrame) return
       this.prepareDarkModeForNavigation(tab, !isInPlace)
@@ -867,8 +966,8 @@ button.primary:hover{background:#4d6faa}
       tab.isNewTab = url === 'about:blank'
       this.pushState()
 
-      if (url !== 'about:blank') {
-        addHistory(url, tab.title)
+      if (!tab.isIncognito && url !== 'about:blank') {
+        addHistory(url, tab.title, tab.favicon)
       }
     })
 
@@ -885,8 +984,8 @@ button.primary:hover{background:#4d6faa}
       tab.title = title || tab.title
       this.pushState()
 
-      if (tab.url && tab.url !== 'about:blank') {
-        addHistory(tab.url, tab.title)
+      if (!tab.isIncognito && tab.url && tab.url !== 'about:blank') {
+        addHistory(tab.url, tab.title, tab.favicon)
       }
     })
 
@@ -894,6 +993,9 @@ button.primary:hover{background:#4d6faa}
       if (favicons && favicons.length > 0) {
         tab.favicon = favicons[0]
         this.pushState()
+        if (!tab.isIncognito && tab.url && tab.url !== 'about:blank') {
+          addHistory(tab.url, tab.title, tab.favicon)
+        }
       }
     })
 
@@ -1047,7 +1149,10 @@ button.primary:hover{background:#4d6faa}
   private setupWindowOpenHandler(tab: ManagedTab): void {
     tab.view.webContents.setWindowOpenHandler(({ url }) => {
       if (url && url !== 'about:blank') {
-        this.createTab(url)
+        this.createTab(
+          url,
+          tab.isIncognito ? { session: tab.view.webContents.session, incognito: true } : undefined
+        )
       }
       return { action: 'deny' }
     })
@@ -1117,6 +1222,27 @@ button.primary:hover{background:#4d6faa}
           click: () => this.goForward(tab.id)
         },
         { label: '刷新', click: () => this.reload(tab.id) },
+        { type: 'separator' }
+      )
+
+      const pageTabIsHibernated = isTabHibernated(tab.id)
+      menuItems.push(
+        {
+          label: pageTabIsHibernated ? '唤醒当前标签页' : '休眠当前标签页',
+          enabled:
+            pageTabIsHibernated ||
+            Boolean(tab.url && tab.url !== 'about:blank' && !tab.isAudible),
+          click: () => {
+            if (isTabHibernated(tab.id)) {
+              wakeTab(tab.id)
+              this.pushState()
+            } else {
+              hibernateTab(tab.id)
+                .then(() => this.pushState())
+                .catch(() => {})
+            }
+          }
+        },
         { type: 'separator' }
       )
 
@@ -1218,6 +1344,12 @@ button.primary:hover{background:#4d6faa}
 
     if (ctrl && !shift && key === 't') {
       this.createTab()
+      this.uiView.webContents.send('browser:focus-address-bar')
+      return true
+    }
+
+    if (ctrl && shift && key === 'n') {
+      this.createTab(undefined, { session: getIncognitoSession(), incognito: true })
       this.uiView.webContents.send('browser:focus-address-bar')
       return true
     }

@@ -26,6 +26,8 @@ export interface TabState {
   isNewTab: boolean
   isAudible: boolean
   isMuted: boolean
+  isIncognito: boolean
+  isHibernated?: boolean
 }
 
 export interface LoadError {
@@ -64,6 +66,7 @@ export interface BookmarkItem {
   title: string
   favicon: string
   createdAt: number
+  folder?: string
 }
 
 export interface HistoryItem {
@@ -71,6 +74,7 @@ export interface HistoryItem {
   url: string
   title: string
   visitedAt: number
+  favicon?: string
 }
 
 export interface DownloadItem {
@@ -153,6 +157,7 @@ export type SidePanelType =
   | 'history'
   | 'downloads'
   | 'settings'
+  | 'proxy'
   | 'about'
   | 'ai'
   | 'scripts'
@@ -162,4 +167,5 @@ export type SidePanelType =
 export interface BrowserLayout {
   uiViewHeight: number
   pageTop: number
+  uiViewWidth?: number | null
 }

@@ -3,6 +3,7 @@ import { setAsDefaultBrowser, isDefaultBrowser } from './default-browser'
 
 export interface MenuActions {
   newTab: () => void
+  newIncognitoTab: () => void
   closeTab: () => void
   reload: () => void
   zoomIn: () => void
@@ -16,6 +17,10 @@ export interface MenuActions {
   showDownloads: () => void
   showSettings: () => void
   showAbout: () => void
+  showCommandPalette: () => void
+  startScreenshot: () => void
+  openQuickNote: () => void
+  hibernateOtherTabs: () => void
   reopenClosedTab: () => void
   addBookmark: () => void
   openUserDataFolder: () => void
@@ -33,6 +38,11 @@ export function buildMenu(actions: MenuActions): void {
       label: '文件',
       submenu: [
         { label: '新标签页', accelerator: 'CmdOrCtrl+T', click: actions.newTab },
+        {
+          label: '新建无痕标签页',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: actions.newIncognitoTab
+        },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: actions.closeTab },
         { type: 'separator' },
         { label: '退出', accelerator: 'Alt+F4', click: () => app.quit() }
@@ -104,6 +114,11 @@ export function buildMenu(actions: MenuActions): void {
     {
       label: '工具',
       submenu: [
+        { label: '命令面板', accelerator: 'CmdOrCtrl+K', click: actions.showCommandPalette },
+        { label: '截图', accelerator: 'Alt+A', click: actions.startScreenshot },
+        { label: '快捷笔记', accelerator: 'Alt+N', click: actions.openQuickNote },
+        { label: '休眠其他标签页', accelerator: 'Alt+H', click: actions.hibernateOtherTabs },
+        { type: 'separator' },
         { label: '设置', accelerator: 'CmdOrCtrl+,', click: actions.showSettings },
         { label: '打开数据目录', click: actions.openUserDataFolder },
         { type: 'separator' },

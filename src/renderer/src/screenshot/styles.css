@@ -1,0 +1,144 @@
+.shot-root {
+  position: fixed;
+  inset: 0;
+  user-select: none;
+  cursor: crosshair;
+  background: transparent;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.shot-bg {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.shot-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.shot-selection {
+  position: absolute;
+  border: 1px solid #6366f1;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.shot-canvas {
+  position: absolute;
+  pointer-events: none;
+}
+
+.shot-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(20, 20, 26, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 99999;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.shot-tool-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+
+.shot-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.shot-tool-btn.active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #fff;
+}
+
+.shot-action-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.shot-action-btn.cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
+.shot-action-btn:hover {
+  filter: brightness(1.1);
+}
+
+.shot-color-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.shot-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.shot-color.active {
+  border-color: #fff;
+}
+
+.shot-text-input {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px dashed #6366f1;
+  color: #fff;
+  padding: 4px 6px;
+  outline: none;
+  font-size: 18px;
+  z-index: 100000;
+  -webkit-app-region: no-drag;
+}
+
+.pin-image-root {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  cursor: move;
+  -webkit-app-region: drag;
+}
+
+.pin-image-root img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}

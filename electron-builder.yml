@@ -13,6 +13,10 @@ files:
 asarUnpack:
   - resources/**
 
+extraResources:
+  - from: resources/mihomo.exe
+    to: mihomo.exe
+
 win:
   executableName: zhi-browser
   icon: build/icon.ico

@@ -55,6 +55,10 @@ a {
   color: #8ab4f8 !important;
 }
 
+body :where(p, span, div, li, td, th, h1, h2, h3, h4, h5, h6, label, strong, em, small):not(a) {
+  color: #e0e0e0 !important;
+}
+
 img,
 video,
 canvas,

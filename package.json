@@ -1,6 +1,6 @@
 {
   "name": "zhi-browser",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",
@@ -24,7 +24,8 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@mozilla/readability": "^0.6.0",
-    "jsdom": "^29.1.1"
+    "jsdom": "^29.1.1",
+    "yaml": "^2.8.4"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

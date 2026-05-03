@@ -25,6 +25,7 @@ export type ThemeColorId =
   | 'crimson'
 export type UIFontId = 'system' | 'wenkai' | 'harmony' | 'source' | 'mono'
 export type DownloaderType = 'idm' | 'fdm' | 'ndm' | 'custom' | 'builtin'
+export type TabLayout = 'horizontal' | 'vertical'
 
 export interface SearchEngineConfig {
   name: string
@@ -35,9 +36,21 @@ export interface ToolbarVisibility {
   backButton: boolean
   forwardButton: boolean
   reloadStopButton: boolean
+  proxyButton: boolean
   homeButton: boolean
+  adBlockButton: boolean
+  darkModeButton: boolean
+  translateButton: boolean
+  readerButton: boolean
   bookmarkButton: boolean
+  bookmarksButton: boolean
+  historyButton: boolean
   downloadsButton: boolean
+  snifferButton: boolean
+  scriptsButton: boolean
+  webPanelButton: boolean
+  splitViewButton: boolean
+  aiButton: boolean
   settingsButton: boolean
 }
 
@@ -52,6 +65,16 @@ export interface AIProviderProfile {
   maxInputChars: number
   stream: boolean
   searchMode?: AISearchMode
+}
+
+export interface ProxyPreferences {
+  enabled: boolean
+  subscriptionUrl: string
+  mixedPort: number
+  apiPort: number
+  secret: string
+  autoStart: boolean
+  lastUpdated: number | null
 }
 
 export interface Preferences {
@@ -89,6 +112,27 @@ export interface Preferences {
     enabled: boolean
     type: DownloaderType
     path: string
+    defaultThreads: number
+    maxConcurrent: number
+    downloadDir: string
+    useExternalDownloader: boolean
+    externalDownloaderType: string
+    externalDownloaderPath: string
+  }
+  quickSearch: {
+    engine: string
+  }
+  proxy: ProxyPreferences
+  workspace: {
+    tabLayout: TabLayout
+    sidebarWidth: number
+    sidebarCollapsed: boolean
+    autoCollapse: boolean
+  }
+  hibernation: {
+    enabled: boolean
+    timeoutMinutes: number
+    whitelist: string[]
   }
   webPanels: Array<{ url: string; title: string; pinned: boolean }>
   advanced: {
@@ -162,9 +206,21 @@ export const DEFAULT_PREFERENCES: Preferences = {
     backButton: true,
     forwardButton: true,
     reloadStopButton: true,
+    proxyButton: true,
     homeButton: true,
+    adBlockButton: true,
+    darkModeButton: true,
+    translateButton: true,
+    readerButton: true,
     bookmarkButton: true,
+    bookmarksButton: true,
+    historyButton: true,
     downloadsButton: true,
+    snifferButton: true,
+    scriptsButton: true,
+    webPanelButton: true,
+    splitViewButton: true,
+    aiButton: true,
     settingsButton: true
   },
   tabs: {
@@ -179,7 +235,36 @@ export const DEFAULT_PREFERENCES: Preferences = {
   downloader: {
     enabled: false,
     type: 'builtin',
-    path: ''
+    path: '',
+    defaultThreads: 8,
+    maxConcurrent: 3,
+    downloadDir: '',
+    useExternalDownloader: false,
+    externalDownloaderType: '',
+    externalDownloaderPath: ''
+  },
+  quickSearch: {
+    engine: 'google'
+  },
+  proxy: {
+    enabled: false,
+    subscriptionUrl: '',
+    mixedPort: 17890,
+    apiPort: 19090,
+    secret: 'zhi-browser-proxy',
+    autoStart: false,
+    lastUpdated: null
+  },
+  workspace: {
+    tabLayout: 'horizontal',
+    sidebarWidth: 240,
+    sidebarCollapsed: false,
+    autoCollapse: true
+  },
+  hibernation: {
+    enabled: false,
+    timeoutMinutes: 30,
+    whitelist: []
   },
   webPanels: [],
   advanced: {
@@ -310,6 +395,9 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   if (!isPlainRecord(raw.tabs)) prefs.tabs = defaults.tabs
   if (!isPlainRecord(raw.downloads)) prefs.downloads = defaults.downloads
   if (!isPlainRecord(raw.downloader)) prefs.downloader = defaults.downloader
+  if (!isPlainRecord(raw.proxy)) prefs.proxy = defaults.proxy
+  if (!isPlainRecord(raw.workspace)) prefs.workspace = defaults.workspace
+  if (!isPlainRecord(raw.hibernation)) prefs.hibernation = defaults.hibernation
   if (!Array.isArray(raw.webPanels)) prefs.webPanels = defaults.webPanels
   if (!isPlainRecord(raw.advanced)) prefs.advanced = defaults.advanced
   if (!isPlainRecord(raw.adblock)) prefs.adblock = defaults.adblock
@@ -395,6 +483,77 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   if (typeof prefs.downloader.path !== 'string') {
     prefs.downloader.path = defaults.downloader.path
   }
+  if (typeof prefs.downloader.defaultThreads !== 'number') {
+    prefs.downloader.defaultThreads = defaults.downloader.defaultThreads
+  }
+  if (typeof prefs.downloader.maxConcurrent !== 'number') {
+    prefs.downloader.maxConcurrent = defaults.downloader.maxConcurrent
+  }
+  if (typeof prefs.downloader.downloadDir !== 'string') {
+    prefs.downloader.downloadDir = defaults.downloader.downloadDir
+  }
+  if (typeof prefs.downloader.useExternalDownloader !== 'boolean') {
+    prefs.downloader.useExternalDownloader = defaults.downloader.useExternalDownloader
+  }
+  if (typeof prefs.downloader.externalDownloaderType !== 'string') {
+    prefs.downloader.externalDownloaderType = defaults.downloader.externalDownloaderType
+  }
+  if (typeof prefs.downloader.externalDownloaderPath !== 'string') {
+    prefs.downloader.externalDownloaderPath = defaults.downloader.externalDownloaderPath
+  }
+  if (typeof prefs.proxy.enabled !== 'boolean') prefs.proxy.enabled = defaults.proxy.enabled
+  if (typeof prefs.proxy.subscriptionUrl !== 'string') {
+    prefs.proxy.subscriptionUrl = defaults.proxy.subscriptionUrl
+  }
+  if (
+    typeof prefs.proxy.mixedPort !== 'number' ||
+    !Number.isFinite(prefs.proxy.mixedPort) ||
+    prefs.proxy.mixedPort < 1 ||
+    prefs.proxy.mixedPort > 65535
+  ) {
+    prefs.proxy.mixedPort = defaults.proxy.mixedPort
+  }
+  if (
+    typeof prefs.proxy.apiPort !== 'number' ||
+    !Number.isFinite(prefs.proxy.apiPort) ||
+    prefs.proxy.apiPort < 1 ||
+    prefs.proxy.apiPort > 65535
+  ) {
+    prefs.proxy.apiPort = defaults.proxy.apiPort
+  }
+  if (typeof prefs.proxy.secret !== 'string') prefs.proxy.secret = defaults.proxy.secret
+  if (typeof prefs.proxy.autoStart !== 'boolean') prefs.proxy.autoStart = defaults.proxy.autoStart
+  if (typeof prefs.proxy.lastUpdated !== 'number') prefs.proxy.lastUpdated = null
+  if (!['horizontal', 'vertical'].includes(prefs.workspace.tabLayout)) {
+    prefs.workspace.tabLayout = defaults.workspace.tabLayout
+  }
+  if (
+    typeof prefs.workspace.sidebarWidth !== 'number' ||
+    !Number.isFinite(prefs.workspace.sidebarWidth)
+  ) {
+    prefs.workspace.sidebarWidth = defaults.workspace.sidebarWidth
+  }
+  prefs.workspace.sidebarWidth = Math.max(160, Math.min(420, prefs.workspace.sidebarWidth))
+  if (typeof prefs.workspace.sidebarCollapsed !== 'boolean') {
+    prefs.workspace.sidebarCollapsed = defaults.workspace.sidebarCollapsed
+  }
+  if (typeof prefs.workspace.autoCollapse !== 'boolean') {
+    prefs.workspace.autoCollapse = defaults.workspace.autoCollapse
+  }
+  if (typeof prefs.hibernation.enabled !== 'boolean') {
+    prefs.hibernation.enabled = defaults.hibernation.enabled
+  }
+  if (
+    typeof prefs.hibernation.timeoutMinutes !== 'number' ||
+    !Number.isFinite(prefs.hibernation.timeoutMinutes)
+  ) {
+    prefs.hibernation.timeoutMinutes = defaults.hibernation.timeoutMinutes
+  }
+  prefs.hibernation.timeoutMinutes = Math.max(1, Math.min(1440, prefs.hibernation.timeoutMinutes))
+  if (!Array.isArray(prefs.hibernation.whitelist)) prefs.hibernation.whitelist = []
+  prefs.hibernation.whitelist = prefs.hibernation.whitelist.filter(
+    (host): host is string => typeof host === 'string'
+  )
   prefs.webPanels = prefs.webPanels
     .filter((panel) => isPlainRecord(panel))
     .map((panel) => ({

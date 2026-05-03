@@ -5,6 +5,8 @@ import type { AISearchMode, Preferences } from '../shared/preferences'
 import { getPreferences } from './settings'
 import { callAI, testAIConnection } from './aiProvider'
 import { extractPageContent, extractSelection } from './pageExtractor'
+import { getHistoryForAI } from './history'
+import { getBookmarksForAI } from './bookmarks'
 
 interface AIIPCOptions {
   uiView: WebContentsView
@@ -35,6 +37,17 @@ const PROMPTS = {
   explainSelection: '请用中文解释下面选中的内容，要求简洁清楚。',
   summarizeSelection: '请用中文总结下面选中的内容，提炼要点。'
 }
+
+const AI_SEARCH_SYSTEM_PROMPT = `你是 Zhi Browser 的 AI 搜索助手。用户会用自然语言描述他们想找的网页。
+我会提供用户的浏览历史和书签中与查询相关的条目。
+请根据用户的描述，从提供的数据中找出最匹配的结果。
+
+回复格式：
+1. 直接给出最匹配的 1-3 个结果
+2. 每个结果包含标题、链接和一句话说明为什么匹配
+3. 如果没有找到匹配项，说明没有找到并建议用户换个描述
+
+保持回复简洁，不要废话。`
 
 export function registerAIIPC(options: AIIPCOptions): void {
   const { uiView, panelView, getActiveWebContents } = options
@@ -123,6 +136,14 @@ export function registerAIIPC(options: AIIPCOptions): void {
       return { success: false, error: '消息不能为空' }
     }
     return handleChat(message.trim())
+  })
+
+  ipcMain.handle('ai:search-library', async (event, query: string): Promise<AIResponse | null> => {
+    if (!isValidSender(event)) return null
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return { success: false, error: '搜索描述不能为空' }
+    }
+    return handleBrowserDataSearch(query.trim())
   })
 
   ipcMain.handle('ai:translate-selection', async (event): Promise<AIResponse | null> => {
@@ -223,6 +244,29 @@ async function handleChat(message: string): Promise<AIResponse> {
   const messages: AIMessage[] = [
     { role: 'system', content: PROMPTS.chat },
     { role: 'user', content: message }
+  ]
+
+  return callAI(prefs, messages)
+}
+
+async function handleBrowserDataSearch(query: string): Promise<AIResponse> {
+  const configError = hasUsableAIConfig()
+  if (configError) return configError
+
+  const historyResults = getHistoryForAI(query)
+  const bookmarkResults = getBookmarksForAI(query)
+  const historyContext =
+    historyResults.map((item) => `- ${item.title} | ${item.url} | ${item.time}`).join('\n') || '无'
+  const bookmarkContext =
+    bookmarkResults
+      .map((item) => `- ${item.title} | ${item.url} | 文件夹: ${item.folder}`)
+      .join('\n') || '无'
+
+  const context = `## 相关浏览历史\n${historyContext}\n\n## 相关书签\n${bookmarkContext}`
+  const prefs = getPreferences()
+  const messages: AIMessage[] = [
+    { role: 'system', content: AI_SEARCH_SYSTEM_PROMPT },
+    { role: 'user', content: `用户查询: ${query}\n\n${context}` }
   ]
 
   return callAI(prefs, messages)

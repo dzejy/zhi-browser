@@ -55,6 +55,7 @@ const api = {
   closeOtherTabs: (tabId: string) => ipcRenderer.invoke('tab:close-others', tabId),
   closeTabsToRight: (tabId: string) => ipcRenderer.invoke('tab:close-right', tabId),
   toggleMuteTab: (tabId: string) => ipcRenderer.invoke('tab:toggle-mute', tabId),
+  toggleDevTools: (tabId?: string) => ipcRenderer.invoke('tab:toggle-devtools', tabId),
 
   // ===== Layout =====
   setUiHeight: (height: number) => ipcRenderer.send('ui:set-height', height),
@@ -62,6 +63,13 @@ const api = {
   showPanel: (type: SidePanelType) => ipcRenderer.send('panel:show', { type }),
   hidePanel: () => ipcRenderer.send('panel:hide'),
   popupMenu: () => ipcRenderer.invoke('menu:popup'),
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen'),
+  isFullscreen: () => ipcRenderer.invoke('window:is-fullscreen'),
+  onFullscreenChanged: (callback: (fullscreen: boolean) => void): (() => void) => {
+    const handler = (_event: unknown, fullscreen: boolean) => callback(fullscreen)
+    ipcRenderer.on('window:fullscreen-changed', handler)
+    return () => ipcRenderer.removeListener('window:fullscreen-changed', handler)
+  },
 
   // ===== Find =====
   findStart: (tabId: string, text: string, options?: { forward?: boolean; matchCase?: boolean }) =>
@@ -86,6 +94,24 @@ const api = {
     ipcRenderer.invoke('history:list', { limit, query }),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
   removeHistoryEntry: (id: string) => ipcRenderer.invoke('history:remove', id),
+  historyGetAll: (options?: { limit?: number; offset?: number; search?: string }) =>
+    ipcRenderer.invoke('history:getAll', options),
+  historyDelete: (ids: string[]) => ipcRenderer.invoke('history:delete', ids),
+  historyClear: () => ipcRenderer.invoke('history:clear'),
+  historySearch: (keyword: string) => ipcRenderer.invoke('history:search', keyword),
+  historyGetForAI: (query: string) => ipcRenderer.invoke('history:getForAI', query),
+
+  // ===== Bookmark manager =====
+  bookmarksGetAll: (options?: { folder?: string; search?: string }) =>
+    ipcRenderer.invoke('bookmarks:getAll', options),
+  bookmarksAdd: (entry: { url: string; title: string; folder?: string }) =>
+    ipcRenderer.invoke('bookmarks:add', entry),
+  bookmarksDelete: (ids: string[]) => ipcRenderer.invoke('bookmarks:delete', ids),
+  bookmarksUpdate: (id: string, updates: Record<string, unknown>) =>
+    ipcRenderer.invoke('bookmarks:update', id, updates),
+  bookmarksGetFolders: () => ipcRenderer.invoke('bookmarks:getFolders'),
+  bookmarksSearch: (keyword: string) => ipcRenderer.invoke('bookmarks:search', keyword),
+  bookmarksGetForAI: (query: string) => ipcRenderer.invoke('bookmarks:getForAI', query),
 
   // ===== Downloads =====
   getDownloads: () => ipcRenderer.invoke('downloads:list'),
@@ -135,10 +161,36 @@ const api = {
   explainCurrentPage: () => ipcRenderer.invoke('ai:explain-page'),
   askCurrentPage: (question: string) => ipcRenderer.invoke('ai:ask-page', question),
   chatWithAI: (message: string) => ipcRenderer.invoke('ai:chat', message),
+  aiSearchLibrary: (query: string) => ipcRenderer.invoke('ai:search-library', query),
   translateSelection: () => ipcRenderer.invoke('ai:translate-selection'),
   explainSelection: () => ipcRenderer.invoke('ai:explain-selection'),
   summarizeSelection: () => ipcRenderer.invoke('ai:summarize-selection'),
   translatePage: (enable: boolean): Promise<void> => ipcRenderer.invoke('translate:page', enable),
+
+  // ===== Proxy =====
+  proxyUpdateSubscription: (url: string) => ipcRenderer.invoke('proxy:updateSubscription', url),
+  proxyGetGroups: () => ipcRenderer.invoke('proxy:getGroups'),
+  proxyGetNodes: (group: string) => ipcRenderer.invoke('proxy:getNodes', group),
+  proxySwitch: (group: string, node: string) => ipcRenderer.invoke('proxy:switch', group, node),
+  proxyTestAllDelay: (group: string) => ipcRenderer.invoke('proxy:testAllDelay', group),
+  proxyTestNodeDelay: (node: string) => ipcRenderer.invoke('proxy:testNodeDelay', node),
+  proxyGetLogs: () => ipcRenderer.invoke('proxy:getLogs'),
+  proxyGetSubscriptionInfo: () => ipcRenderer.invoke('proxy:getSubscriptionInfo'),
+
+  // ===== Passwords =====
+  passwordsGetAll: () => ipcRenderer.invoke('passwords:getAll'),
+  passwordsGetPassword: (id: string) => ipcRenderer.invoke('passwords:getPassword', id),
+  passwordsAdd: (data: { url: string; username: string; password: string; title: string }) =>
+    ipcRenderer.invoke('passwords:add', data),
+  passwordsUpdate: (id: string, data: Record<string, unknown>) =>
+    ipcRenderer.invoke('passwords:update', id, data),
+  passwordsDelete: (id: string) => ipcRenderer.invoke('passwords:delete', id),
+  passwordsSearch: (keyword: string) => ipcRenderer.invoke('passwords:search', keyword),
+
+  // ===== Incognito =====
+  incognitoNewTab: (url?: string) => ipcRenderer.invoke('incognito:newTab', url),
+  incognitoIsActive: () => ipcRenderer.invoke('incognito:isActive'),
+  incognitoClearData: () => ipcRenderer.invoke('incognito:clearData'),
 
   // ===== User scripts =====
   userscriptGetAll: (): Promise<UserScriptSummary[]> => ipcRenderer.invoke('userscript:get-all'),
@@ -150,7 +202,9 @@ const api = {
   userscriptRemove: (id: string): Promise<boolean> => ipcRenderer.invoke('userscript:remove', id),
   userscriptToggle: (id: string, enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('userscript:toggle', id, enabled),
-  userscriptUpdate: (id: string): Promise<{ success: boolean; newVersion?: string; error?: string }> =>
+  userscriptUpdate: (
+    id: string
+  ): Promise<{ success: boolean; newVersion?: string; error?: string }> =>
     ipcRenderer.invoke('userscript:update', id),
 
   // ===== Reader mode =====
@@ -170,25 +224,55 @@ const api = {
   downloaderDetect: () => ipcRenderer.invoke('downloader:detect'),
   downloaderGetConfig: () => ipcRenderer.invoke('downloader:getConfig'),
 
+  // ===== Builtin downloader =====
+  builtinDownloadStart: (options: {
+    url: string
+    savePath?: string
+    filename?: string
+    threads?: number
+    referer?: string
+  }) => ipcRenderer.invoke('builtin-download:start', options),
+  builtinDownloadPause: (id: string) => ipcRenderer.invoke('builtin-download:pause', id),
+  builtinDownloadResume: (id: string) => ipcRenderer.invoke('builtin-download:resume', id),
+  builtinDownloadCancel: (id: string) => ipcRenderer.invoke('builtin-download:cancel', id),
+  builtinDownloadRemove: (id: string) => ipcRenderer.invoke('builtin-download:remove', id),
+  builtinDownloadGetList: () => ipcRenderer.invoke('builtin-download:getList'),
+  builtinDownloadGetTask: (id: string) => ipcRenderer.invoke('builtin-download:getTask', id),
+  builtinDownloadClearCompleted: () => ipcRenderer.invoke('builtin-download:clearCompleted'),
+  builtinDownloadOpenFile: (id: string) => ipcRenderer.invoke('builtin-download:openFile', id),
+  builtinDownloadOpenFolder: (id: string) => ipcRenderer.invoke('builtin-download:openFolder', id),
+  onDownloadProgress: (callback: (progress: unknown) => void): (() => void) => {
+    const handler = (_e: unknown, progress: unknown) => callback(progress)
+    ipcRenderer.on('download:progress', handler)
+    return () => ipcRenderer.removeListener('download:progress', handler)
+  },
+
   // ===== Tab preview =====
   tabPreviewCapture: (tabId: number): Promise<string | null> =>
     ipcRenderer.invoke('tabPreview:capture', tabId),
   tabPreviewClear: (tabId: number): Promise<void> => ipcRenderer.invoke('tabPreview:clear', tabId),
+// Web panel
+webPanelGetAll: () => ipcRenderer.invoke('webpanel:getAll'),
+webPanelAdd: (item: { name: string; url: string; icon: string }) =>
+  ipcRenderer.invoke('webpanel:add', item),
+webPanelRemove: (id: string) => ipcRenderer.invoke('webpanel:remove', id),
+webPanelUpdate: (id: string, updates: { name?: string; url?: string; icon?: string }) =>
+  ipcRenderer.invoke('webpanel:update', id, updates),
+webPanelToggle: (id: string) => ipcRenderer.invoke('webpanel:toggle', id),
+webPanelHide: () => ipcRenderer.invoke('webpanel:hide'),
+webPanelIsVisible: () => ipcRenderer.invoke('webpanel:isVisible'),
+webPanelGetActive: () => ipcRenderer.invoke('webpanel:getActive'),
+webPanelSetWidth: (width: number) => ipcRenderer.invoke('webpanel:setWidth', width),
+webPanelReorder: (ids: string[]) => ipcRenderer.invoke('webpanel:reorder', ids),
+webPanelRelayout: () => ipcRenderer.invoke('webpanel:relayout'),
 
-  // ===== Web panel =====
-  webPanelOpen: (url: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('webPanel:open', url),
-  webPanelClose: (): Promise<boolean> => ipcRenderer.invoke('webPanel:close'),
-  webPanelToggle: (): Promise<boolean> => ipcRenderer.invoke('webPanel:toggle'),
-  webPanelNavigate: (url: string): Promise<boolean> => ipcRenderer.invoke('webPanel:navigate', url),
-  webPanelIsVisible: (): Promise<boolean> => ipcRenderer.invoke('webPanel:isVisible'),
-  webPanelGetUrl: (): Promise<string | null> => ipcRenderer.invoke('webPanel:getUrl'),
-  webPanelGetSaved: (): Promise<Array<{ url: string; title: string; pinned: boolean }>> =>
-    ipcRenderer.invoke('webPanel:getSaved'),
-  webPanelSave: (panels: Array<{ url: string; title: string; pinned: boolean }>): Promise<boolean> =>
-    ipcRenderer.invoke('webPanel:save', panels),
-  webPanelRemove: (url: string): Promise<boolean> => ipcRenderer.invoke('webPanel:remove', url),
+// Quick Search
+quickSearchGetEngine: () => ipcRenderer.invoke('quickSearch:getEngine'),
+quickSearchSetEngine: (engine: string) => ipcRenderer.invoke('quickSearch:setEngine', engine),
 
+// Proxy
+proxyToggle: (enable: boolean) => ipcRenderer.invoke('proxy:toggle', enable),
+proxyStatus: () => ipcRenderer.invoke('proxy:status'),
   // ===== Mouse gestures =====
   gestureExecute: (action: string, webContentsId: number): Promise<boolean> =>
     ipcRenderer.invoke('gesture:execute', action, webContentsId),
@@ -201,7 +285,8 @@ const api = {
   splitViewClose: (): Promise<boolean> => ipcRenderer.invoke('splitView:close'),
   splitViewGetState: (): Promise<{ active: boolean; rightUrl: string | null }> =>
     ipcRenderer.invoke('splitView:getState'),
-  splitViewNavigate: (url: string): Promise<boolean> => ipcRenderer.invoke('splitView:navigate', url),
+  splitViewNavigate: (url: string): Promise<boolean> =>
+    ipcRenderer.invoke('splitView:navigate', url),
   splitViewGoBack: (): Promise<boolean> => ipcRenderer.invoke('splitView:goBack'),
   splitViewGoForward: (): Promise<boolean> => ipcRenderer.invoke('splitView:goForward'),
   splitViewReload: (): Promise<boolean> => ipcRenderer.invoke('splitView:reload'),
@@ -360,6 +445,152 @@ const api = {
     const handler = (_event: unknown, data: { name: string }): void => callback(data)
     ipcRenderer.on('userscript:installed', handler)
     return () => ipcRenderer.removeListener('userscript:installed', handler)
+  },
+
+  // ===== Workspace =====
+  workspaceGetState: () => ipcRenderer.invoke('workspace:getState'),
+  workspaceGetAll: () => ipcRenderer.invoke('workspace:getAll'),
+  workspaceGetActive: () => ipcRenderer.invoke('workspace:getActive'),
+  workspaceAdd: (data: { name: string; icon: string; color: string }) =>
+    ipcRenderer.invoke('workspace:add', data),
+  workspaceRemove: (id: string) => ipcRenderer.invoke('workspace:remove', id),
+  workspaceUpdate: (id: string, updates: Record<string, unknown>) =>
+    ipcRenderer.invoke('workspace:update', id, updates),
+  workspaceSwitch: (id: string) => ipcRenderer.invoke('workspace:switch', id),
+  workspaceAddTab: (wsId: string, tabId: string) =>
+    ipcRenderer.invoke('workspace:addTab', wsId, tabId),
+  workspaceRemoveTab: (wsId: string, tabId: string) =>
+    ipcRenderer.invoke('workspace:removeTab', wsId, tabId),
+  workspacePinTab: (wsId: string, tabId: string) =>
+    ipcRenderer.invoke('workspace:pinTab', wsId, tabId),
+  workspaceUnpinTab: (wsId: string, tabId: string) =>
+    ipcRenderer.invoke('workspace:unpinTab', wsId, tabId),
+  workspaceSetLayout: (layout: 'horizontal' | 'vertical') =>
+    ipcRenderer.invoke('workspace:setLayout', layout),
+  workspaceSetSidebarWidth: (w: number) =>
+    ipcRenderer.invoke('workspace:setSidebarWidth', w),
+  workspaceSetSidebarCollapsed: (v: boolean) =>
+    ipcRenderer.invoke('workspace:setSidebarCollapsed', v),
+  workspaceSetAutoCollapse: (v: boolean) =>
+    ipcRenderer.invoke('workspace:setAutoCollapse', v),
+
+  // ===== Shortcuts =====
+  shortcutsGetAll: () => ipcRenderer.invoke('shortcuts:getAll'),
+  shortcutsUpdate: (id: string, newKey: string) =>
+    ipcRenderer.invoke('shortcuts:update', id, newKey),
+  shortcutsToggle: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('shortcuts:toggle', id, enabled),
+  shortcutsOpenSettings: () => ipcRenderer.invoke('shortcuts:open-settings'),
+  shortcutsCloseSettings: () => ipcRenderer.invoke('shortcuts:close-settings'),
+
+  // ===== Screenshot =====
+  screenshotOpen: () => ipcRenderer.invoke('screenshot:open'),
+  screenshotGetSource: () => ipcRenderer.invoke('screenshot:get-source'),
+  screenshotComplete: (payload: {
+    action: 'copy' | 'save' | 'pin'
+    dataUrl: string
+    rect?: { x: number; y: number; width: number; height: number }
+  }) => ipcRenderer.invoke('screenshot:complete', payload),
+  screenshotCancel: () => ipcRenderer.invoke('screenshot:cancel'),
+  screenshotLongCapture: () => ipcRenderer.invoke('screenshot:long-capture'),
+  pinImageClose: () => ipcRenderer.invoke('pin-image:close'),
+  pinImageGetData: () => ipcRenderer.invoke('pin-image:get-data'),
+  onScreenshotSource: (
+    cb: (data: { dataUrl: string; width: number; height: number; scaleFactor: number }) => void
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: { dataUrl: string; width: number; height: number; scaleFactor: number }
+    ): void => cb(data)
+    ipcRenderer.on('screenshot:source', handler)
+    return () => ipcRenderer.removeListener('screenshot:source', handler)
+  },
+  onPinImageData: (cb: (dataUrl: string) => void) => {
+    const handler = (_e: unknown, dataUrl: string): void => cb(dataUrl)
+    ipcRenderer.on('pin-image:data', handler)
+    return () => ipcRenderer.removeListener('pin-image:data', handler)
+  },
+
+  // ===== Command Palette =====
+  commandPaletteToggle: () => ipcRenderer.invoke('command-palette:toggle'),
+  commandPaletteClose: () => ipcRenderer.invoke('command-palette:close'),
+  commandPaletteGetCustom: () => ipcRenderer.invoke('command-palette:get-custom'),
+  commandPaletteAddCustom: (cmd: {
+    label: string
+    type: 'open-url' | 'run-js' | 'set-pref' | 'launch-app'
+    payload: string
+  }) => ipcRenderer.invoke('command-palette:add-custom', cmd),
+  commandPaletteRemoveCustom: (id: string) =>
+    ipcRenderer.invoke('command-palette:remove-custom', id),
+  commandPaletteExecuteCustom: (cmd: {
+    id: string
+    label: string
+    type: 'open-url' | 'run-js' | 'set-pref' | 'launch-app'
+    payload: string
+    createdAt: number
+  }) => ipcRenderer.invoke('command-palette:execute-custom', cmd),
+
+  // ===== Hibernation =====
+  hibernationGetList: () => ipcRenderer.invoke('hibernation:get-list'),
+  hibernationHibernateTab: (tabId: string) =>
+    ipcRenderer.invoke('hibernation:hibernate-tab', tabId),
+  hibernationWakeTab: (tabId: string) => ipcRenderer.invoke('hibernation:wake-tab', tabId),
+  hibernationHibernateOthers: () => ipcRenderer.invoke('hibernation:hibernate-others'),
+  hibernationIsHibernated: (tabId: string) =>
+    ipcRenderer.invoke('hibernation:is-hibernated', tabId),
+  hibernationGetPrefs: () => ipcRenderer.invoke('hibernation:get-prefs'),
+  hibernationSetPrefs: (prefs: {
+    enabled?: boolean
+    timeoutMinutes?: number
+    whitelist?: string[]
+  }) => ipcRenderer.invoke('hibernation:set-prefs', prefs),
+
+  // ===== Quick Note =====
+  quickNoteToggle: () => ipcRenderer.invoke('quick-note:toggle'),
+  quickNoteGetAll: () => ipcRenderer.invoke('quick-note:get-all'),
+  quickNoteSave: (note: { id: string; title: string; content: string }) =>
+    ipcRenderer.invoke('quick-note:save', note),
+  quickNoteCreate: () => ipcRenderer.invoke('quick-note:create'),
+  quickNoteDelete: (id: string) => ipcRenderer.invoke('quick-note:delete', id),
+  quickNoteClose: () => ipcRenderer.invoke('quick-note:close'),
+
+  // ===== Password autofill =====
+  passwordAutoCheck: (url: string) => ipcRenderer.invoke('password:auto-check', url),
+  passwordAutoSave: (data: {
+    url: string
+    username: string
+    password: string
+    title: string
+  }) => ipcRenderer.invoke('password:auto-save', data),
+  passwordAutoFill: (id: string, webContentsId?: number) =>
+    ipcRenderer.invoke('password:auto-fill', id, webContentsId),
+  onPasswordSavePrompt: (
+    cb: (data: { url: string; username: string; password: string; existing: boolean }) => void
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: { url: string; username: string; password: string; existing: boolean }
+    ): void => cb(data)
+    ipcRenderer.on('password:save-prompt', handler)
+    return () => ipcRenderer.removeListener('password:save-prompt', handler)
+  },
+  onPasswordFillPrompt: (
+    cb: (data: {
+      url: string
+      webContentsId: number
+      entries: Array<{ id: string; username: string }>
+    }) => void
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: {
+        url: string
+        webContentsId: number
+        entries: Array<{ id: string; username: string }>
+      }
+    ): void => cb(data)
+    ipcRenderer.on('password:fill-prompt', handler)
+    return () => ipcRenderer.removeListener('password:fill-prompt', handler)
   }
 }
 
@@ -522,4 +753,18 @@ if (isRendererApp && process.contextIsolated) {
 } else if (isRendererApp) {
   // @ts-ignore: Expose API to window for fallback usage
   window.api = api
+} else if (process.contextIsolated) {
+  try {
+    contextBridge.exposeInMainWorld('electronPasswordDetect', (data: {
+      url: string
+      username: string
+      password: string
+      title: string
+    }) => ipcRenderer.send('password:detect', data))
+    contextBridge.exposeInMainWorld('electronPasswordCheck', (url: string) => {
+      ipcRenderer.send('password:check-autofill', url)
+    })
+  } catch {
+    /* external pages may block isolated-world bridges */
+  }
 }

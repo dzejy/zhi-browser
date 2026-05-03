@@ -3,7 +3,7 @@ import { readJSON, writeJSON } from './storage'
 import { getSettings } from './settings'
 
 const HISTORY_FILE = 'history.json'
-const MAX_HISTORY = 2000
+const MAX_HISTORY = 10000
 
 let cache: HistoryItem[] | null = null
 
@@ -21,7 +21,8 @@ function normalizeHistoryItem(item: Partial<HistoryItem>): HistoryItem | null {
     id: typeof item.id === 'string' && item.id.trim() ? item.id : makeHistoryId(url, visitedAt),
     url,
     title,
-    visitedAt
+    visitedAt,
+    favicon: typeof item.favicon === 'string' ? item.favicon : ''
   }
 }
 
@@ -44,7 +45,7 @@ export function getHistory(limit?: number, query?: string): HistoryItem[] {
   return results
 }
 
-export function addHistory(url: string, title: string): void {
+export function addHistory(url: string, title: string, favicon = ''): void {
   if (!getSettings().saveHistory) return
   if (!url || url === 'about:blank') return
 
@@ -60,9 +61,15 @@ export function addHistory(url: string, title: string): void {
     const betterTitle =
       title && title !== 'New Tab' && title !== '新标签页' && title !== url ? title : existing.title
     history.splice(existingIdx, 1)
-    history.unshift({ id: makeHistoryId(url, visitedAt), url, title: betterTitle, visitedAt })
+    history.unshift({
+      id: makeHistoryId(url, visitedAt),
+      url,
+      title: betterTitle,
+      visitedAt,
+      favicon: favicon || existing.favicon || ''
+    })
   } else {
-    const item: HistoryItem = { id: makeHistoryId(url, visitedAt), url, title, visitedAt }
+    const item: HistoryItem = { id: makeHistoryId(url, visitedAt), url, title, visitedAt, favicon }
     history.unshift(item)
   }
 
@@ -84,4 +91,47 @@ export function removeHistoryEntry(id: string): void {
   const history = getHistory()
   cache = history.filter((item) => item.id !== id && item.url !== id)
   writeJSON(HISTORY_FILE, cache)
+}
+
+export function getHistoryPage(options?: { limit?: number; offset?: number; search?: string }): {
+  items: HistoryItem[]
+  total: number
+} {
+  const results = getHistory(undefined, options?.search)
+  const offset = Math.max(0, options?.offset || 0)
+  const limit = Math.max(1, options?.limit || 100)
+
+  return {
+    items: results.slice(offset, offset + limit),
+    total: results.length
+  }
+}
+
+export function removeHistoryEntries(ids: string[]): boolean {
+  const idSet = new Set(ids)
+  const history = getHistory()
+  cache = history.filter((item) => !idSet.has(item.id || '') && !idSet.has(item.url))
+  writeJSON(HISTORY_FILE, cache)
+  return true
+}
+
+export function searchHistory(keyword: string): HistoryItem[] {
+  return getHistory(50, keyword)
+}
+
+export function getHistoryForAI(
+  query: string
+): Array<{ title: string; url: string; time: string }> {
+  const lower = query.toLowerCase()
+  const results = getHistory()
+    .filter(
+      (item) => item.title.toLowerCase().includes(lower) || item.url.toLowerCase().includes(lower)
+    )
+    .slice(0, 20)
+
+  return results.map((item) => ({
+    title: item.title,
+    url: item.url,
+    time: new Date(item.visitedAt).toLocaleString('zh-CN')
+  }))
 }

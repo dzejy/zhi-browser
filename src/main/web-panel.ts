@@ -1,156 +1,234 @@
-import { ipcMain, WebContentsView, BaseWindow } from 'electron'
-import { getPreferences, updatePreferences } from './settings'
+/* eslint-disable @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-var-requires, @typescript-eslint/no-unused-vars, @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+import { WebContentsView, ipcMain, app } from 'electron'
+import * as fs from 'fs'
+import * as path from 'path'
 
-let webPanelView: WebContentsView | null = null
-let webPanelVisible = false
-const WEB_PANEL_WIDTH = 380
+export interface WebPanelItem {
+  id: string
+  name: string
+  url: string
+  icon: string
+  order: number
+}
+
+interface WebPanelState {
+  panels: WebPanelItem[]
+  activeId: string | null
+  visible: boolean
+  width: number
+}
+
+const state: WebPanelState = {
+  panels: [],
+  activeId: null,
+  visible: false,
+  width: 360
+}
+
+const panelViews: Map<string, WebContentsView> = new Map()
+let mainWindowRef: Electron.BaseWindow | null = null
+let getLayoutOffsetsRef: (() => { top: number; leftIconBar: number; verticalTab: number }) | null = null
+let onLayoutChangedRef: (() => void) | null = null
+
+const DATA_FILE = 'web-panels.json'
+
+function getDataPath(): string {
+  return path.join(app.getPath('userData'), DATA_FILE)
+}
+
+function loadPanels(): void {
+  try {
+    const raw = fs.readFileSync(getDataPath(), 'utf-8')
+    const data = JSON.parse(raw)
+    state.panels = data.panels || []
+    state.width = data.width || 360
+  } catch {
+    state.panels = []
+  }
+}
+
+function savePanels(): void {
+  fs.writeFileSync(getDataPath(), JSON.stringify({
+    panels: state.panels,
+    width: state.width
+  }, null, 2), 'utf-8')
+}
+
+function createPanelView(panel: WebPanelItem): WebContentsView {
+  const view = new WebContentsView({
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true
+    }
+  })
+  view.webContents.loadURL(panel.url)
+  panelViews.set(panel.id, view)
+  return view
+}
+
+function relayoutPanel(): void {
+  if (!mainWindowRef || !state.visible || !state.activeId) return
+  const view = panelViews.get(state.activeId)
+  if (!view) return
+
+  const offsets = getLayoutOffsetsRef?.() || { top: 0, leftIconBar: 0, verticalTab: 0 }
+  const bounds = mainWindowRef.getBounds()
+  const x = offsets.leftIconBar + offsets.verticalTab
+  const y = offsets.top
+  const w = state.width
+  const h = bounds.height - y
+
+  view.setBounds({ x, y, width: w, height: h })
+}
+
+function notifyLayoutChanged(): void {
+  onLayoutChangedRef?.()
+}
+
+function showPanel(id: string): void {
+  if (!mainWindowRef) return
+
+  // Hide current
+  if (state.activeId && state.activeId !== id) {
+    const current = panelViews.get(state.activeId)
+    if (current) {
+      mainWindowRef.contentView.removeChildView(current)
+    }
+  }
+
+  state.activeId = id
+  state.visible = true
+
+  let view = panelViews.get(id)
+  if (!view) {
+    const panel = state.panels.find(p => p.id === id)
+    if (!panel) return
+    view = createPanelView(panel)
+  }
+
+  mainWindowRef.contentView.addChildView(view)
+  relayoutPanel()
+}
+
+function hidePanel(): void {
+  if (!mainWindowRef || !state.activeId) return
+  const view = panelViews.get(state.activeId)
+  if (view) {
+    mainWindowRef.contentView.removeChildView(view)
+  }
+  state.visible = false
+  state.activeId = null
+}
+
+export function getWebPanelOffset(): number {
+  if (!state.visible) return 0
+  return state.width
+}
+
+export function getWebPanelRailWidth(): number {
+  return state.panels.length > 0 ? 48 : 0
+}
 
 export function registerWebPanelHandlers(
-  getMainWindow: () => BaseWindow | null,
-  getContentBounds: () => { x: number; y: number; width: number; height: number },
-  onLayoutChange: () => void
+  mainWindow: Electron.BaseWindow,
+  getLayoutOffsets: () => { top: number; leftIconBar: number; verticalTab: number },
+  onLayoutChanged?: () => void
 ): void {
-  ipcMain.handle('webPanel:open', async (_event, url: string) => {
-    const mainWindow = getMainWindow()
-    if (!mainWindow) return { success: false }
+  mainWindowRef = mainWindow
+  getLayoutOffsetsRef = getLayoutOffsets
+  onLayoutChangedRef = onLayoutChanged ?? null
+  loadPanels()
 
-    try {
-      if (!webPanelView) {
-        webPanelView = new WebContentsView({
-          webPreferences: {
-            contextIsolation: true,
-            sandbox: true
-          }
-        })
-        mainWindow.contentView.addChildView(webPanelView)
-      }
-
-      await webPanelView.webContents.loadURL(url)
-      webPanelVisible = true
-      layoutWebPanel(getContentBounds)
-      onLayoutChange()
-
-      const prefs = getPreferences()
-      const panels = prefs.webPanels || []
-      if (!panels.some((panel) => panel.url === url)) {
-        panels.push({ url, title: url, pinned: true })
-        updatePreferences({ webPanels: panels })
-      }
-
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  ipcMain.handle('webpanel:getAll', () => {
+    return state.panels
   })
 
-  ipcMain.handle('webPanel:close', async () => {
-    closeWebPanel(getMainWindow)
-    onLayoutChange()
+  ipcMain.handle('webpanel:add', (_e, item: Omit<WebPanelItem, 'id' | 'order'>) => {
+    const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const newPanel: WebPanelItem = {
+      id,
+      name: item.name,
+      url: item.url,
+      icon: item.icon,
+      order: state.panels.length
+    }
+    state.panels.push(newPanel)
+    savePanels()
+    notifyLayoutChanged()
+    return newPanel
+  })
+
+  ipcMain.handle('webpanel:remove', (_e, id: string) => {
+    const view = panelViews.get(id)
+    if (view) {
+      if (state.activeId === id) {
+        mainWindowRef?.contentView.removeChildView(view)
+        state.activeId = null
+        state.visible = false
+      }
+      view.webContents.close()
+      panelViews.delete(id)
+    }
+    state.panels = state.panels.filter(p => p.id !== id)
+    savePanels()
+    notifyLayoutChanged()
     return true
   })
 
-  ipcMain.handle('webPanel:toggle', async () => {
-    if (webPanelVisible && webPanelView) {
-      const mainWindow = getMainWindow()
-      if (mainWindow) {
-        try {
-          mainWindow.contentView.removeChildView(webPanelView)
-        } catch {
-          /* may not be attached */
-        }
-      }
-      webPanelVisible = false
-    } else if (webPanelView) {
-      const mainWindow = getMainWindow()
-      if (mainWindow) {
-        mainWindow.contentView.addChildView(webPanelView)
-        layoutWebPanel(getContentBounds)
-      }
-      webPanelVisible = true
-    }
-    onLayoutChange()
-    return webPanelVisible
-  })
-
-  ipcMain.handle('webPanel:navigate', async (_event, url: string) => {
-    if (webPanelView && !webPanelView.webContents.isDestroyed()) {
-      await webPanelView.webContents.loadURL(url)
-      return true
-    }
-    return false
-  })
-
-  ipcMain.handle('webPanel:isVisible', () => {
-    return webPanelVisible
-  })
-
-  ipcMain.handle('webPanel:getUrl', () => {
-    if (webPanelView && !webPanelView.webContents.isDestroyed()) {
-      return webPanelView.webContents.getURL()
-    }
-    return null
-  })
-
-  ipcMain.handle('webPanel:getSaved', () => {
-    const prefs = getPreferences()
-    return prefs.webPanels || []
-  })
-
-  ipcMain.handle('webPanel:save', (_event, panels: Array<{ url: string; title: string; pinned: boolean }>) => {
-    updatePreferences({ webPanels: panels })
+  ipcMain.handle('webpanel:update', (_e, id: string, updates: Partial<WebPanelItem>) => {
+    const panel = state.panels.find(p => p.id === id)
+    if (!panel) return false
+    if (updates.name !== undefined) panel.name = updates.name
+    if (updates.url !== undefined) panel.url = updates.url
+    if (updates.icon !== undefined) panel.icon = updates.icon
+    savePanels()
     return true
   })
 
-  ipcMain.handle('webPanel:remove', (_event, url: string) => {
-    const prefs = getPreferences()
-    const panels = (prefs.webPanels || []).filter((panel) => panel.url !== url)
-    updatePreferences({ webPanels: panels })
+  ipcMain.handle('webpanel:toggle', (_e, id: string) => {
+    if (state.activeId === id && state.visible) {
+      hidePanel()
+    } else {
+      showPanel(id)
+    }
+    notifyLayoutChanged()
+    return { visible: state.visible, activeId: state.activeId }
+  })
+
+  ipcMain.handle('webpanel:hide', () => {
+    hidePanel()
+    notifyLayoutChanged()
     return true
   })
-}
 
-function layoutWebPanel(
-  getContentBounds: () => { x: number; y: number; width: number; height: number }
-): void {
-  if (!webPanelView || !webPanelVisible || webPanelView.webContents.isDestroyed()) return
-
-  const bounds = getContentBounds()
-  webPanelView.setBounds({
-    x: bounds.x + bounds.width - WEB_PANEL_WIDTH,
-    y: bounds.y,
-    width: WEB_PANEL_WIDTH,
-    height: bounds.height
+  ipcMain.handle('webpanel:isVisible', () => {
+    return state.visible
   })
-}
 
-export function relayoutWebPanel(
-  getContentBounds: () => { x: number; y: number; width: number; height: number }
-): void {
-  layoutWebPanel(getContentBounds)
-}
+  ipcMain.handle('webpanel:getActive', () => {
+    return state.activeId
+  })
 
-export function closeWebPanel(getMainWindow: () => BaseWindow | null): void {
-  if (webPanelView) {
-    const mainWindow = getMainWindow()
-    if (mainWindow) {
-      try {
-        mainWindow.contentView.removeChildView(webPanelView)
-      } catch {
-        /* may not be attached */
-      }
-    }
-    if (!webPanelView.webContents.isDestroyed()) {
-      webPanelView.webContents.close()
-    }
-    webPanelView = null
-  }
-  webPanelVisible = false
-}
+  ipcMain.handle('webpanel:setWidth', (_e, width: number) => {
+    state.width = Math.max(200, Math.min(600, width))
+    savePanels()
+    relayoutPanel()
+    notifyLayoutChanged()
+    return state.width
+  })
 
-export function isWebPanelVisible(): boolean {
-  return webPanelVisible
-}
+  ipcMain.handle('webpanel:reorder', (_e, orderedIds: string[]) => {
+    orderedIds.forEach((id, index) => {
+      const panel = state.panels.find(p => p.id === id)
+      if (panel) panel.order = index
+    })
+    state.panels.sort((a, b) => a.order - b.order)
+    savePanels()
+    return state.panels
+  })
 
-export function getWebPanelWidth(): number {
-  return webPanelVisible ? WEB_PANEL_WIDTH : 0
+  ipcMain.handle('webpanel:relayout', () => {
+    relayoutPanel()
+    return true
+  })
 }

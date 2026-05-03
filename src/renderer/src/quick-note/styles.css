@@ -1,0 +1,121 @@
+.qn-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 26, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #eee;
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-app-region: no-drag;
+}
+
+.qn-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  -webkit-app-region: drag;
+}
+
+.qn-tabs {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  overflow-x: auto;
+  -webkit-app-region: no-drag;
+}
+
+.qn-tab {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+  max-width: 120px; /* qn-tab */
+  overflow: hidden; /* qn-tab */
+  text-overflow: ellipsis; /* qn-tab */
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.qn-tab.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #fff;
+}
+
+.qn-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.qn-actions {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.qn-btn {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 13px;
+  -webkit-app-region: no-drag;
+}
+
+.qn-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.qn-title-input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  -webkit-app-region: no-drag;
+}
+
+.qn-content {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #ddd;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  resize: none;
+  -webkit-app-region: no-drag;
+}
+
+.qn-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.qn-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.qn-footer {
+  padding: 4px 12px;
+  font-size: 10px;
+  color: #888;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  justify-content: space-between;
+}

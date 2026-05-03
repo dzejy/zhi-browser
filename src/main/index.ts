@@ -5,12 +5,26 @@ import { TabManager } from './tabs'
 import { readJSON, writeJSON } from './storage'
 import {
   addBookmark,
+  addManagedBookmark,
   removeBookmark,
+  removeBookmarks,
   getBookmarks,
+  getManagedBookmarks,
+  getBookmarkFolders,
+  getBookmarksForAI,
+  searchBookmarks,
   updateBookmark,
   clearBookmarks
 } from './bookmarks'
-import { getHistory, clearHistory, removeHistoryEntry } from './history'
+import {
+  getHistory,
+  getHistoryPage,
+  getHistoryForAI,
+  searchHistory,
+  clearHistory,
+  removeHistoryEntry,
+  removeHistoryEntries
+} from './history'
 import {
   setupDownloadHandler,
   setOnDownloadUpdate,
@@ -59,9 +73,9 @@ import type { AISelectionAction } from '../shared/aiTypes'
 import { registerUserScriptIPC } from './userscript/ipc-handler'
 import { registerReaderHandlers } from './reader'
 import { registerSnifferHandlers } from './sniffer'
-import { registerDownloaderHandlers } from './downloader'
+import { registerDownloaderHandlers, registerBuiltinDownloaderHandlers } from './downloader'
 import { registerTabPreviewHandlers } from './tab-preview'
-import { registerWebPanelHandlers, relayoutWebPanel, getWebPanelWidth } from './web-panel'
+import { registerWebPanelHandlers, getWebPanelOffset, getWebPanelRailWidth } from './web-panel'
 import { registerMouseGestureHandlers } from './mouse-gesture'
 import { executeGestureAction } from './mouse-gesture-actions'
 import {
@@ -70,6 +84,25 @@ import {
   isSplitViewActive,
   getLeftViewWidth
 } from './split-view'
+import { registerProxyHandlers, proxyAutoStart } from './proxy'
+import { registerPasswordHandlers } from './passwords'
+import { getIncognitoSession, registerIncognitoHandlers } from './incognito'
+import { registerWorkspaceHandlers } from './workspace'
+import { getEffectiveSidebarWidth } from './workspace/store'
+import { initShortcuts, registerShortcutHandlers, startShortcuts, registerAction } from './shortcuts'
+import {
+  captureLongScreenshotToClipboard,
+  registerScreenshotHandlers,
+  openScreenshotWindow
+} from './screenshot'
+import {
+  initCommandPalette,
+  registerCommandPaletteHandlers,
+  toggleCommandPalette
+} from './command-palette'
+import { registerHibernationHandlers, initHibernation, hibernateOthers } from './hibernation'
+import { initQuickNote, registerQuickNoteHandlers, toggleQuickNote } from './quick-note'
+import { registerPasswordHandlers as registerPasswordAutoHandlers } from './password'
 
 let win: BaseWindow
 let uiView: WebContentsView
@@ -87,14 +120,21 @@ const BASE_MIN_CHROME_HEIGHT = 84
 const TOP_CHROME_HEIGHT = Math.round(BASE_TOP_CHROME_HEIGHT * UI_SCALE)
 const MIN_CHROME_HEIGHT = Math.round(BASE_MIN_CHROME_HEIGHT * UI_SCALE)
 const TITLE_BAR_OVERLAY_HEIGHT = Math.round(34 * UI_SCALE)
+const FULLSCREEN_BUTTON_SIZE = Math.round(36 * UI_SCALE)
 const PANEL_WIDTH = 400
 const PANEL_RIGHT_MARGIN = 8
 let currentChromeHeight = TOP_CHROME_HEIGHT
+let lastWindowedLayout: BrowserLayout = {
+  uiViewHeight: TOP_CHROME_HEIGHT,
+  pageTop: TOP_CHROME_HEIGHT,
+  uiViewWidth: null
+}
 const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'bookmarks',
   'history',
   'downloads',
   'settings',
+  'proxy',
   'about',
   'ai',
   'scripts',
@@ -126,6 +166,14 @@ function sendToPanel(channel: string, ...args: unknown[]): void {
   } else {
     panelView.webContents.once('did-finish-load', send)
   }
+}
+
+function isTrustedRendererShell(sender: Electron.WebContents): boolean {
+  const url = sender.getURL()
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    return url.startsWith(process.env['ELECTRON_RENDERER_URL'])
+  }
+  return url.startsWith('file://') && url.replace(/\\/g, '/').includes('/renderer/index.html')
 }
 
 function broadcastBookmarkBarVisibility(visible: boolean): void {
@@ -163,6 +211,10 @@ function installAppMenu(): void {
       tabManager.createTab()
       sendToUi('browser:focus-address-bar')
     },
+    newIncognitoTab: () => {
+      tabManager.createTab(undefined, { session: getIncognitoSession(), incognito: true })
+      sendToUi('browser:focus-address-bar')
+    },
     closeTab: () => tabManager.closeTab(tabManager.getActiveTabId()),
     reload: () => tabManager.reload(tabManager.getActiveTabId()),
     zoomIn: () => tabManager.zoomIn(tabManager.getActiveTabId()),
@@ -176,6 +228,14 @@ function installAppMenu(): void {
     showDownloads: () => openPanelFromCommand('downloads'),
     showSettings: () => openPanelFromCommand('settings'),
     showAbout: () => openPanelFromCommand('about'),
+    showCommandPalette: () => toggleCommandPalette(),
+    startScreenshot: () => {
+      openScreenshotWindow().catch(() => {})
+    },
+    openQuickNote: () => toggleQuickNote(),
+    hibernateOtherTabs: () => {
+      hibernateOthers().catch(() => {})
+    },
     reopenClosedTab: () => tabManager.restoreClosed(),
     addBookmark: () => sendToUi('browser:add-bookmark'),
     openUserDataFolder: () => openUserDataFolder(),
@@ -206,6 +266,36 @@ function openAIPanelFromAction(action?: AISelectionAction): void {
       sendToPanel('ai:trigger-action', action)
     }, 80)
   }
+}
+
+function getVerticalTabWidth(): number {
+  if (isFullscreenChromeMode()) return 0
+  return getEffectiveSidebarWidth()
+}
+
+function isFullscreenChromeMode(): boolean {
+  return win.isFullScreen() || currentChromeHeight === 0
+}
+
+function applyBrowserLayout(layout: BrowserLayout): void {
+  currentChromeHeight = layout.pageTop
+  tabManager.setLayout(layout)
+  updateLayout()
+}
+
+function handleFullscreenChanged(fullscreen: boolean): void {
+  if (fullscreen) {
+    hidePanelView(false)
+    applyBrowserLayout({
+      uiViewHeight: FULLSCREEN_BUTTON_SIZE,
+      uiViewWidth: FULLSCREEN_BUTTON_SIZE,
+      pageTop: 0
+    })
+  } else {
+    applyBrowserLayout(lastWindowedLayout)
+  }
+
+  sendToUi('window:fullscreen-changed', fullscreen)
 }
 
 function createWindow(): void {
@@ -315,6 +405,80 @@ function createWindow(): void {
     panelView,
     getActiveWebContents: () => tabManager.getActiveWebContents()
   })
+  registerPasswordHandlers()
+  registerWorkspaceHandlers({
+    onLayoutChanged: () => updateLayout()
+  })
+  initShortcuts()
+  registerShortcutHandlers()
+  initCommandPalette(
+    () => win,
+    () => tabManager.getActiveWebContents(),
+    (url) => tabManager.createTab(url)
+  )
+  initQuickNote(() => win)
+  // Wire shortcut actions to their handlers
+  registerAction('screenshot:capture', () => { openScreenshotWindow().catch(() => {}) })
+  registerAction('screenshot:pin', () => { openScreenshotWindow().catch(() => {}) })
+  registerAction('screenshot:long', () => {
+    const wc = tabManager.getActiveWebContents()
+    captureLongScreenshotToClipboard(wc).catch(() => {})
+  })
+  registerAction('command-palette:toggle', () => { toggleCommandPalette() })
+  registerAction('quick-note:toggle', () => { toggleQuickNote() })
+  registerAction('tab:hibernate-others', () => { hibernateOthers().catch(() => {}) })
+  registerAction('translate:page', () => {
+    const wc = tabManager.getActiveWebContents()
+    if (wc) {
+      import('./translate/orchestrator').then(m => m.translatePage(wc)).catch(() => {})
+    }
+  })
+  registerAction('reader:toggle', () => {
+    const wc = tabManager.getActiveWebContents()
+    if (wc) wc.send('reader:toggle')
+  })
+  registerAction('proxy:toggle', () => {
+    import('./proxy/core').then(m => {
+      const running = m.isCoreRunning()
+      if (running) {
+        m.stopCore()
+      } else {
+        import('./proxy/subscription').then(s => m.startCore(s.getConfigPath())).catch(() => {})
+      }
+    }).catch(() => {})
+  })
+  registerAction('darkmode:toggle', () => {
+    import('./darkMode').then(m => {
+      const next = !m.isDarkMode()
+      const settings = getSettings()
+      if (updateSettings({ ...settings, webDarkMode: next })) {
+        m.refreshAllTabsDarkMode(() => tabManager.getAllTabViews()).catch(() => {})
+      }
+    }).catch(() => {})
+  })
+  registerScreenshotHandlers(() => tabManager.getActiveWebContents())
+  registerCommandPaletteHandlers()
+  registerHibernationHandlers()
+  initHibernation({
+    getTab: tabManager.getTab.bind(tabManager),
+    getTabOrder: tabManager.getTabOrder.bind(tabManager),
+    getActiveTabId: tabManager.getActiveTabId.bind(tabManager),
+    loadUrl: tabManager.loadUrl.bind(tabManager)
+  })
+  registerQuickNoteHandlers()
+  registerPasswordAutoHandlers((channel, payload) => {
+    sendToUi(channel, payload)
+  })
+  registerProxyHandlers(getPreferences, updatePreferences)
+  registerIncognitoHandlers({
+    createTab: (url, options) => {
+      tabManager.createTab(url, {
+        session: options.session,
+        incognito: options.incognito
+      })
+    },
+    getActiveTabWebContents: () => tabManager.getActiveWebContents()
+  })
   registerTranslateHandlers(() => {
     const activeView = tabManager.getActiveTabView()
     return activeView?.webContents ?? null
@@ -337,11 +501,15 @@ function createWindow(): void {
     }
   )
   registerTabPreviewHandlers((tabId) => tabManager.getTabViewByWebContentsId(tabId))
-  registerWebPanelHandlers(
-    () => win,
-    getRawContentBounds,
-    () => updateLayout()
-  )
+  registerWebPanelHandlers(win, () => {
+    const fullscreen = isFullscreenChromeMode()
+    return {
+      top: fullscreen ? 0 : currentChromeHeight,
+      leftIconBar: fullscreen ? 0 : getWebPanelRailWidth(),
+      verticalTab: fullscreen ? 0 : getVerticalTabWidth()
+    }
+  }, () => updateLayout())
+
   registerMouseGestureHandlers((action) => {
     executeGestureAction(
       action,
@@ -361,16 +529,26 @@ function createWindow(): void {
     (url) => tabManager.createTab(url)
   )
   tabManager.setPageBoundsProvider((bounds) => {
-    const availableWidth = Math.max(0, bounds.width - getWebPanelWidth())
+    if (isFullscreenChromeMode()) return bounds
+
+    const verticalTabWidth = getVerticalTabWidth()
+    const leftOffset = getWebPanelRailWidth() + verticalTabWidth + getWebPanelOffset()
+
+    const availableWidth = Math.max(0, bounds.width - leftOffset)
     return {
       ...bounds,
+      x: bounds.x + leftOffset,
       width: isSplitViewActive() ? getLeftViewWidth(availableWidth) : availableWidth
     }
   })
   registerDarkModeHandlers({
     getAllViews: () => tabManager.getAllTabViews(),
     validateSender: (event) => {
-      return event.sender === uiView.webContents || event.sender === panelView?.webContents
+      return (
+        event.sender === uiView.webContents ||
+        event.sender === panelView?.webContents ||
+        isTrustedRendererShell(event.sender)
+      )
     },
     onDarkModeChanged: (enabled) => {
       win.setBackgroundColor(getWindowBackgroundColor())
@@ -383,6 +561,8 @@ function createWindow(): void {
       sendToPanel('browser:settings', updated)
     }
   })
+
+  startShortcuts()
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     panelView.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=true`)
@@ -413,6 +593,12 @@ function createWindow(): void {
     if (ctrl && !shift && key === 't') {
       event.preventDefault()
       tabManager.createTab()
+      uiView.webContents.send('browser:focus-address-bar')
+      return
+    }
+    if (ctrl && shift && key === 'n') {
+      event.preventDefault()
+      tabManager.createTab(undefined, { session: getIncognitoSession(), incognito: true })
       uiView.webContents.send('browser:focus-address-bar')
       return
     }
@@ -503,6 +689,8 @@ function createWindow(): void {
 
   updateLayout()
   win.on('resize', updateLayout)
+  win.on('enter-full-screen', () => handleFullscreenChanged(true))
+  win.on('leave-full-screen', () => handleFullscreenChanged(false))
 
   restoreSession()
 
@@ -530,8 +718,10 @@ function createWindow(): void {
 }
 
 function updateLayout(): void {
+  if (isFullscreenChromeMode() && panelVisible) {
+    hidePanelView(false)
+  }
   tabManager.updateLayout()
-  relayoutWebPanel(getRawContentBounds)
   relayoutSplitView(getBrowserContentBounds)
   if (panelVisible && panelView) {
     const { width, height } = win.getContentBounds()
@@ -681,9 +871,15 @@ function getRawContentBounds(): { x: number; y: number; width: number; height: n
 
 function getBrowserContentBounds(): { x: number; y: number; width: number; height: number } {
   const bounds = getRawContentBounds()
+  if (isFullscreenChromeMode()) return bounds
+
+  const verticalTabWidth = getVerticalTabWidth()
+  const leftOffset = getWebPanelRailWidth() + verticalTabWidth + getWebPanelOffset()
+
   return {
     ...bounds,
-    width: Math.max(0, bounds.width - getWebPanelWidth())
+    x: bounds.x + leftOffset,
+    width: Math.max(0, bounds.width - leftOffset)
   }
 }
 
@@ -697,7 +893,11 @@ function setupIPC(): void {
   }
 
   const validateSender = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => {
-    return event.sender === uiView.webContents || event.sender === panelView?.webContents
+    return (
+      event.sender === uiView.webContents ||
+      event.sender === panelView?.webContents ||
+      isTrustedRendererShell(event.sender)
+    )
   }
 
   const isSidePanelType = (type: unknown): type is SidePanelType => {
@@ -706,13 +906,16 @@ function setupIPC(): void {
 
   const normalizeLayout = (layout: BrowserLayout): BrowserLayout => {
     const uiViewHeight = Number.isFinite(layout.uiViewHeight)
-      ? Math.max(MIN_CHROME_HEIGHT, Math.round(layout.uiViewHeight))
+      ? Math.max(0, Math.round(layout.uiViewHeight))
       : TOP_CHROME_HEIGHT
     const pageTop = Number.isFinite(layout.pageTop)
-      ? Math.max(MIN_CHROME_HEIGHT, Math.round(layout.pageTop))
+      ? Math.max(0, Math.round(layout.pageTop))
       : uiViewHeight
+    const uiViewWidth = Number.isFinite(layout.uiViewWidth)
+      ? Math.max(0, Math.round(layout.uiViewWidth as number))
+      : null
 
-    return { uiViewHeight, pageTop }
+    return { uiViewHeight, pageTop, uiViewWidth }
   }
 
   ipcMain.on('ui:set-height', (event, height: number) => {
@@ -720,20 +923,22 @@ function setupIPC(): void {
     const normalizedHeight = Number.isFinite(height)
       ? Math.max(MIN_CHROME_HEIGHT, Math.round(height))
       : TOP_CHROME_HEIGHT
-    currentChromeHeight = normalizedHeight
-    tabManager.setLayout({
+    const layout: BrowserLayout = {
       uiViewHeight: normalizedHeight,
+      uiViewWidth: null,
       pageTop: normalizedHeight
-    })
-    updateLayout()
+    }
+    lastWindowedLayout = layout
+    applyBrowserLayout(layout)
   })
 
   ipcMain.on('ui:set-layout', (event, layout: BrowserLayout) => {
     if (!validateUiSender(event)) return
     const normalized = normalizeLayout(layout)
-    currentChromeHeight = normalized.pageTop
-    tabManager.setLayout(normalized)
-    updateLayout()
+    if (!win.isFullScreen() && normalized.pageTop > 0) {
+      lastWindowedLayout = normalized
+    }
+    applyBrowserLayout(normalized)
   })
 
   ipcMain.on('panel:show', (event, args: { type?: unknown }) => {
@@ -762,6 +967,19 @@ function setupIPC(): void {
   ipcMain.handle('menu:popup', (event) => {
     if (!validateUiSender(event)) return
     popupMenu({ window: win })
+  })
+
+  ipcMain.handle('window:toggle-fullscreen', (event) => {
+    if (!validateUiSender(event)) return false
+    const nextState = !win.isFullScreen()
+    win.setFullScreen(nextState)
+    handleFullscreenChanged(nextState)
+    return nextState
+  })
+
+  ipcMain.handle('window:is-fullscreen', (event) => {
+    if (!validateUiSender(event)) return false
+    return win.isFullScreen()
   })
 
   ipcMain.handle('default-browser:set', (event) => {
@@ -838,6 +1056,13 @@ function setupIPC(): void {
   ipcMain.handle('tab:toggle-mute', (event, tabId: string) => {
     if (!validateSender(event)) return
     tabManager.toggleMuteTab(tabId)
+  })
+
+  ipcMain.handle('tab:toggle-devtools', (event, tabId?: string) => {
+    if (!validateSender(event)) return { success: false }
+    const targetTabId = typeof tabId === 'string' && tabId ? tabId : tabManager.getActiveTabId()
+    tabManager.toggleDevTools(targetTabId)
+    return { success: true }
   })
 
   ipcMain.on('tab:restore-closed', (event) => {
@@ -943,37 +1168,179 @@ function setupIPC(): void {
     return getBookmarks()
   })
 
-  ipcMain.handle('bookmarks:update', (event, id: string, title: string, url: string) => {
-    if (!validateSender(event)) return []
-    const nextTitle = typeof title === 'string' ? title.trim() : ''
-    const nextUrl = typeof url === 'string' ? url.trim() : ''
-    if (!id || !nextTitle || !nextUrl) return getBookmarks()
-    if (!nextUrl.includes('.') && !nextUrl.includes('://')) return getBookmarks()
-    const updated = updateBookmark(id, { title: nextTitle, url: nextUrl })
-    broadcastBookmarksChanged()
-    return updated
-  })
+  ipcMain.handle(
+    'bookmarks:update',
+    (
+      event,
+      id: string,
+      titleOrUpdates: string | { title?: string; url?: string; folder?: string; favicon?: string },
+      url?: string
+    ) => {
+      try {
+        if (!validateSender(event)) return []
+        const updates =
+          typeof titleOrUpdates === 'object'
+            ? titleOrUpdates
+            : { title: titleOrUpdates, url: typeof url === 'string' ? url : '' }
+        const nextTitle = typeof updates.title === 'string' ? updates.title.trim() : undefined
+        const nextUrl = typeof updates.url === 'string' ? updates.url.trim() : undefined
+        if (!id) return typeof titleOrUpdates === 'object' ? { success: false } : getBookmarks()
+        if (nextUrl && !nextUrl.includes('.') && !nextUrl.includes('://')) {
+          return typeof titleOrUpdates === 'object' ? { success: false } : getBookmarks()
+        }
+        const updated = updateBookmark(id, {
+          ...updates,
+          title: nextTitle,
+          url: nextUrl
+        })
+        broadcastBookmarksChanged()
+        return typeof titleOrUpdates === 'object' ? { success: true } : updated
+      } catch {
+        return typeof titleOrUpdates === 'object' ? { success: false } : []
+      }
+    }
+  )
 
   ipcMain.handle('bookmarks:clear', (event) => {
-    if (!validateSender(event)) return
-    clearBookmarks()
-    broadcastBookmarksChanged()
+    try {
+      if (!validateSender(event)) return { success: false }
+      clearBookmarks()
+      broadcastBookmarksChanged()
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle('bookmarks:getAll', (event, options?: { folder?: string; search?: string }) => {
+    try {
+      if (!validateSender(event)) return []
+      return getManagedBookmarks(options)
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle(
+    'bookmarks:add',
+    (event, entry: { url: string; title: string; folder?: string; favicon?: string }) => {
+      try {
+        if (!validateSender(event)) return { success: false }
+        const bookmark = addManagedBookmark(entry)
+        broadcastBookmarksChanged()
+        return { success: true, id: bookmark.id }
+      } catch {
+        return { success: false }
+      }
+    }
+  )
+
+  ipcMain.handle('bookmarks:delete', (event, ids: string[]) => {
+    try {
+      if (!validateSender(event)) return { success: false }
+      removeBookmarks(Array.isArray(ids) ? ids : [])
+      broadcastBookmarksChanged()
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle('bookmarks:getFolders', (event) => {
+    try {
+      if (!validateSender(event)) return []
+      return getBookmarkFolders()
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('bookmarks:search', (event, keyword: string) => {
+    try {
+      if (!validateSender(event)) return []
+      return searchBookmarks(keyword || '')
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('bookmarks:getForAI', (event, query: string) => {
+    try {
+      if (!validateSender(event)) return []
+      return getBookmarksForAI(query || '')
+    } catch {
+      return []
+    }
   })
 
   // History
   ipcMain.handle('history:list', (event, args?: { limit?: number; query?: string }) => {
-    if (!validateSender(event)) return []
-    return getHistory(args?.limit, args?.query)
+    try {
+      if (!validateSender(event)) return []
+      return getHistory(args?.limit, args?.query)
+    } catch {
+      return []
+    }
   })
 
   ipcMain.handle('history:clear', (event) => {
-    if (!validateSender(event)) return
-    clearHistory()
+    try {
+      if (!validateSender(event)) return { success: false }
+      clearHistory()
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
   })
 
   ipcMain.handle('history:remove', (event, id: string) => {
-    if (!validateSender(event)) return
-    removeHistoryEntry(id)
+    try {
+      if (!validateSender(event)) return { success: false }
+      removeHistoryEntry(id)
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle(
+    'history:getAll',
+    (event, options?: { limit?: number; offset?: number; search?: string }) => {
+      try {
+        if (!validateSender(event)) return { items: [], total: 0 }
+        return getHistoryPage(options)
+      } catch {
+        return { items: [], total: 0 }
+      }
+    }
+  )
+
+  ipcMain.handle('history:delete', (event, ids: string[]) => {
+    try {
+      if (!validateSender(event)) return { success: false }
+      removeHistoryEntries(Array.isArray(ids) ? ids : [])
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle('history:search', (event, keyword: string) => {
+    try {
+      if (!validateSender(event)) return []
+      return searchHistory(keyword || '')
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('history:getForAI', (event, query: string) => {
+    try {
+      if (!validateSender(event)) return []
+      return getHistoryForAI(query || '')
+    } catch {
+      return []
+    }
   })
 
   // Downloads
@@ -1012,6 +1379,21 @@ function setupIPC(): void {
     if (!validateSender(event)) return
     clearDownloads()
     pushBrowserState()
+  })
+
+  // Quick Search
+  ipcMain.handle('quickSearch:getEngine', () => {
+    return getPreferences().quickSearch?.engine || 'google'
+  })
+
+  ipcMain.handle('quickSearch:setEngine', (_e, engine: string) => {
+    const prefs = getPreferences()
+    if (!prefs.quickSearch) {
+      prefs.quickSearch = { engine: 'google' }
+    }
+    prefs.quickSearch.engine = engine
+    updatePreferences({ quickSearch: prefs.quickSearch })
+    return true
   })
 
   // Settings
@@ -1099,9 +1481,14 @@ function setupIPC(): void {
 
 // ===== App lifecycle =====
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   loadCompletedDownloads()
   registerDownloaderHandlers()
+  registerBuiltinDownloaderHandlers(
+    () => getPreferences(),
+    () => win,
+    () => uiView.webContents
+  )
   setupDownloadHandler()
   setOnDownloadUpdate((item) => {
     try {
@@ -1126,6 +1513,7 @@ app.whenReady().then(() => {
   })
   setupIPC()
   createWindow()
+  await proxyAutoStart(getPreferences)
 })
 
 app.on('window-all-closed', () => {
