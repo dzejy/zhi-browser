@@ -10,3 +10,9 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 Thumbs.db
+tmp_font_dl/
+tmp/
+temp/
+.cache/
+.vite/
+pnpm-debug.log*

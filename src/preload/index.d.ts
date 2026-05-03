@@ -336,6 +336,20 @@ export interface PreloadAPI {
   // Quick Search
   quickSearchGetEngine(): Promise<string>
   quickSearchSetEngine(engine: string): Promise<boolean>
+  quickSearchMenuOpen(payload: {
+    x: number
+    y: number
+    selectedId: string
+    engines: Array<{ id: string; name: string; urlTemplate: string; icon: string }>
+    appTheme?: string
+  }): Promise<string | null>
+  themeMenuOpen(payload: {
+    x: number
+    y: number
+    selectedId: string
+    themes: Array<{ id: string; name: string; color: string }>
+    appTheme?: string
+  }): Promise<string | null>
 
   // Proxy
   proxyToggle(enable: boolean): Promise<{ success: boolean; error?: string }>

@@ -23,7 +23,17 @@ export type ThemeColorId =
   | 'emerald'
   | 'sky'
   | 'crimson'
-export type UIFontId = 'system' | 'wenkai' | 'harmony' | 'source' | 'mono'
+export type UIFontId =
+  | 'system'
+  | 'wenkai'
+  | 'harmony'
+  | 'canger'
+  | 'xiaxingkai'
+  | 'datong'
+  | 'dingtalk'
+  | 'chillround'
+  | 'smiley'
+  | 'yozai'
 export type DownloaderType = 'idm' | 'fdm' | 'ndm' | 'custom' | 'builtin'
 export type TabLayout = 'horizontal' | 'vertical'
 
@@ -184,22 +194,22 @@ export const DENSITY_VALUES = {
 export const DEFAULT_PREFERENCES: Preferences = {
   _schemaVersion: PREFERENCES_SCHEMA_VERSION,
   showBookmarkBar: true,
-  themeColor: 'indigo',
-  uiFont: 'system',
+  themeColor: 'crimson',
+  uiFont: 'harmony',
   webDarkMode: false,
   startup: {
-    behavior: 'newtab',
-    homepageUrl: 'https://www.baidu.com',
-    newTabUrl: '',
+    behavior: 'homepage',
+    homepageUrl: 'https://www.jianavi.com/',
+    newTabUrl: 'https://www.moulem.com/',
     specificPages: []
   },
   search: {
-    defaultEngine: 'google',
+    defaultEngine: 'baidu',
     customEngine: null
   },
   appearance: {
     themeMode: 'dark',
-    accentColor: '#5a7fbf',
+    accentColor: '#dc2626',
     density: 'normal'
   },
   toolbar: {
@@ -244,7 +254,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     externalDownloaderPath: ''
   },
   quickSearch: {
-    engine: 'google'
+    engine: 'baidu'
   },
   proxy: {
     enabled: false,
@@ -273,7 +283,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     devToolsEnabled: true
   },
   adblock: {
-    enabled: false,
+    enabled: true,
     whitelist: [],
     blockedCount: 0
   },
@@ -432,9 +442,20 @@ function sanitizePreferences(prefs: Preferences): Preferences {
     'sky',
     'crimson'
   ]
-  const uiFonts: UIFontId[] = ['system', 'wenkai', 'harmony', 'source', 'mono']
+  const uiFonts: UIFontId[] = [
+    'system',
+    'wenkai',
+    'harmony',
+    'canger',
+    'xiaxingkai',
+    'datong',
+    'dingtalk',
+    'chillround',
+    'smiley',
+    'yozai'
+  ]
 
-  if (!startupBehaviors.includes(prefs.startup.behavior)) prefs.startup.behavior = 'newtab'
+  if (!startupBehaviors.includes(prefs.startup.behavior)) prefs.startup.behavior = defaults.startup.behavior
   if (!themeColors.includes(prefs.themeColor)) prefs.themeColor = defaults.themeColor
   if (!uiFonts.includes(prefs.uiFont)) prefs.uiFont = defaults.uiFont
   if (typeof prefs.startup.homepageUrl !== 'string') {
@@ -447,7 +468,7 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   prefs.startup.specificPages = prefs.startup.specificPages.filter(
     (page): page is string => typeof page === 'string'
   )
-  if (!engines.includes(prefs.search.defaultEngine)) prefs.search.defaultEngine = 'google'
+  if (!engines.includes(prefs.search.defaultEngine)) prefs.search.defaultEngine = defaults.search.defaultEngine
   if (
     prefs.search.customEngine !== null &&
     (!prefs.search.customEngine ||
@@ -456,7 +477,7 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   ) {
     prefs.search.customEngine = null
   }
-  if (!themes.includes(prefs.appearance.themeMode)) prefs.appearance.themeMode = 'dark'
+  if (!themes.includes(prefs.appearance.themeMode)) prefs.appearance.themeMode = defaults.appearance.themeMode
   if (typeof prefs.appearance.accentColor !== 'string') {
     prefs.appearance.accentColor = defaults.appearance.accentColor
   }

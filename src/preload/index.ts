@@ -268,9 +268,23 @@ webPanelSetWidth: (width: number) => ipcRenderer.invoke('webpanel:setWidth', wid
 webPanelReorder: (ids: string[]) => ipcRenderer.invoke('webpanel:reorder', ids),
 webPanelRelayout: () => ipcRenderer.invoke('webpanel:relayout'),
 
-// Quick Search
-quickSearchGetEngine: () => ipcRenderer.invoke('quickSearch:getEngine'),
-quickSearchSetEngine: (engine: string) => ipcRenderer.invoke('quickSearch:setEngine', engine),
+  // Quick Search
+  quickSearchGetEngine: () => ipcRenderer.invoke('quickSearch:getEngine'),
+  quickSearchSetEngine: (engine: string) => ipcRenderer.invoke('quickSearch:setEngine', engine),
+  quickSearchMenuOpen: (payload: {
+    x: number
+    y: number
+    selectedId: string
+    engines: Array<{ id: string; name: string; urlTemplate: string; icon: string }>
+    appTheme?: string
+  }) => ipcRenderer.invoke('quickSearch:menu-open', payload),
+  themeMenuOpen: (payload: {
+    x: number
+    y: number
+    selectedId: string
+    themes: Array<{ id: string; name: string; color: string }>
+    appTheme?: string
+  }) => ipcRenderer.invoke('theme:menu-open', payload),
 
 // Proxy
 proxyToggle: (enable: boolean) => ipcRenderer.invoke('proxy:toggle', enable),

@@ -1,4 +1,4 @@
-import { app, BaseWindow, WebContentsView, ipcMain, clipboard, session } from 'electron'
+import { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, clipboard, session, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { TabManager } from './tabs'
@@ -113,6 +113,30 @@ let panelVisible = false
 let panelCloseTimeout: ReturnType<typeof setTimeout> | null = null
 let currentPanelType: SidePanelType = 'bookmarks'
 let panelReady = false
+let quickSearchMenuWindow: BrowserWindow | null = null
+let themeMenuWindow: BrowserWindow | null = null
+
+function getMenuThemePalette(themeId: string): {
+  bg: string
+  bg2: string
+  text: string
+  muted: string
+  border: string
+  hover: string
+  activeA: string
+  activeB: string
+} {
+  const map: Record<string, { bg: string; bg2: string; text: string; muted: string; border: string; hover: string; activeA: string; activeB: string }> = {
+    void: { bg: '#11151f', bg2: '#1f2533', text: '#e5ebf5', muted: '#9aa7bc', border: 'rgba(148,163,184,.2)', hover: 'rgba(96,165,250,.12)', activeA: 'rgba(37,99,235,.24)', activeB: 'rgba(37,99,235,.08)' },
+    ocean: { bg: '#102338', bg2: '#16324a', text: '#d8e8f0', muted: '#7ea8be', border: 'rgba(100,180,240,.22)', hover: 'rgba(100,180,240,.16)', activeA: 'rgba(56,189,248,.24)', activeB: 'rgba(56,189,248,.08)' },
+    nebula: { bg: '#1a1225', bg2: '#2a1d3d', text: '#e0d8f0', muted: '#b09ac9', border: 'rgba(160,100,240,.22)', hover: 'rgba(160,100,240,.16)', activeA: 'rgba(168,85,247,.24)', activeB: 'rgba(168,85,247,.08)' },
+    forest: { bg: '#112017', bg2: '#1c3528', text: '#d4e8dc', muted: '#86b69a', border: 'rgba(80,200,120,.2)', hover: 'rgba(80,200,120,.14)', activeA: 'rgba(34,197,94,.24)', activeB: 'rgba(34,197,94,.08)' },
+    charcoal: { bg: '#1b1815', bg2: '#2c2926', text: '#e8e2dc', muted: '#b8aa9b', border: 'rgba(200,160,120,.2)', hover: 'rgba(200,160,120,.14)', activeA: 'rgba(245,158,11,.2)', activeB: 'rgba(245,158,11,.08)' },
+    light: { bg: '#ffffff', bg2: '#f3f4f7', text: '#1d1d1f', muted: '#6e6e73', border: 'rgba(0,0,0,.14)', hover: 'rgba(0,0,0,.05)', activeA: 'rgba(59,130,246,.18)', activeB: 'rgba(59,130,246,.08)' },
+    apple: { bg: '#1c1c1e', bg2: '#2c2c2e', text: '#f5f5f7', muted: '#a4a4aa', border: 'rgba(255,255,255,.14)', hover: 'rgba(255,255,255,.08)', activeA: 'rgba(96,165,250,.22)', activeB: 'rgba(96,165,250,.08)' }
+  }
+  return map[themeId] || map['void']
+}
 
 const UI_SCALE = 1.5
 const BASE_TOP_CHROME_HEIGHT = 92
@@ -644,7 +668,7 @@ function createWindow(): void {
     }
     if (ctrl && key === ',') {
       event.preventDefault()
-      openPanelFromCommand('settings')
+      tabManager.createTab('zhi://settings')
       return
     }
     if (ctrl && (key === '+' || key === '=' || key === 'add')) {
@@ -1395,6 +1419,275 @@ function setupIPC(): void {
     updatePreferences({ quickSearch: prefs.quickSearch })
     return true
   })
+
+  ipcMain.handle(
+    'quickSearch:menu-open',
+    async (
+      event,
+      payload: {
+        x: number
+        y: number
+        selectedId: string
+        engines: Array<{ id: string; name: string; urlTemplate: string; icon: string }>
+        appTheme?: string
+      }
+    ): Promise<string | null> => {
+      if (!validateSender(event)) return null
+      const parent = BrowserWindow.fromWebContents(event.sender)
+      if (!parent) return null
+
+      if (quickSearchMenuWindow && !quickSearchMenuWindow.isDestroyed()) {
+        quickSearchMenuWindow.close()
+      }
+
+      const palette = getMenuThemePalette(payload.appTheme || 'void')
+      const width = 340
+      const rowHeight = 48
+      const titleHeight = 38
+      const padding = 16
+      const height = Math.min(
+        420,
+        Math.max(170, titleHeight + payload.engines.length * rowHeight + padding)
+      )
+
+      const display = screen.getDisplayNearestPoint({ x: Math.round(payload.x), y: Math.round(payload.y) })
+      const bounds = display.workArea
+      const x = Math.max(bounds.x + 8, Math.min(Math.round(payload.x), bounds.x + bounds.width - width - 8))
+      const y = Math.max(bounds.y + 8, Math.min(Math.round(payload.y), bounds.y + bounds.height - height - 8))
+
+      quickSearchMenuWindow = new BrowserWindow({
+        width,
+        height,
+        x,
+        y,
+        parent,
+        modal: false,
+        frame: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        hasShadow: true,
+        show: false,
+        backgroundColor: palette.bg,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true
+        }
+      })
+
+      const html = `<!doctype html><html><head><meta charset="utf-8"/><title>QuickSearch</title>
+<style>
+html,body{margin:0;background:${palette.bg};color:${palette.text};font:13px "Segoe UI",Arial,sans-serif}
+.box{height:100%;padding:8px;border:1px solid ${palette.border};border-radius:14px;background:linear-gradient(180deg,${palette.bg2},${palette.bg})}
+.title{padding:8px 10px;color:${palette.muted};font-weight:650;letter-spacing:.04em}
+.opt{width:100%;height:44px;border:0;border-radius:10px;background:transparent;color:${palette.text};display:flex;align-items:center;padding:0 10px;text-align:left;cursor:pointer;gap:10px}
+.opt:hover{background:${palette.hover}}
+.opt.active{background:linear-gradient(90deg,${palette.activeA},${palette.activeB})}
+.name{font-weight:600}
+.icon{width:18px;height:18px;border-radius:4px;object-fit:contain;flex:0 0 auto}
+.sp{height:1px;margin:8px 6px;background:${palette.border}}
+.custom{color:${palette.text}}
+.custom-main{flex:1}
+.custom-settings{width:34px;height:34px;padding:0;justify-content:center}
+</style></head><body><div class="box"><div class="title">选择搜索引擎</div><div id="list"></div></div>
+<script>
+const payload=${JSON.stringify(payload)};
+const list=document.getElementById('list');
+function done(v){ location.href='zhi-search-menu://select?id='+encodeURIComponent(v||''); }
+for(const e of payload.engines){
+  if(e.id==='custom') continue;
+  const b=document.createElement('button');
+  b.className='opt'+(e.id===payload.selectedId?' active':'');
+  b.innerHTML='<img class="icon" alt=""/><span class="name"></span>';
+  b.querySelector('.icon').src=e.icon||'';
+  b.querySelector('.name').textContent=e.name;
+  b.onclick=()=>done(e.id);
+  list.appendChild(b);
+}
+const sp=document.createElement('div');sp.className='sp';list.appendChild(sp);
+const customRow=document.createElement('div');
+customRow.style.display='flex';
+customRow.style.gap='8px';
+customRow.style.alignItems='center';
+const customMain=document.createElement('button');
+customMain.className='opt custom custom-main';
+customMain.innerHTML='<span class="icon">自</span><span class="name">自定义搜索引擎</span>';
+customMain.onclick=()=>done('custom');
+const customSettings=document.createElement('button');
+customSettings.className='opt custom custom-settings';
+customSettings.innerHTML='<span class="icon">⚙</span>';
+customSettings.title='编辑自定义搜索引擎';
+customSettings.onclick=(ev)=>{ ev.stopPropagation(); done('__custom_settings__'); };
+customRow.appendChild(customMain);
+customRow.appendChild(customSettings);
+list.appendChild(customRow);
+window.addEventListener('keydown',(ev)=>{ if(ev.key==='Escape') done(''); });
+window.addEventListener('blur',()=>done(''));
+</script></body></html>`
+
+      return await new Promise<string | null>((resolve) => {
+        let resolved = false
+        const finish = (value: string | null): void => {
+          if (resolved) return
+          resolved = true
+          resolve(value)
+          try {
+            quickSearchMenuWindow?.close()
+          } catch {
+            /* ignore */
+          }
+          quickSearchMenuWindow = null
+        }
+
+        quickSearchMenuWindow?.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+        quickSearchMenuWindow?.webContents.on('will-navigate', (navEvent, targetUrl) => {
+          if (!targetUrl.startsWith('zhi-search-menu://select')) return
+          navEvent.preventDefault()
+          try {
+            const parsed = new URL(targetUrl)
+            const id = parsed.searchParams.get('id') || ''
+            finish(id || null)
+          } catch {
+            finish(null)
+          }
+        })
+        quickSearchMenuWindow?.on('closed', () => finish(null))
+        quickSearchMenuWindow?.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
+          quickSearchMenuWindow?.show()
+          quickSearchMenuWindow?.focus()
+        }).catch(() => finish(null))
+      })
+    }
+  )
+
+  ipcMain.handle(
+    'theme:menu-open',
+    async (
+      event,
+      payload: {
+        x: number
+        y: number
+        selectedId: string
+        themes: Array<{ id: string; name: string; color: string }>
+        appTheme?: string
+      }
+    ): Promise<string | null> => {
+      if (!validateSender(event)) return null
+      const parent = BrowserWindow.fromWebContents(event.sender)
+      if (!parent) return null
+
+      if (themeMenuWindow && !themeMenuWindow.isDestroyed()) {
+        themeMenuWindow.close()
+      }
+
+      const palette = getMenuThemePalette(payload.appTheme || 'void')
+      const width = 250
+      const rowHeight = 40
+      const titleHeight = 38
+      const padding = 14
+      const height = Math.min(
+        420,
+        Math.max(180, titleHeight + payload.themes.length * rowHeight + padding)
+      )
+
+      const display = screen.getDisplayNearestPoint({ x: Math.round(payload.x), y: Math.round(payload.y) })
+      const bounds = display.workArea
+      const x = Math.max(bounds.x + 8, Math.min(Math.round(payload.x), bounds.x + bounds.width - width - 8))
+      const y = Math.max(bounds.y + 8, Math.min(Math.round(payload.y), bounds.y + bounds.height - height - 8))
+
+      themeMenuWindow = new BrowserWindow({
+        width,
+        height,
+        x,
+        y,
+        parent,
+        modal: false,
+        frame: false,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        alwaysOnTop: false,
+        hasShadow: true,
+        show: false,
+        backgroundColor: palette.bg,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true
+        }
+      })
+
+      const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Theme</title>
+<style>
+html,body{margin:0;background:${palette.bg};color:${palette.text};font:13px "Segoe UI",Arial,sans-serif}
+.box{height:100%;padding:8px;border:1px solid ${palette.border};border-radius:12px;background:linear-gradient(180deg,${palette.bg2},${palette.bg})}
+.title{padding:8px 10px;color:${palette.muted};font-weight:650;letter-spacing:.04em}
+.opt{width:100%;height:36px;border:0;border-radius:8px;background:transparent;color:${palette.text};display:flex;align-items:center;padding:0 10px;text-align:left;cursor:pointer;gap:10px}
+.opt:hover{background:${palette.hover}}
+.opt.active{background:linear-gradient(90deg,${palette.activeA},${palette.activeB})}
+.dot{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.18);flex:0 0 auto}
+.name{font-weight:600}
+</style></head><body><div class="box"><div class="title">主题</div><div id="list"></div></div>
+<script>
+const payload=${JSON.stringify(payload)};
+const list=document.getElementById('list');
+function done(v){ location.href='zhi-theme-menu://select?id='+encodeURIComponent(v||''); }
+for(const t of payload.themes){
+  const b=document.createElement('button');
+  b.className='opt'+(t.id===payload.selectedId?' active':'');
+  b.innerHTML='<span class="dot"></span><span class="name"></span>';
+  b.querySelector('.dot').style.background=t.color||'#222';
+  b.querySelector('.name').textContent=t.name;
+  b.onclick=()=>done(t.id);
+  list.appendChild(b);
+}
+window.addEventListener('keydown',(ev)=>{ if(ev.key==='Escape') done(''); });
+window.addEventListener('mouseleave',()=>{});
+</script></body></html>`
+
+      return await new Promise<string | null>((resolve) => {
+        let resolved = false
+        const finish = (value: string | null): void => {
+          if (resolved) return
+          resolved = true
+          resolve(value)
+          try {
+            themeMenuWindow?.close()
+          } catch {
+            /* ignore */
+          }
+          themeMenuWindow = null
+        }
+
+        themeMenuWindow?.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+        themeMenuWindow?.webContents.on('will-navigate', (navEvent, targetUrl) => {
+          if (!targetUrl.startsWith('zhi-theme-menu://select')) return
+          navEvent.preventDefault()
+          try {
+            const parsed = new URL(targetUrl)
+            const id = parsed.searchParams.get('id') || ''
+            finish(id || null)
+          } catch {
+            finish(null)
+          }
+        })
+        themeMenuWindow?.on('blur', () => finish(null))
+        themeMenuWindow?.on('closed', () => finish(null))
+        themeMenuWindow?.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
+          themeMenuWindow?.show()
+          themeMenuWindow?.focus()
+        }).catch(() => finish(null))
+      })
+    }
+  )
 
   // Settings
   ipcMain.handle('settings:get', (event) => {

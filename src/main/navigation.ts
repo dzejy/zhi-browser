@@ -13,6 +13,10 @@ export function classifyInput(input: string): ClassifiedUrl {
     return { type: 'newtab', value: 'about:blank' }
   }
 
+  if (/^zhi:\/\/settings\/?$/i.test(trimmed)) {
+    return { type: 'url', value: 'zhi://settings' }
+  }
+
   const normalized = normalizeUrl(trimmed)
   if (normalized) return { type: 'url', value: normalized }
 

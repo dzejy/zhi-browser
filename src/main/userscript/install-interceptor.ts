@@ -2,10 +2,14 @@ import { BaseWindow, WebContents, dialog, net } from 'electron'
 import { parseMetadata } from './metadata-parser'
 import { installScript } from './store'
 
+export interface OpenInTabOptions {
+  loadURLOptions?: Electron.LoadURLOptions
+}
+
 export function setupInstallInterceptor(
   webContents: WebContents,
   getMainWindow: () => BaseWindow | null,
-  openInTab?: (url: string) => void,
+  openInTab?: (url: string, options?: OpenInTabOptions) => void,
   onInstalled?: (payload: { name: string }) => void
 ): void {
   webContents.on('will-navigate', async (event, url) => {
@@ -15,17 +19,37 @@ export function setupInstallInterceptor(
     }
   })
 
-  webContents.setWindowOpenHandler(({ url }) => {
+  webContents.setWindowOpenHandler((details) => {
+    const { url } = details
     if (isUserScriptUrl(url)) {
       handleUserScriptInstall(url, getMainWindow, onInstalled).catch(() => {})
       return { action: 'deny' }
     }
 
     if (url && url !== 'about:blank' && openInTab) {
-      openInTab(url)
+      const postBody = details.postBody
+      const contentType = postBody?.contentType
+      const boundary = postBody?.boundary
+      const loadURLOptions: Electron.LoadURLOptions = {}
+
+      if (details.referrer?.url) {
+        loadURLOptions.httpReferrer = details.referrer
+      }
+      if (postBody?.data?.length) {
+        loadURLOptions.postData = postBody.data
+        if (contentType) {
+          loadURLOptions.extraHeaders = boundary
+            ? `content-type: ${contentType}; boundary=${boundary}`
+            : `content-type: ${contentType}`
+        }
+      }
+
+      openInTab(url, { loadURLOptions })
       return { action: 'deny' }
     }
 
+    // Allow intermediate about:blank popup windows so sites that submit forms
+    // into a newly opened window can carry query text correctly.
     return { action: 'allow' }
   })
 }

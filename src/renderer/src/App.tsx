@@ -2,6 +2,12 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom'
 import type { AIResponse, AISelectionAction, AIStatus } from '../../shared/aiTypes'
 import { UI_SCALE } from '../../shared/uiScale'
+import googleIcon from './assets/icons/google.ico'
+import baiduIcon from './assets/icons/baidu.ico'
+import bingIcon from './assets/icons/bing.ico'
+import duckduckgoIcon from './assets/icons/duckduckgo.ico'
+import githubIcon from './assets/icons/github.ico'
+import youtubeIcon from './assets/icons/youtube.ico'
 
 // ===== Types (mirrored from shared/types for renderer use) =====
 interface TabState {
@@ -79,7 +85,17 @@ interface ToastMessage {
 }
 type AISearchMode = 'none' | 'xiaomi_web_search' | 'gemini_google_search'
 type ThemeColorId = 'indigo' | 'violet' | 'rose' | 'teal' | 'amber' | 'emerald' | 'sky' | 'crimson'
-type UIFontId = 'system' | 'wenkai' | 'harmony' | 'source' | 'mono'
+type UIFontId =
+  | 'system'
+  | 'wenkai'
+  | 'harmony'
+  | 'canger'
+  | 'xiaxingkai'
+  | 'datong'
+  | 'dingtalk'
+  | 'chillround'
+  | 'smiley'
+  | 'yozai'
 
 const THEME_COLORS: Array<{ id: ThemeColorId; label: string; hue: number }> = [
   { id: 'indigo', label: '靛蓝', hue: 220 },
@@ -92,12 +108,29 @@ const THEME_COLORS: Array<{ id: ThemeColorId; label: string; hue: number }> = [
   { id: 'crimson', label: '绯红', hue: 4 }
 ]
 
+const THEMES = [
+  { id: 'void', name: '深空黑', color: '#0c0d11' },
+  { id: 'ocean', name: '深海蓝', color: '#0a1628' },
+  { id: 'nebula', name: '星云紫', color: '#12091f' },
+  { id: 'forest', name: '墨绿森林', color: '#0b1510' },
+  { id: 'charcoal', name: '炭烧灰', color: '#141210' },
+  { id: 'light', name: '素白', color: '#f5f5f7' },
+  { id: 'apple', name: '苹果', color: '#1c1c1e' }
+] as const
+
+type ThemeId = (typeof THEMES)[number]['id']
+
 const UI_FONTS: Array<{ id: UIFontId; label: string; preview: string }> = [
   { id: 'system', label: '系统默认', preview: '浏览世界，从这里开始' },
   { id: 'wenkai', label: '霞鹜文楷', preview: '浏览世界，从这里开始' },
   { id: 'harmony', label: '鸿蒙字体', preview: '浏览世界，从这里开始' },
-  { id: 'source', label: '思源黑体', preview: '浏览世界，从这里开始' },
-  { id: 'mono', label: '等宽极客', preview: '浏览世界，从这里开始' }
+  { id: 'canger', label: '仓耳舒圆', preview: '浏览世界，从这里开始' },
+  { id: 'xiaxingkai', label: '演示夏行楷', preview: '浏览世界，从这里开始' },
+  { id: 'datong', label: '智勇大同体', preview: '浏览世界，从这里开始' },
+  { id: 'dingtalk', label: '钉钉进步体', preview: '浏览世界，从这里开始' },
+  { id: 'chillround', label: '寒蝉全圆体', preview: '浏览世界，从这里开始' },
+  { id: 'smiley', label: '得意黑', preview: '浏览世界，从这里开始' },
+  { id: 'yozai', label: '悠哉字体', preview: '浏览世界，从这里开始' }
 ]
 
 interface BrowserSettings {
@@ -215,6 +248,7 @@ interface AdBlockCurrentSite {
   hostname: string
   canWhitelist: boolean
 }
+
 
 interface AboutInfo {
   appName: string
@@ -730,6 +764,159 @@ function buildQuickSearchUrl(template: string, query: string): string {
   return template.replaceAll('{query}', encoded).replaceAll('%s', encoded)
 }
 
+function getQuickSearchEngineFavicon(engineId: string): string {
+  switch (engineId) {
+    case 'google':
+      return googleIcon
+    case 'baidu':
+      return baiduIcon
+    case 'bing':
+      return bingIcon
+    case 'duckduckgo':
+      return duckduckgoIcon
+    case 'github':
+      return githubIcon
+    case 'youtube':
+      return youtubeIcon
+    default:
+      return googleIcon
+  }
+}
+
+const quickSearchIconDataUrlCache = new Map<string, string>()
+
+async function resolveIconToDataUrl(iconSrc: string): Promise<string> {
+  if (!iconSrc) return ''
+  if (iconSrc.startsWith('data:')) return iconSrc
+  const cached = quickSearchIconDataUrlCache.get(iconSrc)
+  if (cached) return cached
+  try {
+    const res = await fetch(iconSrc)
+    const blob = await res.blob()
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+    quickSearchIconDataUrlCache.set(iconSrc, dataUrl)
+    return dataUrl
+  } catch {
+    return ''
+  }
+}
+
+interface SearchEngineDropdownProps {
+  selectedEngine: QuickSearchEngine
+  engines: QuickSearchEngine[]
+  onSelect: (engineId: string) => void
+  onOpenCustomSettings: () => void
+  currentTheme: ThemeId
+}
+
+function SearchEngineDropdown({
+  selectedEngine,
+  engines,
+  onSelect,
+  onOpenCustomSettings,
+  currentTheme
+}: SearchEngineDropdownProps): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+
+  const selectedIcon = getQuickSearchEngineFavicon(selectedEngine.id)
+
+  const handleOpenNativeMenu = useCallback(async (): Promise<void> => {
+    if (busy) return
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const x = Math.round(window.screenX + rect.left)
+    const y = Math.round(window.screenY + rect.bottom + 6)
+    setOpen(true)
+    setBusy(true)
+    try {
+      const enginesWithIcons = await Promise.all(
+        engines.map(async (engine) => {
+          const iconSrc = getQuickSearchEngineFavicon(engine.id)
+          const icon = await resolveIconToDataUrl(iconSrc)
+          return {
+            id: engine.id,
+            name: engine.name,
+            urlTemplate: engine.urlTemplate,
+            icon
+          }
+        })
+      )
+      const selected = await window.api.quickSearchMenuOpen({
+        x,
+        y,
+        selectedId: selectedEngine.id,
+        engines: enginesWithIcons,
+        appTheme: currentTheme
+      })
+      if (selected) {
+        if (selected === '__custom_settings__') {
+          onOpenCustomSettings()
+        } else {
+          onSelect(selected)
+        }
+      }
+    } finally {
+      setOpen(false)
+      setBusy(false)
+    }
+  }, [busy, engines, onSelect, selectedEngine.id])
+
+  return (
+    <div className="search-engine-dropdown">
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`search-engine-trigger ${open ? 'is-open' : ''}`}
+        onPointerDown={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          handleOpenNativeMenu().catch(() => {
+            setOpen(false)
+            setBusy(false)
+          })
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open || busy}
+        disabled={busy}
+        title={`当前搜索引擎：${selectedEngine.name}`}
+      >
+        <span className="search-engine-current">
+          {selectedEngine.id === 'custom' ? (
+            <span className="search-engine-custom-glyph">自</span>
+          ) : (
+            <img className="search-engine-icon" src={selectedIcon} alt="" draggable={false} />
+          )}
+          <span className="search-engine-label">{selectedEngine.name}</span>
+        </span>
+        <svg
+          className="search-engine-chevron"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M7 10l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
 function App(): React.ReactElement {
   return window.location.search.includes('panel=true') ? <App_PanelOnly /> : <BrowserApp />
 }
@@ -787,6 +974,10 @@ function BrowserApp(): React.ReactElement {
   const [newWorkspaceIcon, setNewWorkspaceIcon] = useState('📁')
   const [newWorkspaceColor, setNewWorkspaceColor] = useState('#6366f1')
   const [toolbarActionPage, setToolbarActionPage] = useState<0 | 1>(0)
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => {
+    const saved = window.localStorage.getItem('zhi.theme.current')
+    return (THEMES.find((theme) => theme.id === saved)?.id ?? 'void') as ThemeId
+  })
   const sidebarHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const workspaceSyncingRef = useRef(false)
 
@@ -838,6 +1029,9 @@ function BrowserApp(): React.ReactElement {
   const tabCloseTimers = useRef<Map<string, number>>(new Map())
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const overlayCountRef = useRef(0)
+  const themeBtnRef = useRef<HTMLButtonElement>(null)
+
+
 
   const showOverlay = useCallback(() => {
     overlayCountRef.current++
@@ -862,6 +1056,39 @@ function BrowserApp(): React.ReactElement {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), duration)
   }, [])
+
+  const handleThemeChange = useCallback((themeId: ThemeId): void => {
+    setCurrentTheme(themeId)
+    document.documentElement.setAttribute('data-app-theme', themeId)
+    window.localStorage.setItem('zhi.theme.current', themeId)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-app-theme', currentTheme)
+  }, [currentTheme])
+
+  const handleOpenThemeMenu = useCallback(async (): Promise<void> => {
+    const trigger = themeBtnRef.current
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const x = Math.round(window.screenX + rect.left)
+    const y = Math.round(window.screenY + rect.bottom + 6)
+    try {
+      const selected = await window.api.themeMenuOpen({
+        x,
+        y,
+        selectedId: currentTheme,
+        themes: THEMES.map((theme) => ({ id: theme.id, name: theme.name, color: theme.color })),
+        appTheme: currentTheme
+      })
+      if (selected && THEMES.some((theme) => theme.id === selected)) {
+        handleThemeChange(selected as ThemeId)
+      }
+    } catch (error) {
+      console.error(error)
+      showToast('主题菜单打开失败，请重启应用后重试', 'error', 2800)
+    }
+  }, [currentTheme, handleThemeChange, showToast])
 
   const collapseFullscreenUi = useCallback((): void => {
     hideOverlay()
@@ -950,6 +1177,16 @@ function BrowserApp(): React.ReactElement {
 
   // ---------- Quick Search handlers ----------
   const handleQuickSearchEngineChange = async (engineId: string): Promise<void> => {
+    if (engineId === '__custom_settings__') {
+      setActivePanel('settings')
+      window.api.showPanel('settings')
+      setTimeout(() => {
+        const titles = Array.from(document.querySelectorAll('.settings-group-title'))
+        const searchTitle = titles.find((el) => el.textContent?.includes('搜索引擎'))
+        searchTitle?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 80)
+      return
+    }
     setQuickSearchEngine(engineId)
     await window.api.quickSearchSetEngine(engineId)
   }
@@ -1912,12 +2149,12 @@ function BrowserApp(): React.ReactElement {
         openPanel('downloads')
       } else if (ctrl && key === ',') {
         e.preventDefault()
-        openPanel('settings')
+        window.api.openUrl('zhi://settings', true)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleNewIncognitoTab, handleToggleBookmark, openPanel, toggleAIPanel])
+  }, [handleNewIncognitoTab, handleToggleBookmark, toggleAIPanel])
 
   const isCurrentBookmarked = bookmarks.some((b) => activeTab && b.url === activeTab.url)
   const activeSnifferCount = activeTab?.webContentsId
@@ -2335,6 +2572,31 @@ function BrowserApp(): React.ReactElement {
             >
               ◐
             </button>
+            <div className="theme-switcher-wrapper">
+              <button
+                ref={themeBtnRef}
+                className="menu-button tabbar-aux-btn theme-btn"
+                onClick={() => handleOpenThemeMenu().catch(console.error)}
+                title="主题"
+                aria-label="主题"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3a9 9 0 1 0 0 18h.5a2.5 2.5 0 0 0 0-5H12a2 2 0 0 1 0-4h4a4 4 0 0 0 4-4 9 9 0 0 0-8-5z" />
+                  <circle cx="7.5" cy="10.5" r="1" />
+                  <circle cx="10.5" cy="7.5" r="1" />
+                  <circle cx="14.5" cy="7.5" r="1" />
+                </svg>
+              </button>
+            </div>
             {settings?.toolbar.settingsButton !== false && (
               <button
                 className={`menu-button tabbar-settings-btn tabbar-aux-btn ${activePanel === 'settings' ? 'active' : ''}`}
@@ -2501,18 +2763,23 @@ function BrowserApp(): React.ReactElement {
 
             {/* Quick Search Box */}
             <div className="quick-search-wrapper">
-              <select
-                className="quick-search-engine-select"
-                value={quickSearchEngine}
-                onChange={(e) => handleQuickSearchEngineChange(e.target.value).catch(console.error)}
-                title={`当前: ${currentEngine.name}`}
-              >
-                {quickSearchEngines.map((engine) => (
-                  <option key={engine.id} value={engine.id}>
-                    {engine.icon} {engine.name}
-                  </option>
-                ))}
-              </select>
+              <SearchEngineDropdown
+                selectedEngine={currentEngine}
+                engines={quickSearchEngines}
+                currentTheme={currentTheme}
+                onSelect={(engineId) => {
+                  handleQuickSearchEngineChange(engineId).catch(console.error)
+                }}
+                onOpenCustomSettings={() => {
+                  setActivePanel('settings')
+                  window.api.showPanel('settings')
+                  setTimeout(() => {
+                    const titles = Array.from(document.querySelectorAll('.settings-group-title'))
+                    const searchTitle = titles.find((el) => el.textContent?.includes('搜索引擎'))
+                    searchTitle?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }, 80)
+                }}
+              />
 
               <input
                 className="quick-search-input"
@@ -3390,6 +3657,8 @@ function App_PanelOnly(): React.ReactElement {
   const [proxyUpdating, setProxyUpdating] = useState(false)
   const [proxyLogsVisible, setProxyLogsVisible] = useState(false)
   const [proxyLogs, setProxyLogs] = useState<string[]>([])
+  const [toolbarSectionCollapsed, setToolbarSectionCollapsed] = useState(true)
+  const [uiFontSectionCollapsed, setUiFontSectionCollapsed] = useState(true)
   const [hibernationPrefs, setHibernationPrefs] = useState<{
     enabled: boolean
     timeoutMinutes: number
@@ -5236,7 +5505,44 @@ function App_PanelOnly(): React.ReactElement {
               {!settings && <SkeletonRows rows={4} />}
               {settings && (
                 <>
-                  <div className="settings-group-title">启动与主页</div>
+                  <div className="settings-group-title">设置页</div>
+                  <div className="settings-row settings-shortcuts">
+                    <div className="settings-copy">
+                      <label>在独立内部页打开设置</label>
+                      <p>打开 `zhi://settings` 新标签页进行设置修改。</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        window.api.openUrl('zhi://settings', true)
+                        closePanel()
+                      }}
+                    >
+                      打开设置页
+                    </button>
+                  </div>
+
+                  <div className="settings-nav-tabs">
+                    {[
+                      ['startup', '常规'],
+                      ['appearance', '外观'],
+                      ['downloads', '下载'],
+                      ['advanced', '高级']
+                    ].map(([id, label]) => (
+                      <button
+                        key={id}
+                        onClick={() => {
+                          document
+                            .querySelector(`[data-settings-anchor="${id}"]`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="settings-group-title" data-settings-anchor="startup">
+                    启动与主页
+                  </div>
                   <div className="settings-row">
                     <div className="settings-copy">
                       <label>启动时打开</label>
@@ -5375,7 +5681,9 @@ function App_PanelOnly(): React.ReactElement {
                     />
                   </div>
 
-                  <div className="settings-group-title">外观</div>
+                  <div className="settings-group-title" data-settings-anchor="appearance">
+                    外观
+                  </div>
                   <div className="settings-row">
                     <div className="settings-copy">
                       <label>主题</label>
@@ -5422,26 +5730,33 @@ function App_PanelOnly(): React.ReactElement {
                       <label>界面字体</label>
                       <p>仅影响浏览器界面，不影响网页内容。</p>
                     </div>
-                    <div className="font-picker">
-                      {UI_FONTS.map((font) => (
-                        <button
-                          key={font.id}
-                          className={`font-picker-option ${
-                            settings.uiFont === font.id ? 'active' : ''
-                          }`}
-                          data-font={font.id}
-                          onClick={() => handleUpdateSettings({ uiFont: font.id })}
-                          type="button"
-                        >
-                          <span className="font-picker-radio" />
-                          <span className="font-picker-info">
-                            <span className="font-picker-name">{font.label}</span>
-                            <span className="font-picker-preview">{font.preview}</span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                    <button onClick={() => setUiFontSectionCollapsed((v) => !v)}>
+                      {uiFontSectionCollapsed ? '展开' : '折叠'}
+                    </button>
                   </div>
+                  {!uiFontSectionCollapsed && (
+                    <div className="settings-row">
+                      <div className="font-picker">
+                        {UI_FONTS.map((font) => (
+                          <button
+                            key={font.id}
+                            className={`font-picker-option ${
+                              settings.uiFont === font.id ? 'active' : ''
+                            }`}
+                            data-font={font.id}
+                            onClick={() => handleUpdateSettings({ uiFont: font.id })}
+                            type="button"
+                          >
+                            <span className="font-picker-radio" />
+                            <span className="font-picker-info">
+                              <span className="font-picker-name">{font.label}</span>
+                              <span className="font-picker-preview">{font.preview}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="settings-row">
                     <div className="settings-copy">
                       <label>强调色</label>
@@ -5489,7 +5804,17 @@ function App_PanelOnly(): React.ReactElement {
                   </label>
 
                   <div className="settings-group-title">工具栏</div>
-                  {[
+                  <div className="settings-row settings-row-collapsible">
+                    <div className="settings-copy">
+                      <label>工具栏按钮显示/隐藏</label>
+                      <p>默认折叠，展开后再逐项开关。</p>
+                    </div>
+                    <button onClick={() => setToolbarSectionCollapsed((v) => !v)}>
+                      {toolbarSectionCollapsed ? '展开' : '折叠'}
+                    </button>
+                  </div>
+                  {!toolbarSectionCollapsed &&
+                    [
                     ['backButton', '后退按钮'],
                     ['forwardButton', '前进按钮'],
                     ['reloadStopButton', '刷新/停止按钮'],
@@ -5591,20 +5916,6 @@ function App_PanelOnly(): React.ReactElement {
                     </select>
                   </div>
 
-                  <div className="settings-group-title">快捷键</div>
-                  <div className="settings-row settings-shortcuts">
-                    <div className="settings-copy">
-                      <label>常用快捷键</label>
-                      <p>
-                        Ctrl+T 新建标签，Ctrl+W 关闭标签，Ctrl+L 聚焦地址栏，Ctrl+F 查找，Ctrl+,
-                        打开设置。
-                      </p>
-                    </div>
-                    <button onClick={() => window.api.shortcutsOpenSettings().catch(console.error)}>
-                      设置快捷键
-                    </button>
-                  </div>
-
                   <div className="settings-group-title">标签页休眠</div>
                   <label className="settings-row settings-check">
                     <div className="settings-copy">
@@ -5639,7 +5950,9 @@ function App_PanelOnly(): React.ReactElement {
                     />
                   </div>
 
-                  <div className="settings-group-title">下载</div>
+                  <div className="settings-group-title" data-settings-anchor="downloads">
+                    下载
+                  </div>
                   <div className="settings-row">
                     <div className="settings-copy">
                       <label>下载路径</label>
@@ -5851,7 +6164,9 @@ function App_PanelOnly(): React.ReactElement {
                     </div>
                   </div>
 
-                  <div className="settings-group-title">高级</div>
+                  <div className="settings-group-title" data-settings-anchor="advanced">
+                    高级
+                  </div>
                   <label className="settings-row settings-check">
                     <div className="settings-copy">
                       <span>保存浏览历史</span>

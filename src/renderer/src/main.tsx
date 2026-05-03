@@ -9,6 +9,7 @@ const PinImage = lazy(() => import('./screenshot/PinImage'))
 const CommandPalette = lazy(() => import('./command-palette/CommandPalette'))
 const QuickNote = lazy(() => import('./quick-note/QuickNote'))
 const ShortcutSettings = lazy(() => import('./shortcuts/ShortcutSettings'))
+const InternalSettingsPage = lazy(() => import('./settings/InternalSettingsPage'))
 
 function getRoute(): string {
   const hash = window.location.hash || ''
@@ -49,6 +50,13 @@ function Root(): React.JSX.Element {
     return (
       <Suspense fallback={<div />}>
         <ShortcutSettings />
+      </Suspense>
+    )
+  }
+  if (route === 'settings-page') {
+    return (
+      <Suspense fallback={<div />}>
+        <InternalSettingsPage />
       </Suspense>
     )
   }

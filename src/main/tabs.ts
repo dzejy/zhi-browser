@@ -19,6 +19,7 @@ import {
 } from '../shared/types'
 import type { AISelectionAction } from '../shared/aiTypes'
 import { classifyInput, getWwwFallbackUrl } from './navigation'
+import { is } from '@electron-toolkit/utils'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
 import { getPreferences, getSettings } from './settings'
@@ -64,6 +65,7 @@ interface ManagedTab {
   isMuted: boolean
   isIncognito: boolean
   wwwFallbackAttempted: boolean
+  internalPage: '' | 'settings'
 }
 
 interface CreateTabOptions {
@@ -72,6 +74,7 @@ interface CreateTabOptions {
   pinned?: boolean
   session?: Session
   incognito?: boolean
+  loadURLOptions?: Electron.LoadURLOptions
 }
 
 interface PageBounds {
@@ -244,6 +247,21 @@ export class TabManager {
 
   // ===== Tab creation =====
 
+  private async loadInternalSettingsPage(tab: ManagedTab): Promise<void> {
+    tab.isLoading = true
+    tab.error = null
+    tab.url = 'zhi://settings'
+    tab.title = '设置 - Zhi Browser'
+    tab.isNewTab = false
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      await tab.view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/settings-page`)
+    } else {
+      await tab.view.webContents.loadFile(join(__dirname, '../renderer/index.html'), {
+        hash: 'settings-page'
+      })
+    }
+  }
+
   createTab(url?: string, options?: CreateTabOptions): string {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     let targetUrl = url
@@ -253,6 +271,7 @@ export class TabManager {
       targetUrl = classifyInput(prefs.startup.newTabUrl).value
     }
 
+    const isInternalPage = typeof targetUrl === 'string' && /^zhi:\/\/settings\/?$/i.test(targetUrl)
     const isNewTab = !targetUrl || targetUrl === 'about:blank'
     const isIncognito = Boolean(options?.incognito && options.session)
 
@@ -273,7 +292,7 @@ export class TabManager {
       view,
       darkModeHiddenUntilReady: Boolean(!isNewTab && targetUrl && prefs.webDarkMode),
       url: targetUrl || 'about:blank',
-      title: isNewTab ? '新标签页' : '',
+      title: isInternalPage ? '设置 - Zhi Browser' : isNewTab ? '新标签页' : '',
       favicon: '',
       isLoading: false,
       canGoBack: false,
@@ -285,7 +304,8 @@ export class TabManager {
       isAudible: false,
       isMuted: false,
       isIncognito,
-      wwwFallbackAttempted: false
+      wwwFallbackAttempted: false,
+      internalPage: isInternalPage ? 'settings' : ''
     }
 
     this.tabs.set(id, tab)
@@ -304,10 +324,13 @@ export class TabManager {
     setupInstallInterceptor(
       view.webContents,
       () => this.win,
-      (targetUrl) =>
+      (targetUrl, openOptions) =>
         this.createTab(
           targetUrl,
-          isIncognito ? { session: options?.session, incognito: true } : {}
+          {
+            ...(isIncognito ? { session: options?.session, incognito: true } : {}),
+            ...(openOptions?.loadURLOptions ? { loadURLOptions: openOptions.loadURLOptions } : {})
+          }
         ),
       (payload) => this.onUserScriptInstalled?.(payload)
     )
@@ -324,9 +347,18 @@ export class TabManager {
       this.pushState()
     }
 
-    if (!isNewTab && targetUrl) {
+    if (tab.internalPage === 'settings') {
+      this.loadInternalSettingsPage(tab).catch(() => {
+        tab.error = {
+          url: 'zhi://settings',
+          errorCode: -1,
+          errorDescription: '设置页加载失败'
+        }
+        this.pushState()
+      })
+    } else if (!isNewTab && targetUrl) {
       this.prepareDarkModeForNavigation(tab)
-      view.webContents.loadURL(targetUrl).catch(() => {
+      view.webContents.loadURL(targetUrl, options?.loadURLOptions).catch(() => {
         /* did-fail-load renders the error page */
       })
     }
@@ -553,6 +585,13 @@ export class TabManager {
 
     const classified = classifyInput(input)
 
+    if (/^zhi:\/\/settings\/?$/i.test(classified.value)) {
+      tab.internalPage = 'settings'
+      this.loadInternalSettingsPage(tab).catch(() => {})
+      this.pushState()
+      return
+    }
+
     if (classified.type === 'newtab') {
       tab.isNewTab = true
       tab.url = 'about:blank'
@@ -566,6 +605,7 @@ export class TabManager {
     }
 
     tab.isNewTab = false
+    tab.internalPage = ''
     tab.error = null
     tab.wwwFallbackAttempted = false
     tab.url = classified.value
@@ -915,7 +955,9 @@ button.primary:hover{background:#4d6faa}
     wc.on('did-start-loading', () => {
       this.prepareDarkModeForNavigation(tab)
       tab.isLoading = true
-      tab.isNewTab = false
+      if (tab.internalPage !== 'settings') {
+        tab.isNewTab = false
+      }
       this.uiView.webContents.send('browser:hover-url', '')
       this.updatePageHoverUrl(tab, '')
       this.pushState()
@@ -954,6 +996,14 @@ button.primary:hover{background:#4d6faa}
     })
 
     wc.on('did-navigate', (_event, url) => {
+      if (tab.internalPage === 'settings') {
+        tab.isLoading = false
+        tab.isNewTab = false
+        tab.url = 'zhi://settings'
+        tab.title = '设置 - Zhi Browser'
+        this.pushState()
+        return
+      }
       if (url.startsWith('data:text/html') && tab.error) {
         tab.isLoading = false
         this.pushState()
@@ -981,7 +1031,7 @@ button.primary:hover{background:#4d6faa}
     })
 
     wc.on('page-title-updated', (_event, title) => {
-      tab.title = title || tab.title
+      tab.title = tab.internalPage === 'settings' ? '设置 - Zhi Browser' : title || tab.title
       this.pushState()
 
       if (!tab.isIncognito && tab.url && tab.url !== 'about:blank') {
@@ -1268,6 +1318,16 @@ button.primary:hover{background:#4d6faa}
       if (params.hasImageContents && params.srcURL) {
         menuItems.push(
           {
+            label: '复制图片',
+            click: () => {
+              try {
+                tab.view.webContents.copyImageAt(params.x, params.y)
+              } catch {
+                /* ignore copy failures */
+              }
+            }
+          },
+          {
             label: '保存图片',
             click: () => tab.view.webContents.downloadURL(params.srcURL)
           },
@@ -1439,7 +1499,7 @@ button.primary:hover{background:#4d6faa}
     }
 
     if (ctrl && key === ',') {
-      this.uiView.webContents.send('browser:open-panel', 'settings')
+      this.createTab('zhi://settings')
       return true
     }
 
