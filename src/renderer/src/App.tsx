@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { AIResponse, AISelectionAction, AIStatus } from '../../shared/aiTypes'
 import { UI_SCALE } from '../../shared/uiScale'
 
@@ -359,8 +360,6 @@ const TOP_CHROME_HEIGHT = 92
 const BOOKMARK_BAR_HEIGHT = 28
 const FIND_BAR_HEIGHT = 40
 const ERROR_BAR_HEIGHT = 38
-const FLOATING_MENU_HEIGHT = 430
-const PROXY_MENU_HEIGHT = 350
 
 type ToastTone = 'info' | 'success' | 'error'
 
@@ -731,13 +730,6 @@ function buildQuickSearchUrl(template: string, query: string): string {
   return template.replaceAll('{query}', encoded).replaceAll('%s', encoded)
 }
 
-function getProxyDelayClass(delay: number | null | undefined): string {
-  if (delay === null || delay === undefined || delay < 0) return 'delay-timeout'
-  if (delay < 150) return 'delay-fast'
-  if (delay <= 300) return 'delay-medium'
-  return 'delay-slow'
-}
-
 function App(): React.ReactElement {
   return window.location.search.includes('panel=true') ? <App_PanelOnly /> : <BrowserApp />
 }
@@ -758,27 +750,11 @@ function BrowserApp(): React.ReactElement {
 
   // ---------- Proxy state ----------
   const [proxyEnabled, setProxyEnabled] = useState(false)
-  const [showProxyMenu, setShowProxyMenu] = useState(false)
-  const [quickProxyStatus, setQuickProxyStatus] = useState<ProxyStatus | null>(null)
-  const [quickProxyGroups, setQuickProxyGroups] = useState<ProxyGroup[]>([])
-  const [quickProxyNodes, setQuickProxyNodes] = useState<ProxyNode[]>([])
-  const [selectedQuickProxyGroup, setSelectedQuickProxyGroup] = useState('')
-  const [quickProxyDelayMap, setQuickProxyDelayMap] = useState<Record<string, number>>({})
-  const [quickProxySubscriptionInput, setQuickProxySubscriptionInput] = useState('')
-  const [quickProxyUpdating, setQuickProxyUpdating] = useState(false)
-  const [quickProxyLogsVisible, setQuickProxyLogsVisible] = useState(false)
-  const [quickProxyLogs, setQuickProxyLogs] = useState<string[]>([])
 
   // ---------- Quick Search states ----------
   const [quickSearchEngine, setQuickSearchEngine] = useState('google')
   const [quickSearchQuery, setQuickSearchQuery] = useState('')
-  const [showEngineDropdown, setShowEngineDropdown] = useState(false)
-  const [quickCustomName, setQuickCustomName] = useState('')
-  const [quickCustomTemplate, setQuickCustomTemplate] = useState('')
   const quickSearchRef = useRef<HTMLInputElement>(null)
-  const engineDropdownRef = useRef<HTMLDivElement>(null)
-  const proxyMenuRef = useRef<HTMLDivElement>(null)
-  const proxyButtonRef = useRef<HTMLButtonElement>(null)
 
   // ---------- Left Web Panel states ----------
   const [webPanels, setWebPanels] = useState<WebPanelItem[]>([])
@@ -861,6 +837,23 @@ function BrowserApp(): React.ReactElement {
   const loadingTabIdsRef = useRef<Set<string>>(new Set())
   const tabCloseTimers = useRef<Map<string, number>>(new Map())
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const overlayCountRef = useRef(0)
+
+  const showOverlay = useCallback(() => {
+    overlayCountRef.current++
+    if (overlayCountRef.current === 1) {
+      document.body.classList.add('ui-overlay-active')
+      window.api.overlayShow()
+    }
+  }, [])
+
+  const hideOverlay = useCallback(() => {
+    overlayCountRef.current = Math.max(0, overlayCountRef.current - 1)
+    if (overlayCountRef.current === 0) {
+      document.body.classList.remove('ui-overlay-active')
+      window.api.overlayHide()
+    }
+  }, [])
 
   const activeTab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
 
@@ -871,8 +864,7 @@ function BrowserApp(): React.ReactElement {
   }, [])
 
   const collapseFullscreenUi = useCallback((): void => {
-    setShowProxyMenu(false)
-    setShowEngineDropdown(false)
+    hideOverlay()
     setActivePanel(null)
     setPanelVisible(false)
     setActivePanelId(null)
@@ -882,9 +874,6 @@ function BrowserApp(): React.ReactElement {
 
   const applySettingsSnapshot = useCallback((updated: BrowserSettings): void => {
     setSettings(updated)
-    setQuickCustomName(updated.search.customEngine?.name || '')
-    setQuickCustomTemplate(updated.search.customEngine?.urlTemplate || '')
-    setQuickProxySubscriptionInput(updated.proxy.subscriptionUrl)
     setProxyEnabled(updated.proxy.enabled)
   }, [])
 
@@ -927,7 +916,6 @@ function BrowserApp(): React.ReactElement {
       .proxyStatus()
       .then((status: ProxyStatus) => {
         setProxyEnabled(status.enabled)
-        setQuickProxyStatus(status)
       })
       .catch(() => {})
 
@@ -950,54 +938,20 @@ function BrowserApp(): React.ReactElement {
     // Close floating menus on outside click
     const handleClickOutside = (e: MouseEvent): void => {
       const target = e.target as HTMLElement | null
-      if (engineDropdownRef.current && !engineDropdownRef.current.contains(target as Node)) {
-        setShowEngineDropdown(false)
-      }
       if (!target) return
-      // Workspace dialog: clicks inside the dialog or its overlay must not
-      // bubble up into the proxy-menu auto-close path.
       if (target.closest('.ws-dialog-overlay') || target.closest('.ws-dialog')) return
-      // Proxy menu: keep open for clicks on the trigger or the menu itself.
-      if (target.closest('.proxy-btn') || target.closest('.proxy-control')) return
-      if (target.closest('.proxy-menu')) return
-      setShowProxyMenu(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
       unsubscribeFullscreen()
     }
-  }, [collapseFullscreenUi])
+  }, [collapseFullscreenUi, hideOverlay])
 
   // ---------- Quick Search handlers ----------
   const handleQuickSearchEngineChange = async (engineId: string): Promise<void> => {
     setQuickSearchEngine(engineId)
-    if (engineId !== 'custom') {
-      setShowEngineDropdown(false)
-    }
     await window.api.quickSearchSetEngine(engineId)
-  }
-
-  const handleSaveQuickCustomEngine = async (): Promise<void> => {
-    const name = quickCustomName.trim() || '自定义'
-    const urlTemplate = quickCustomTemplate.trim()
-    if (!urlTemplate || !hasSearchPlaceholder(urlTemplate)) {
-      showToast('自定义搜索地址需要包含 {query} 或 %s', 'error')
-      return
-    }
-    const updated = await window.api.updateSettings({
-      search: {
-        customEngine: {
-          name,
-          urlTemplate
-        }
-      }
-    })
-    setSettings(updated)
-    setQuickSearchEngine('custom')
-    await window.api.quickSearchSetEngine('custom')
-    setShowEngineDropdown(false)
-    showToast('自定义搜索已保存')
   }
 
   const handleQuickSearch = (): void => {
@@ -1006,8 +960,7 @@ function BrowserApp(): React.ReactElement {
     const engine = quickSearchEngines.find((e) => e.id === quickSearchEngine)
     if (!engine) return
     if (!engine.urlTemplate || !hasSearchPlaceholder(engine.urlTemplate)) {
-      setShowEngineDropdown(true)
-      showToast('先设置自定义搜索地址', 'error')
+      showToast('当前搜索引擎不可用', 'error')
       return
     }
     const url = buildQuickSearchUrl(engine.urlTemplate, query)
@@ -1023,119 +976,6 @@ function BrowserApp(): React.ReactElement {
     if (e.key === 'Enter') {
       handleQuickSearch()
     }
-  }
-
-  // ---------- Proxy menu handlers ----------
-  const loadQuickProxyState = async (preferredGroup?: string): Promise<void> => {
-    const [status, groups] = await Promise.all([
-      window.api.proxyStatus(),
-      window.api.proxyGetGroups()
-    ])
-    setQuickProxyStatus(status)
-    setQuickProxyGroups(groups)
-    setProxyEnabled(status.enabled)
-
-    const nextGroup = preferredGroup || selectedQuickProxyGroup || groups[0]?.name || ''
-    setSelectedQuickProxyGroup(nextGroup)
-    if (nextGroup) {
-      const nodes = await window.api.proxyGetNodes(nextGroup)
-      setQuickProxyNodes(nodes)
-    } else {
-      setQuickProxyNodes([])
-    }
-  }
-
-  const handleProxyButtonClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
-    event.stopPropagation()
-    event.nativeEvent.stopImmediatePropagation()
-    setShowProxyMenu((prev) => {
-      if (!prev) loadQuickProxyState().catch(console.error)
-      return !prev
-    })
-  }
-
-  const handleProxyButtonMouseDown = (event: React.MouseEvent<HTMLButtonElement>): void => {
-    event.stopPropagation()
-  }
-
-  const handleProxyMenuMouseEvent = (event: React.MouseEvent<HTMLDivElement>): void => {
-    event.stopPropagation()
-  }
-
-  const handleQuickProxyToggle = async (enabled: boolean): Promise<void> => {
-    const result = await window.api.proxyToggle(enabled)
-    if (result.success) {
-      const updated = await window.api.getSettings()
-      applySettingsSnapshot(updated)
-      await loadQuickProxyState()
-      showToast(enabled ? '代理已启用' : '代理已关闭')
-    } else {
-      showToast(result.error || '代理切换失败', 'error')
-    }
-  }
-
-  const handleQuickProxySettingsUpdate = async (
-    patch: Partial<BrowserSettings['proxy']>
-  ): Promise<void> => {
-    const updated = await window.api.updateSettings({ proxy: patch })
-    applySettingsSnapshot(updated)
-    showToast('已保存')
-  }
-
-  const handleQuickProxySubscriptionUpdate = async (): Promise<void> => {
-    const url = quickProxySubscriptionInput.trim()
-    if (!url) {
-      showToast('先填订阅链接', 'error')
-      return
-    }
-    setQuickProxyUpdating(true)
-    try {
-      const result = await window.api.proxyUpdateSubscription(url)
-      if (result.success) {
-        const updated = await window.api.getSettings()
-        applySettingsSnapshot(updated)
-        await loadQuickProxyState()
-        showToast(`订阅已更新，共 ${result.nodeCount || 0} 个节点`)
-      } else {
-        showToast(result.error || '订阅更新失败', 'error')
-      }
-    } finally {
-      setQuickProxyUpdating(false)
-    }
-  }
-
-  const handleQuickProxyGroupChange = async (group: string): Promise<void> => {
-    setSelectedQuickProxyGroup(group)
-    if (!group) {
-      setQuickProxyNodes([])
-      return
-    }
-    const nodes = await window.api.proxyGetNodes(group)
-    setQuickProxyNodes(nodes)
-  }
-
-  const handleQuickProxyTestAll = async (): Promise<void> => {
-    if (!selectedQuickProxyGroup) return
-    const result = await window.api.proxyTestAllDelay(selectedQuickProxyGroup)
-    setQuickProxyDelayMap(result)
-    await handleQuickProxyGroupChange(selectedQuickProxyGroup)
-  }
-
-  const handleQuickProxySwitch = async (node: string): Promise<void> => {
-    if (!selectedQuickProxyGroup) return
-    const result = await window.api.proxySwitch(selectedQuickProxyGroup, node)
-    if (result.success) {
-      await loadQuickProxyState(selectedQuickProxyGroup)
-      showToast('节点已切换')
-    } else {
-      showToast('节点切换失败', 'error')
-    }
-  }
-
-  const handleQuickProxyLogs = async (): Promise<void> => {
-    const logs = await window.api.proxyGetLogs()
-    setQuickProxyLogs(logs)
-    setQuickProxyLogsVisible((visible) => !visible)
   }
 
   const handleFullscreenToggle = async (): Promise<void> => {
@@ -1216,6 +1056,7 @@ function BrowserApp(): React.ReactElement {
     setNewWorkspaceName('')
     setNewWorkspaceIcon('📁')
     setNewWorkspaceColor('#6366f1')
+    hideOverlay()
     setShowNewWorkspaceDialog(false)
   }
 
@@ -1779,18 +1620,14 @@ function BrowserApp(): React.ReactElement {
     }
 
     const bookmarkBarHeight = showBookmarkBar ? scaleUiSize(BOOKMARK_BAR_HEIGHT) : 0
-    const floatingMenuHeight = showProxyMenu
-      ? PROXY_MENU_HEIGHT
-      : showEngineDropdown
-        ? scaleUiSize(FLOATING_MENU_HEIGHT)
-        : 0
+    const floatingMenuHeight = 0
     const pageTop =
       chromeHeight +
       bookmarkBarHeight +
       (showFind ? scaleUiSize(FIND_BAR_HEIGHT) : 0) +
       (activeTab?.error ? scaleUiSize(ERROR_BAR_HEIGHT) : 0)
-    const uiViewHeight =
-      tabLayoutState === 'vertical' ? 100000 : pageTop + floatingMenuHeight
+    const forceFullOverlayHeight = tabLayoutState === 'vertical' || showNewWorkspaceDialog
+    const uiViewHeight = forceFullOverlayHeight ? 100000 : pageTop + floatingMenuHeight
 
     window.api.setLayout({
       uiViewHeight,
@@ -1811,8 +1648,7 @@ function BrowserApp(): React.ReactElement {
     activeTab?.error,
     appearanceDensity,
     activePanel,
-    showEngineDropdown,
-    showProxyMenu,
+    showNewWorkspaceDialog,
     tabLayoutState
   ])
 
@@ -1838,6 +1674,12 @@ function BrowserApp(): React.ReactElement {
         .catch(() => {})
     }
   }, [activeTab?.id, activeTab?.url, activeTab?.webContentsId])
+
+  useEffect(() => {
+    if (activeTab && !activeTab.isNewTab) {
+      hideOverlay()
+    }
+  }, [activeTab?.isNewTab, activeTab, hideOverlay])
 
   // Sync address bar
   const [prevActiveTabId, setPrevActiveTabId] = useState<string | undefined>(undefined)
@@ -1885,6 +1727,7 @@ function BrowserApp(): React.ReactElement {
   }
 
   function handleNewTab(): void {
+    showOverlay()
     window.api.createTab()
   }
 
@@ -2167,7 +2010,7 @@ function BrowserApp(): React.ReactElement {
             ))}
             <button
               className="vsidebar-ws-btn vsidebar-ws-add"
-              onClick={() => setShowNewWorkspaceDialog(true)}
+              onClick={() => { showOverlay(); setShowNewWorkspaceDialog(true) }}
               title="新建工作区"
             >
               ＋
@@ -2179,12 +2022,24 @@ function BrowserApp(): React.ReactElement {
               const activeWs =
                 workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0]
               const workspaceTabIds = new Set(activeWs?.tabIds ?? [])
-              const workspaceTabs =
+              const workspaceTabsByAssignment =
                 activeWs && workspaceTabIds.size > 0
                   ? browserState.tabs.filter((t) => workspaceTabIds.has(t.id))
                   : activeWs?.isDefault
                     ? browserState.tabs
                     : []
+              const activeTabId = browserState.activeTabId
+              const activeTabInBrowser = browserState.tabs.find((t) => t.id === activeTabId)
+              let workspaceTabs = workspaceTabsByAssignment
+              // Fallback: prevent blank sidebar when workspace assignment is stale.
+              if (workspaceTabs.length === 0 && activeWs?.isDefault) {
+                workspaceTabs = browserState.tabs
+              } else if (
+                activeTabInBrowser &&
+                !workspaceTabs.some((tab) => tab.id === activeTabInBrowser.id)
+              ) {
+                workspaceTabs = [activeTabInBrowser, ...workspaceTabs]
+              }
               const pinnedSet = new Set(activeWs?.pinnedTabIds ?? [])
               const pinnedTabs = workspaceTabs.filter((t) => pinnedSet.has(t.id) || t.isPinned)
               const normalTabs = workspaceTabs.filter((t) => !pinnedSet.has(t.id) && !t.isPinned)
@@ -2274,72 +2129,74 @@ function BrowserApp(): React.ReactElement {
         </div>
       )}
 
-      {showNewWorkspaceDialog && (
-        <div
-          className="ws-dialog-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowNewWorkspaceDialog(false)
-          }}
-        >
-          <div className="ws-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="ws-dialog-title">新建工作区</div>
-            <input
-              className="ws-dialog-input"
-              type="text"
-              placeholder="工作区名称"
-              value={newWorkspaceName}
-              onChange={(e) => setNewWorkspaceName(e.target.value)}
-              autoFocus
-            />
-            <div className="ws-dialog-section-label">图标</div>
-            <div className="ws-dialog-emoji-grid">
-              {['📁', '💼', '🎨', '🚀', '⚡', '🌟', '🎯', '📚', '🎮', '🛠️'].map((emo) => (
+      {showNewWorkspaceDialog &&
+        createPortal(
+          <div
+            className="ws-dialog-overlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) { hideOverlay(); setShowNewWorkspaceDialog(false) }
+            }}
+          >
+            <div className="ws-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="ws-dialog-title">新建工作区</div>
+              <input
+                className="ws-dialog-input"
+                type="text"
+                placeholder="工作区名称"
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
+                autoFocus
+              />
+              <div className="ws-dialog-section-label">图标</div>
+              <div className="ws-dialog-emoji-grid">
+                {['📁', '💼', '🎨', '🚀', '⚡', '🌟', '🎯', '📚', '🎮', '🛠️'].map((emo) => (
+                  <button
+                    key={emo}
+                    className={`ws-dialog-emoji ${newWorkspaceIcon === emo ? 'active' : ''}`}
+                    onClick={() => setNewWorkspaceIcon(emo)}
+                  >
+                    {emo}
+                  </button>
+                ))}
+              </div>
+              <div className="ws-dialog-section-label">颜色</div>
+              <div className="ws-dialog-color-grid">
+                {[
+                  '#6366f1',
+                  '#ec4899',
+                  '#22c55e',
+                  '#eab308',
+                  '#ef4444',
+                  '#06b6d4',
+                  '#a855f7',
+                  '#f97316'
+                ].map((c) => (
+                  <button
+                    key={c}
+                    className={`ws-dialog-color ${newWorkspaceColor === c ? 'active' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => setNewWorkspaceColor(c)}
+                  />
+                ))}
+              </div>
+              <div className="ws-dialog-actions">
                 <button
-                  key={emo}
-                  className={`ws-dialog-emoji ${newWorkspaceIcon === emo ? 'active' : ''}`}
-                  onClick={() => setNewWorkspaceIcon(emo)}
+                  className="ws-dialog-btn"
+                  onClick={() => { hideOverlay(); setShowNewWorkspaceDialog(false) }}
                 >
-                  {emo}
+                  取消
                 </button>
-              ))}
-            </div>
-            <div className="ws-dialog-section-label">颜色</div>
-            <div className="ws-dialog-color-grid">
-              {[
-                '#6366f1',
-                '#ec4899',
-                '#22c55e',
-                '#eab308',
-                '#ef4444',
-                '#06b6d4',
-                '#a855f7',
-                '#f97316'
-              ].map((c) => (
                 <button
-                  key={c}
-                  className={`ws-dialog-color ${newWorkspaceColor === c ? 'active' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => setNewWorkspaceColor(c)}
-                />
-              ))}
+                  className="ws-dialog-btn ws-dialog-btn-primary"
+                  onClick={handleAddWorkspace}
+                >
+                  创建
+                </button>
+              </div>
             </div>
-            <div className="ws-dialog-actions">
-              <button
-                className="ws-dialog-btn"
-                onClick={() => setShowNewWorkspaceDialog(false)}
-              >
-                取消
-              </button>
-              <button
-                className="ws-dialog-btn ws-dialog-btn-primary"
-                onClick={handleAddWorkspace}
-              >
-                创建
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       <div
         className="main-area browser-shell browser-ui-shell"
@@ -2356,6 +2213,35 @@ function BrowserApp(): React.ReactElement {
             >
               Z
             </button>
+            {tabLayout === 'horizontal' && (
+              <div className="hbar-workspaces">
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    className={`hbar-ws-btn ${activeWorkspaceId === ws.id ? 'active' : ''}`}
+                    style={{ ['--ws-color' as string]: ws.color }}
+                    onClick={() => handleSwitchWorkspace(ws.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      handleRemoveWorkspace(ws.id)
+                    }}
+                    title={ws.name}
+                  >
+                    {ws.icon}
+                  </button>
+                ))}
+                <button
+                  className="hbar-ws-btn hbar-ws-add"
+                  onClick={() => {
+                    showOverlay()
+                    setShowNewWorkspaceDialog(true)
+                  }}
+                  title="新建工作区"
+                >
+                  +
+                </button>
+              </div>
+            )}
             <div className="tabs-container">
               {browserState.tabs.map((tab) => (
                 <div
@@ -2434,20 +2320,33 @@ function BrowserApp(): React.ReactElement {
                   )}
                 </div>
               ))}
+              <button
+                className="new-tab-btn tabbar-new-tab-btn"
+                onClick={handleNewTab}
+                title="新标签页 (Ctrl+T)"
+              >
+                +
+              </button>
             </div>
-            <button className="new-tab-btn" onClick={handleNewTab} title="新标签页 (Ctrl+T)">
-              +
-            </button>
             <button
-              className="new-tab-btn incognito-tab-btn"
+              className="new-tab-btn incognito-tab-btn tabbar-aux-btn"
               onClick={handleNewIncognitoTab}
               title="新建无痕标签页 (Ctrl+Shift+N)"
             >
               ◐
             </button>
-            <div className="tabbar-spacer" />
+            {settings?.toolbar.settingsButton !== false && (
+              <button
+                className={`menu-button tabbar-settings-btn tabbar-aux-btn ${activePanel === 'settings' ? 'active' : ''}`}
+                onClick={handleShowSettings}
+                title="设置"
+                aria-pressed={activePanel === 'settings'}
+              >
+                ⚙
+              </button>
+            )}
             <button
-              className="menu-button"
+              className="menu-button tabbar-aux-btn"
               onClick={() => window.api.popupMenu().catch(console.error)}
               title="菜单"
             >
@@ -2457,6 +2356,13 @@ function BrowserApp(): React.ReactElement {
 
           <div className="toolbar">
             <div className="nav-buttons">
+              <button
+                className="nav-btn"
+                onClick={() => handleToggleTabLayout().catch(console.error)}
+                title={tabLayout === 'horizontal' ? '切换为垂直标签栏' : '切换为水平标签栏'}
+              >
+                ☰
+              </button>
               {settings?.toolbar.backButton !== false && (
                 <button
                   className="nav-btn"
@@ -2478,218 +2384,20 @@ function BrowserApp(): React.ReactElement {
                 </button>
               )}
               {settings?.toolbar.proxyButton !== false && (
-                <div className="proxy-control">
-                  <button
-                    ref={proxyButtonRef}
-                    className={`nav-btn proxy-btn ${proxyEnabled ? 'active' : ''}`}
-                    data-proxy-btn="true"
-                    onClick={handleProxyButtonClick}
-                    onMouseDown={handleProxyButtonMouseDown}
-                    title={proxyEnabled ? '代理菜单 - 已开启' : '代理菜单 - 已关闭'}
-                    aria-haspopup="menu"
-                    aria-expanded={showProxyMenu}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                      <path
-                        d="M10.4 1.8L3.8 10.1H8L7.3 16.2L14.2 7.2H9.8L10.4 1.8Z"
-                        fill="currentColor"
-                      />
-                    </svg>
-                  </button>
-
-                  {showProxyMenu && (
-                    <div
-                      className="proxy-menu"
-                      ref={proxyMenuRef}
-                      data-proxy-menu="true"
-                      role="menu"
-                      style={{ top: 'calc(100% + 8px)' }}
-                      onClick={handleProxyMenuMouseEvent}
-                      onMouseDown={handleProxyMenuMouseEvent}
-                    >
-                      <div className="proxy-menu-panel">
-                        <div className="proxy-menu-header">
-                          <div>
-                            <strong>代理</strong>
-                            <span>
-                              {quickProxyStatus?.running
-                                ? proxyEnabled
-                                  ? '已连接'
-                                  : '内核运行中'
-                                : '未连接'}
-                            </span>
-                          </div>
-                          <label className="proxy-switch">
-                            <input
-                              type="checkbox"
-                              checked={proxyEnabled}
-                              onChange={(e) =>
-                                handleQuickProxyToggle(e.target.checked).catch(console.error)
-                              }
-                            />
-                            <span />
-                          </label>
-                        </div>
-
-                        <div className="proxy-menu-section">
-                          <label className="proxy-menu-check">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(settings?.proxy.autoStart)}
-                              onChange={(e) =>
-                                handleQuickProxySettingsUpdate({
-                                  autoStart: e.target.checked
-                                }).catch(console.error)
-                              }
-                            />
-                            <span>启动时自动连接</span>
-                          </label>
-                        </div>
-
-                        <div className="proxy-menu-section">
-                          <label className="proxy-menu-label">订阅链接</label>
-                          <div className="proxy-menu-row">
-                            <input
-                              className="proxy-menu-input"
-                              type="text"
-                              value={quickProxySubscriptionInput}
-                              onChange={(e) => setQuickProxySubscriptionInput(e.target.value)}
-                              placeholder="https://..."
-                            />
-                            <button
-                              className="proxy-menu-action"
-                              disabled={quickProxyUpdating}
-                              onClick={() =>
-                                handleQuickProxySubscriptionUpdate().catch(console.error)
-                              }
-                            >
-                              {quickProxyUpdating ? '更新中' : '更新'}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="proxy-menu-section">
-                          <div className="proxy-menu-grid">
-                            <label>
-                              <span>Mixed</span>
-                              <input
-                                type="number"
-                                value={settings?.proxy.mixedPort ?? 17890}
-                                onChange={(e) =>
-                                  handleQuickProxySettingsUpdate({
-                                    mixedPort: Number.parseInt(e.target.value, 10) || 17890
-                                  }).catch(console.error)
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>API</span>
-                              <input
-                                type="number"
-                                value={settings?.proxy.apiPort ?? 19090}
-                                onChange={(e) =>
-                                  handleQuickProxySettingsUpdate({
-                                    apiPort: Number.parseInt(e.target.value, 10) || 19090
-                                  }).catch(console.error)
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Secret</span>
-                              <input
-                                type="password"
-                                value={settings?.proxy.secret ?? ''}
-                                onChange={(e) =>
-                                  handleQuickProxySettingsUpdate({
-                                    secret: e.target.value
-                                  }).catch(console.error)
-                                }
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="proxy-menu-section">
-                          <label className="proxy-menu-label">节点选择</label>
-                          <div className="proxy-menu-row">
-                            <select
-                              className="proxy-menu-select"
-                              value={selectedQuickProxyGroup}
-                              onChange={(e) =>
-                                handleQuickProxyGroupChange(e.target.value).catch(console.error)
-                              }
-                            >
-                              <option value="">选择分组</option>
-                              {quickProxyGroups.map((group) => (
-                                <option key={group.name} value={group.name}>
-                                  {group.name}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              className="proxy-menu-action"
-                              onClick={() => loadQuickProxyState().catch(console.error)}
-                            >
-                              刷新
-                            </button>
-                          </div>
-                          <div className="proxy-menu-actions">
-                            <button onClick={() => handleQuickProxyTestAll().catch(console.error)}>
-                              全部测速
-                            </button>
-                            <button onClick={() => handleQuickProxyLogs().catch(console.error)}>
-                              查看日志
-                            </button>
-                          </div>
-                        </div>
-
-                        {selectedQuickProxyGroup && (
-                          <div className="proxy-menu-node-list">
-                            {quickProxyNodes.length === 0 ? (
-                              <div className="proxy-menu-empty">当前分组暂无节点</div>
-                            ) : (
-                              quickProxyNodes.map((node) => {
-                                const delay = quickProxyDelayMap[node.name] ?? node.delay
-                                const active =
-                                  quickProxyGroups.find(
-                                    (group) => group.name === selectedQuickProxyGroup
-                                  )?.now === node.name
-                                return (
-                                  <button
-                                    key={node.name}
-                                    className={`proxy-menu-node ${active ? 'active' : ''}`}
-                                    onClick={() =>
-                                      handleQuickProxySwitch(node.name).catch(console.error)
-                                    }
-                                  >
-                                    <span>{node.name}</span>
-                                    <small className={getProxyDelayClass(delay)}>
-                                      {delay === null || delay === undefined || delay < 0
-                                        ? '超时'
-                                        : `${delay}ms`}
-                                    </small>
-                                  </button>
-                                )
-                              })
-                            )}
-                          </div>
-                        )}
-
-                        {quickProxyLogsVisible && (
-                          <div className="proxy-menu-logs">
-                            {quickProxyLogs.length === 0 ? (
-                              <span>暂无日志</span>
-                            ) : (
-                              quickProxyLogs.map((line, index) => (
-                                <code key={`${line}-${index}`}>{line}</code>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <button
+                  className={`nav-btn proxy-btn ${proxyEnabled ? 'active' : ''} ${activePanel === 'proxy' ? 'panel-active' : ''}`}
+                  data-proxy-btn="true"
+                  onClick={() => togglePanel('proxy')}
+                  title={proxyEnabled ? '代理面板 - 已开启' : '代理面板 - 已关闭'}
+                  aria-pressed={activePanel === 'proxy'}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <path
+                      d="M10.4 1.8L3.8 10.1H8L7.3 16.2L14.2 7.2H9.8L10.4 1.8Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </button>
               )}
 
               {settings?.toolbar.reloadStopButton !== false && (
@@ -2722,6 +2430,51 @@ function BrowserApp(): React.ReactElement {
 
             <div className="toolbar-divider" />
 
+            <div className="toolbar-actions toolbar-left-actions">
+              <button
+                className="action-btn toolbar-page-primary command-palette-btn"
+                onClick={() => window.api.commandPaletteToggle().catch(console.error)}
+                title="命令面板 (Ctrl+K)"
+                aria-label="打开命令面板"
+              >
+                ⌘
+              </button>
+              <button
+                className="action-btn toolbar-page-primary screenshot-btn"
+                onClick={() => window.api.screenshotOpen().catch(console.error)}
+                title="截图 (Alt+A)"
+                aria-label="截图"
+              >
+                ⛶
+              </button>
+              <button
+                className="action-btn toolbar-page-primary quick-note-btn"
+                onClick={() => window.api.quickNoteToggle().catch(console.error)}
+                title="快捷笔记 (Alt+N)"
+                aria-label="打开快捷笔记"
+              >
+                笔
+              </button>
+              {settings?.toolbar.adBlockButton !== false && (
+                <button
+                  className={`action-btn toolbar-page-primary adblock-quick-button ${adBlockState?.enabled ? 'active' : ''} ${isCurrentAdBlockWhitelisted ? 'whitelisted' : ''}`}
+                  onClick={() => handleAdBlockQuickToggle().catch(console.error)}
+                  title={
+                    !adBlockState?.enabled
+                      ? 'AdBlock Zhi 已关闭'
+                      : isCurrentAdBlockWhitelisted
+                        ? `AdBlock Zhi 已启用，当前网站在白名单 (${currentAdBlockHostname})`
+                        : 'AdBlock Zhi 已启用'
+                  }
+                  aria-pressed={Boolean(adBlockState?.enabled)}
+                >
+                  🛡
+                </button>
+              )}
+            </div>
+
+            <div className="toolbar-divider" />
+
             <div
               ref={addressBarWrapperRef}
               className={`address-bar address-bar-wrapper ${activeTab?.isLoading ? 'loading' : ''} ${activeTab?.error ? 'has-error' : ''}`}
@@ -2747,24 +2500,19 @@ function BrowserApp(): React.ReactElement {
             </div>
 
             {/* Quick Search Box */}
-            <div className="quick-search-wrapper" ref={engineDropdownRef}>
-              <button
-                className="quick-search-engine-btn"
-                onClick={() => setShowEngineDropdown(!showEngineDropdown)}
-                title={`当前: ${currentEngine.name} - 点击切换`}
+            <div className="quick-search-wrapper">
+              <select
+                className="quick-search-engine-select"
+                value={quickSearchEngine}
+                onChange={(e) => handleQuickSearchEngineChange(e.target.value).catch(console.error)}
+                title={`当前: ${currentEngine.name}`}
               >
-                <span className="engine-icon">{currentEngine.icon}</span>
-                <svg className="engine-arrow" width="10" height="10" viewBox="0 0 10 10">
-                  <path
-                    d="M2 4L5 7L8 4"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-              </button>
+                {quickSearchEngines.map((engine) => (
+                  <option key={engine.id} value={engine.id}>
+                    {engine.icon} {engine.name}
+                  </option>
+                ))}
+              </select>
 
               <input
                 className="quick-search-input"
@@ -2777,94 +2525,11 @@ function BrowserApp(): React.ReactElement {
                 spellCheck={false}
               />
 
-              {/* Engine Dropdown */}
-              {showEngineDropdown && (
-                <div className="engine-dropdown">
-                  {quickSearchEngines.map((engine) => (
-                    <button
-                      key={engine.id}
-                      className={`engine-option ${engine.id === quickSearchEngine ? 'active' : ''}`}
-                      onClick={() => handleQuickSearchEngineChange(engine.id).catch(console.error)}
-                    >
-                      <span className="engine-option-icon">{engine.icon}</span>
-                      <span className="engine-option-name">{engine.name}</span>
-                      {engine.id === quickSearchEngine && (
-                        <span className="engine-option-check">✓</span>
-                      )}
-                    </button>
-                  ))}
-                  <div className="engine-custom-editor">
-                    <label>自定义搜索</label>
-                    <input
-                      type="text"
-                      value={quickCustomName}
-                      onChange={(e) => setQuickCustomName(e.target.value)}
-                      placeholder="名称"
-                    />
-                    <input
-                      type="text"
-                      value={quickCustomTemplate}
-                      onChange={(e) => setQuickCustomTemplate(e.target.value)}
-                      placeholder="https://example.com/search?q={query}"
-                    />
-                    <button onClick={() => handleSaveQuickCustomEngine().catch(console.error)}>
-                      保存并使用
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="toolbar-divider" />
 
             <div className={`toolbar-actions toolbar-actions-page-${toolbarActionPage}`}>
-              <button
-                className="action-btn toolbar-page-primary command-palette-btn"
-                onClick={() => window.api.commandPaletteToggle().catch(console.error)}
-                title="命令面板 (Ctrl+K)"
-                aria-label="打开命令面板"
-              >
-                ⌘
-              </button>
-              <button
-                className="action-btn toolbar-page-primary screenshot-btn"
-                onClick={() => window.api.screenshotOpen().catch(console.error)}
-                title="截图 (Alt+A)"
-                aria-label="截图"
-              >
-                ⛶
-              </button>
-              <button
-                className="action-btn toolbar-page-primary quick-note-btn"
-                onClick={() => window.api.quickNoteToggle().catch(console.error)}
-                title="快捷笔记 (Alt+N)"
-                aria-label="打开快捷笔记"
-              >
-                笔
-              </button>
-              <button
-                className="action-btn toolbar-page-primary"
-                onClick={() => handleToggleTabLayout().catch(console.error)}
-                title={tabLayout === 'horizontal' ? '切换为垂直标签栏' : '切换为水平标签栏'}
-              >
-                ☰
-              </button>
-              {settings?.toolbar.adBlockButton !== false && (
-                <button
-                  className={`action-btn toolbar-page-primary adblock-quick-button ${adBlockState?.enabled ? 'active' : ''} ${isCurrentAdBlockWhitelisted ? 'whitelisted' : ''}`}
-                  onClick={() => handleAdBlockQuickToggle().catch(console.error)}
-                  title={
-                    !adBlockState?.enabled
-                      ? 'AdBlock Zhi 已关闭'
-                      : isCurrentAdBlockWhitelisted
-                        ? `AdBlock Zhi 已启用，当前网站在白名单 (${currentAdBlockHostname})`
-                        : 'AdBlock Zhi 已启用'
-                  }
-                  aria-pressed={Boolean(adBlockState?.enabled)}
-                >
-                  🛡
-                </button>
-              )}
               {settings?.toolbar.darkModeButton !== false && (
                 <button
                   className={`action-btn toolbar-page-primary ${webDarkMode ? 'active' : ''}`}
@@ -2992,27 +2657,17 @@ function BrowserApp(): React.ReactElement {
                   ✦
                 </button>
               )}
-              {settings?.toolbar.settingsButton !== false && (
-                <button
-                  className={`action-btn toolbar-page-secondary ${activePanel === 'settings' ? 'active' : ''}`}
-                  onClick={handleShowSettings}
-                  title="设置"
-                  aria-pressed={activePanel === 'settings'}
-                >
-                  ⚙
-                </button>
-              )}
-              {tabLayout === 'vertical' && (
-                <button
-                  className="action-btn toolbar-page-toggle"
-                  onClick={() => setToolbarActionPage((page) => (page === 0 ? 1 : 0))}
-                  title={toolbarActionPage === 0 ? '更多工具' : '返回常用工具'}
-                  aria-label={toolbarActionPage === 0 ? '更多工具' : '返回常用工具'}
-                >
-                  {toolbarActionPage === 0 ? '›' : '‹'}
-                </button>
-              )}
             </div>
+            {tabLayout === 'vertical' && (
+              <button
+                className="action-btn toolbar-page-toggle"
+                onClick={() => setToolbarActionPage((page) => (page === 0 ? 1 : 0))}
+                title={toolbarActionPage === 0 ? '更多工具' : '返回常用工具'}
+                aria-label={toolbarActionPage === 0 ? '更多工具' : '返回常用工具'}
+              >
+                {toolbarActionPage === 0 ? '›' : '‹'}
+              </button>
+            )}
             {splitViewActive && (
               <div className="split-view-bar">
                 <button

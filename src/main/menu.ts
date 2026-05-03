@@ -134,8 +134,8 @@ export function buildMenu(actions: MenuActions): void {
       ]
     },
     {
-      label: '帮助',
-      submenu: [{ label: '关于 Zhi Browser', click: actions.showAbout }]
+      label: 'Zhi',
+      click: actions.showAbout
     }
   ]
 

@@ -65,6 +65,8 @@ const api = {
   popupMenu: () => ipcRenderer.invoke('menu:popup'),
   toggleFullscreen: () => ipcRenderer.invoke('window:toggle-fullscreen'),
   isFullscreen: () => ipcRenderer.invoke('window:is-fullscreen'),
+  overlayShow: () => ipcRenderer.send('ui-overlay-show'),
+  overlayHide: () => ipcRenderer.send('ui-overlay-hide'),
   onFullscreenChanged: (callback: (fullscreen: boolean) => void): (() => void) => {
     const handler = (_event: unknown, fullscreen: boolean) => callback(fullscreen)
     ipcRenderer.on('window:fullscreen-changed', handler)

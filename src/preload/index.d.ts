@@ -98,6 +98,8 @@ export interface PreloadAPI {
   popupMenu(): Promise<void>
   toggleFullscreen(): Promise<boolean>
   isFullscreen(): Promise<boolean>
+  overlayShow(): void
+  overlayHide(): void
   onFullscreenChanged(callback: (fullscreen: boolean) => void): () => void
 
   // Find

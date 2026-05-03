@@ -3,13 +3,17 @@ import type { IpcMainInvokeEvent, WebContents, WebContentsView } from 'electron'
 import type { BrowserSettings } from '../../shared/types'
 import { getPreferences, getSettings, updatePreferences } from '../settings'
 import { CHROME_BG_COLOR, DARK_BG_COLOR, LIGHT_BG_COLOR } from './constants'
-import { DARK_MODE_FORCE_CSS } from './darkCSS'
+import { DARK_MODE_FORCE_CSS, DARK_MODE_INSTANT_CSS } from './darkCSS'
 
 export { CHROME_BG_COLOR, DARK_BG_COLOR, LIGHT_BG_COLOR } from './constants'
 
 const injectedCSSKeys = new Map<number, string>()
 const pendingInjects = new Map<number, Promise<void>>()
 const boundWebContents = new WeakSet<WebContents>()
+
+// Pages whose own background luminance falls below this threshold are treated as
+// already-dark and left alone (we drop our own injection to avoid double-styling).
+const SITE_DARK_LUMINANCE_THRESHOLD = 0.3
 
 interface RegisterDarkModeHandlersOptions {
   getAllViews: () => WebContentsView[]
@@ -42,10 +46,12 @@ export function bindDarkModeToWebContents(webContents: WebContents): void {
   if (boundWebContents.has(webContents)) return
   boundWebContents.add(webContents)
 
+  // Pre-paint backstop: light CSS that just darkens html/body so the white frame
+  // Chromium briefly shows during navigation is masked. Real styling waits for dom-ready.
   webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
     if (!isMainFrame) return
     if (shouldBeDark()) {
-      injectDarkMode(webContents)
+      injectInstantDarkMode(webContents)
     } else {
       removeDarkMode(webContents)
     }
@@ -64,27 +70,67 @@ export function bindDarkModeToWebContents(webContents: WebContents): void {
   })
 }
 
-export async function injectDarkMode(webContents: WebContents): Promise<void> {
+async function replaceInjectedCSS(webContents: WebContents, css: string): Promise<void> {
   if (webContents.isDestroyed()) return
+  const wcId = webContents.id
+  const oldKey = injectedCSSKeys.get(wcId)
+  const key = await webContents.insertCSS(css, { cssOrigin: 'user' })
+  injectedCSSKeys.set(wcId, key)
+  if (oldKey && oldKey !== key) {
+    await webContents.removeInsertedCSS(oldKey).catch(() => {
+      /* stale keys are common after navigation */
+    })
+  }
+}
 
+async function dropInjectedCSS(webContents: WebContents): Promise<void> {
+  if (webContents.isDestroyed()) return
+  const wcId = webContents.id
+  const key = injectedCSSKeys.get(wcId)
+  if (!key) return
+  injectedCSSKeys.delete(wcId)
+  await webContents.removeInsertedCSS(key).catch(() => {
+    /* stale keys are common after navigation */
+  })
+}
+
+// Returns true if the page's own background is already dark and we should leave
+// it alone. Returns false on detection failure so we still inject the safety net.
+async function isSiteAlreadyDark(webContents: WebContents): Promise<boolean> {
+  if (webContents.isDestroyed()) return false
+  try {
+    const result = (await webContents.executeJavaScript(
+      `(() => {
+        const parse = (s) => {
+          if (!s || s === 'rgba(0, 0, 0, 0)' || s === 'transparent') return null
+          const m = s.match(/\\d+(?:\\.\\d+)?/g)
+          if (!m || m.length < 3) return null
+          const [r, g, b] = m.map(Number)
+          return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        }
+        const bodyLum = document.body ? parse(getComputedStyle(document.body).backgroundColor) : null
+        const htmlLum = parse(getComputedStyle(document.documentElement).backgroundColor)
+        const lum = bodyLum !== null ? bodyLum : htmlLum
+        return lum
+      })()`,
+      true
+    )) as number | null
+    return typeof result === 'number' && result < SITE_DARK_LUMINANCE_THRESHOLD
+  } catch {
+    return false
+  }
+}
+
+function enqueueInjection(webContents: WebContents, task: () => Promise<void>): Promise<void> {
   const wcId = webContents.id
   const previous = pendingInjects.get(wcId) || Promise.resolve()
   const next = previous
     .catch(() => {
-      /* keep the injection queue moving */
+      /* keep the queue moving */
     })
     .then(async () => {
       if (webContents.isDestroyed() || !shouldBeDark()) return
-
-      const oldKey = injectedCSSKeys.get(wcId)
-      const key = await webContents.insertCSS(DARK_MODE_FORCE_CSS, { cssOrigin: 'user' })
-      injectedCSSKeys.set(wcId, key)
-
-      if (oldKey && oldKey !== key) {
-        await webContents.removeInsertedCSS(oldKey).catch(() => {
-          /* stale keys are common after navigation */
-        })
-      }
+      await task()
     })
     .catch(() => {
       /* webContents may be navigating or destroyed */
@@ -94,9 +140,32 @@ export async function injectDarkMode(webContents: WebContents): Promise<void> {
         pendingInjects.delete(wcId)
       }
     })
-
   pendingInjects.set(wcId, next)
-  await next
+  return next
+}
+
+// Pre-paint pass: only used between did-start-navigation and dom-ready. It just
+// puts up a dark backdrop so the Chromium navigation flash isn't white.
+export async function injectInstantDarkMode(webContents: WebContents): Promise<void> {
+  if (webContents.isDestroyed()) return
+  await enqueueInjection(webContents, async () => {
+    await replaceInjectedCSS(webContents, DARK_MODE_INSTANT_CSS)
+  })
+}
+
+// Post-load pass: detects whether the site already has a dark theme. If yes,
+// we strip our own injection so the site's own dark design shows through cleanly.
+// If no, we apply the layered force CSS.
+export async function injectDarkMode(webContents: WebContents): Promise<void> {
+  if (webContents.isDestroyed()) return
+  await enqueueInjection(webContents, async () => {
+    const siteDark = await isSiteAlreadyDark(webContents)
+    if (siteDark) {
+      await dropInjectedCSS(webContents)
+      return
+    }
+    await replaceInjectedCSS(webContents, DARK_MODE_FORCE_CSS)
+  })
 }
 
 export async function removeDarkMode(webContents: WebContents): Promise<void> {
@@ -107,16 +176,7 @@ export async function removeDarkMode(webContents: WebContents): Promise<void> {
       /* pending injection may have been interrupted by navigation */
     })
   }
-
-  if (webContents.isDestroyed()) return
-
-  const key = injectedCSSKeys.get(wcId)
-  if (!key) return
-
-  await webContents.removeInsertedCSS(key).catch(() => {
-    /* stale keys are common after navigation */
-  })
-  injectedCSSKeys.delete(wcId)
+  await dropInjectedCSS(webContents)
 }
 
 export function isDarkModeInjected(webContents: WebContents): boolean {
