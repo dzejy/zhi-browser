@@ -123,3 +123,116 @@
   color: #888;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
+
+/* ===== Small Polish Pass ===== */
+.cp-overlay {
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(2px);
+}
+
+.cp-panel {
+  width: min(580px, calc(100vw - 40px));
+  max-height: min(520px, calc(100vh - 72px));
+  margin-top: 18px;
+  border-radius: 12px;
+  background: rgba(30, 31, 38, 0.98);
+  box-shadow:
+    0 18px 54px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.cp-input-row {
+  padding: 13px 15px;
+}
+
+.cp-input {
+  font-size: 14px;
+}
+
+.cp-list {
+  padding: 6px;
+}
+
+.cp-item {
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.cp-item:hover,
+.cp-item.active {
+  background: rgba(99, 102, 241, 0.16);
+}
+
+.cp-item-shortcut {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.cp-hint {
+  padding: 9px 15px;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Command Palette ===== */
+.cp-overlay {
+  z-index: var(--z-cmd-palette, 600);
+  background: var(--bg-overlay, rgba(8, 10, 14, 0.56));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.cp-panel {
+  width: min(580px, calc(100vw - 40px));
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-3, 10px);
+  background: var(--bg-panel, #21242b);
+  color: var(--fg-2, #c9ccd3);
+  box-shadow: var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.38));
+}
+
+.cp-input-row,
+.cp-hint {
+  border-color: var(--border-soft, rgba(255, 255, 255, 0.06));
+}
+
+.cp-mode-badge,
+.cp-item.active {
+  background: var(--accent-soft, rgba(108, 155, 210, 0.14));
+  color: var(--accent, #6c9bd2);
+}
+
+.cp-input {
+  color: var(--fg-1, #e8eaef);
+  font-size: var(--text-md, 14px);
+}
+
+.cp-item {
+  min-height: var(--ctrl-md, 32px);
+  border-radius: var(--radius-2, 6px);
+  color: var(--fg-2, #c9ccd3);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.cp-item:hover {
+  background: var(--bg-hover, #31353e);
+}
+
+.cp-item-icon,
+.cp-item-cat,
+.cp-hint,
+.cp-empty {
+  color: var(--fg-3, #8a8f99);
+}
+
+.cp-item-shortcut {
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-1, 4px);
+  background: var(--bg-input, #272a32);
+  color: var(--fg-3, #8a8f99);
+}
+
+.cp-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active, #3b404a) transparent;
+}

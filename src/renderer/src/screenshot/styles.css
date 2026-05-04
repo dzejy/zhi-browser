@@ -142,3 +142,96 @@
   pointer-events: none;
   -webkit-app-region: drag;
 }
+
+/* ===== Small Polish Pass ===== */
+.shot-mask {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.shot-selection {
+  border-color: #8ab4f8;
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.shot-toolbar {
+  gap: 5px;
+  padding: 6px;
+  border-radius: 9px;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.shot-tool-btn {
+  width: 30px;
+  height: 30px;
+}
+
+.shot-action-btn {
+  height: 30px;
+  border-radius: 7px;
+}
+
+.shot-text-input {
+  border-color: #8ab4f8;
+  border-radius: 6px;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Screenshot Tools ===== */
+.shot-selection {
+  border-color: var(--accent, #6c9bd2);
+}
+
+.shot-toolbar {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-3, 10px);
+  background: rgba(18, 20, 24, 0.94);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.48);
+}
+
+.shot-tool-btn {
+  width: var(--ctrl-sm, 28px);
+  height: var(--ctrl-sm, 28px);
+  border-radius: var(--radius-2, 6px);
+  color: rgba(232, 234, 239, 0.84);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shot-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.shot-tool-btn.active {
+  background: var(--accent-soft, rgba(108, 155, 210, 0.22));
+  color: #fff;
+}
+
+.shot-action-btn {
+  height: var(--ctrl-sm, 28px);
+  border-radius: var(--radius-2, 6px);
+  background: var(--accent, #6c9bd2);
+  color: #fff;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shot-action-btn:hover {
+  background: var(--accent-hover, #7eaadb);
+  filter: none;
+}
+
+.shot-action-btn.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(232, 234, 239, 0.84);
+}
+
+.shot-text-input {
+  border-color: var(--accent, #6c9bd2);
+  border-radius: var(--radius-2, 6px);
+}

@@ -481,6 +481,89 @@
   animation: clickSnowBurst 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ===== Small Polish Pass ===== */
+.newtab-page .search-section {
+  margin-top: 8vh;
+}
+
+.newtab-page .datetime-display {
+  margin-bottom: 30px;
+}
+
+.newtab-page .datetime-display .time {
+  font-size: 70px;
+  letter-spacing: 0;
+}
+
+.newtab-page .datetime-display .date {
+  letter-spacing: 0;
+}
+
+.newtab-page .search-container {
+  max-width: 780px;
+  gap: 14px;
+}
+
+.newtab-page .z-btn,
+.newtab-page .search-input-row {
+  height: 62px;
+}
+
+.newtab-page .z-btn {
+  width: 62px;
+}
+
+.newtab-page .search-input {
+  font-size: 19px;
+}
+
+.newtab-page .engine-selector {
+  padding-inline: 16px;
+  font-size: 16px;
+}
+
+.newtab-page .search-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.newtab-page .engine-dropdown {
+  width: 340px;
+}
+
+.newtab-page .engine-grid {
+  gap: 10px;
+}
+
+.newtab-page .engine-item {
+  padding-block: 10px;
+}
+
+.newtab-page .nav-area {
+  margin-top: 42px;
+  gap: 24px;
+}
+
+.newtab-page .nav-card {
+  border-radius: 18px;
+  padding: 24px;
+}
+
+.newtab-page .card-title {
+  font-size: 20px;
+  margin-bottom: 18px;
+}
+
+.newtab-page .card-link {
+  border-radius: 12px;
+  font-size: 17px;
+}
+
+.newtab-page .settings-drawer,
+.newtab-page .edit-dialog {
+  border-radius: 14px 0 0 14px;
+}
+
 /* ========== Responsive ========== */
 @media (max-width: 900px) {
   .newtab-page .nav-area { grid-template-columns: repeat(2, 1fr); }
@@ -492,4 +575,42 @@
   .newtab-page .nav-area { grid-template-columns: 1fr; }
   .newtab-page .search-section { margin-top: 10vh; }
   .newtab-page .settings-drawer { width: 100%; }
+}
+
+/* ===== Third UI Pass: Light Integration Points ===== */
+.newtab-page .settings-btn {
+  top: calc(var(--chrome-height) - 28px);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.newtab-page .settings-btn:focus-visible,
+.newtab-page .search-bar-wrapper:focus-within,
+.newtab-page .edit-field input:focus {
+  border-color: var(--accent, #6c9bd2);
+  box-shadow: 0 0 0 2px var(--accent-ring, rgba(108, 155, 210, 0.35));
+}
+
+.newtab-page .search-input {
+  caret-color: var(--accent, #6c9bd2);
+}
+
+.newtab-page .card-title::before,
+.newtab-page .toggle-switch input:checked + .toggle-track,
+.newtab-page .btn-save {
+  background: var(--accent, #6c9bd2);
+}
+
+.newtab-page .btn-save:hover {
+  background: var(--accent-hover, #7eaadb);
+}
+
+.newtab-page .engine-item.active,
+.newtab-page.edit-mode .card-link {
+  border-color: color-mix(in srgb, var(--accent, #6c9bd2) 46%, transparent);
+}
+
+.newtab-page .settings-drawer,
+.newtab-page .edit-dialog {
+  background: color-mix(in srgb, var(--bg-panel, #21242b) 92%, transparent);
+  border-color: var(--border-soft, rgba(255, 255, 255, 0.06));
 }

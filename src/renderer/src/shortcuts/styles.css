@@ -143,3 +143,81 @@
     grid-column: 2;
   }
 }
+
+/* ===== Small Polish Pass ===== */
+.shortcut-root {
+  padding: 16px;
+}
+
+.shortcut-header {
+  margin-bottom: 12px;
+}
+
+.shortcut-list {
+  gap: 7px;
+}
+
+.shortcut-item {
+  min-height: 50px;
+  padding: 8px;
+  border-radius: 9px;
+}
+
+.shortcut-key {
+  height: 30px;
+}
+
+.shortcut-message {
+  border-radius: 9px;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Shortcut Window ===== */
+.shortcut-root {
+  background: var(--bg-panel, #21242b);
+  color: var(--fg-2, #c9ccd3);
+  font-family: inherit;
+}
+
+.shortcut-header h1 {
+  color: var(--fg-1, #e8eaef);
+  font-size: var(--text-lg, 18px);
+  font-weight: 600;
+}
+
+.shortcut-header p,
+.shortcut-meta small {
+  color: var(--fg-3, #8a8f99);
+}
+
+.shortcut-close,
+.shortcut-reset,
+.shortcut-key,
+.shortcut-item,
+.shortcut-message {
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-2, 6px);
+  background: var(--bg-input, #272a32);
+  color: var(--fg-2, #c9ccd3);
+}
+
+.shortcut-close:hover,
+.shortcut-reset:hover:not(:disabled) {
+  background: var(--bg-hover, #31353e);
+  color: var(--fg-1, #e8eaef);
+}
+
+.shortcut-enable input {
+  accent-color: var(--accent, #6c9bd2);
+}
+
+.shortcut-key:focus,
+.shortcut-key.recording {
+  border-color: var(--accent, #6c9bd2);
+  box-shadow: 0 0 0 2px var(--accent-ring, rgba(108, 155, 210, 0.35));
+}
+
+.shortcut-message {
+  background: var(--bg-active, #3b404a);
+  color: var(--fg-1, #e8eaef);
+  box-shadow: var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.38));
+}

@@ -422,6 +422,50 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.commands-sidebar {
+  width: 208px;
+  flex-basis: 208px;
+}
+
+.commands-sidebar-header {
+  padding: 20px 16px;
+}
+
+.commands-nav,
+.commands-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.commands-nav button {
+  min-height: 46px;
+  margin-bottom: 6px;
+}
+
+.commands-topbar {
+  min-height: 78px;
+  padding-block: 16px;
+}
+
+.commands-search {
+  width: min(360px, 36vw);
+  height: 36px;
+}
+
+.commands-list {
+  padding-top: 18px;
+}
+
+.commands-card {
+  padding: 13px 14px;
+  margin-bottom: 8px;
+}
+
+.commands-card-actions {
+  gap: 6px;
+}
+
 @media (max-width: 860px) {
   .commands-page {
     flex-direction: column;
@@ -459,5 +503,118 @@
   .commands-card-actions {
     opacity: 1;
   }
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
+.commands-page {
+  --page-bg-primary: var(--bg-app);
+  --page-bg-secondary: var(--bg-panel);
+  --page-bg-tertiary: var(--bg-input);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
+}
+
+.commands-sidebar,
+.commands-topbar,
+.commands-modal {
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.commands-sidebar {
+  width: 220px;
+  flex-basis: 220px;
+}
+
+.commands-topbar {
+  min-height: 64px;
+  padding-block: 0;
+}
+
+.commands-eyebrow {
+  display: none;
+}
+
+.commands-sidebar h1,
+.commands-topbar h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.commands-search {
+  width: min(320px, 36vw);
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+}
+
+.commands-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.commands-nav button,
+.commands-primary-btn,
+.commands-secondary-btn,
+.commands-card-actions button,
+.commands-card,
+.commands-modal,
+.commands-modal label > input,
+.commands-modal select,
+.commands-name-input,
+.commands-error {
+  border-radius: var(--radius-2);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.commands-nav button:hover,
+.commands-nav button.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg-1);
+}
+
+.commands-card {
+  min-height: 56px;
+  background: var(--bg-input);
+  animation: none;
+}
+
+.commands-card:hover {
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  transform: none;
+}
+
+.commands-tag {
+  background: var(--accent-soft);
+}
+
+.commands-modal-backdrop {
+  z-index: var(--z-modal);
+  background: var(--bg-overlay);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.commands-modal {
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+}
+
+.commands-nav,
+.commands-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
 }
 
