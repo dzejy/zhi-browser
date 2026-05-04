@@ -199,8 +199,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   webDarkMode: false,
   startup: {
     behavior: 'homepage',
-    homepageUrl: 'https://www.jianavi.com/',
-    newTabUrl: 'https://www.moulem.com/',
+    homepageUrl: 'zhi://newtab',
+    newTabUrl: 'ONLINE.BONJOURR.FR',
     specificPages: []
   },
   search: {

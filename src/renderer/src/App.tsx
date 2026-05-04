@@ -8,6 +8,7 @@ import bingIcon from './assets/icons/bing.ico'
 import duckduckgoIcon from './assets/icons/duckduckgo.ico'
 import githubIcon from './assets/icons/github.ico'
 import youtubeIcon from './assets/icons/youtube.ico'
+import { NewTabPage } from './pages/newtab/NewTabPage'
 
 // ===== Types (mirrored from shared/types for renderer use) =====
 interface TabState {
@@ -76,6 +77,12 @@ interface HistoryItem {
   url: string
   title: string
   visitedAt: number
+  favicon?: string
+}
+interface AddressSuggestion {
+  type: 'bookmark' | 'history'
+  title: string
+  url: string
   favicon?: string
 }
 interface ToastMessage {
@@ -997,6 +1004,8 @@ function BrowserApp(): React.ReactElement {
   const [adBlockState, setAdBlockState] = useState<AdBlockState | null>(null)
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [isEditingAddress, setIsEditingAddress] = useState(false)
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([])
+  const [selectedAddressSuggestionIndex, setSelectedAddressSuggestionIndex] = useState(0)
   const [showBookmarkBar, setShowBookmarkBar] = useState(true)
   const [enteringTabIds, setEnteringTabIds] = useState<Set<string>>(new Set())
   const [closingTabIds, setClosingTabIds] = useState<Set<string>>(new Set())
@@ -1010,6 +1019,7 @@ function BrowserApp(): React.ReactElement {
   const [splitViewInput, setSplitViewInput] = useState('')
   const [previewTabId, setPreviewTabId] = useState<string | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [previewKind, setPreviewKind] = useState<'image' | 'newtab'>('image')
   const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0
@@ -1028,6 +1038,7 @@ function BrowserApp(): React.ReactElement {
   const loadingTabIdsRef = useRef<Set<string>>(new Set())
   const tabCloseTimers = useRef<Map<string, number>>(new Map())
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addressBlurTimerRef = useRef<number | null>(null)
   const overlayCountRef = useRef(0)
   const themeBtnRef = useRef<HTMLButtonElement>(null)
 
@@ -1550,13 +1561,20 @@ function BrowserApp(): React.ReactElement {
 
   const handleTabMouseEnter = useCallback((tab: TabState, event: React.MouseEvent) => {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    setPreviewPosition({ x: rect.left + rect.width / 2, y: rect.bottom + 8 })
+    const x = window.screenX + rect.left + rect.width / 2
+    const y = window.screenY + rect.bottom + 8
+    setPreviewPosition({ x, y })
+
+    if (tab.isNewTab || tab.url === 'zhi://newtab') {
+      window.api.tabPreviewClear(tab.webContentsId).catch(() => {})
+      window.api.tabPreviewShow({ x, y, kind: 'newtab' }).catch(() => {})
+      return
+    }
 
     previewTimerRef.current = setTimeout(async () => {
       const image = await window.api.tabPreviewCapture(tab.webContentsId)
       if (image) {
-        setPreviewTabId(tab.id)
-        setPreviewImage(image)
+        window.api.tabPreviewShow({ x, y, image, kind: 'image' }).catch(() => {})
       }
     }, 400)
   }, [])
@@ -1568,6 +1586,8 @@ function BrowserApp(): React.ReactElement {
     }
     setPreviewTabId(null)
     setPreviewImage(null)
+    setPreviewKind('image')
+    window.api.tabPreviewHide().catch(() => {})
   }, [])
 
   const handleSplitViewOpen = useCallback(
@@ -1934,6 +1954,54 @@ function BrowserApp(): React.ReactElement {
     setInputUrl(activeTab.isNewTab ? '' : activeTab.url)
   }
 
+  useEffect(() => {
+    if (!isEditingAddress) {
+      setAddressSuggestions([])
+      return
+    }
+
+    const query = inputUrl.trim()
+    if (query.length < 1) {
+      setAddressSuggestions([])
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      Promise.all([window.api.bookmarksSearch(query), window.api.historySearch(query)])
+        .then(([bookmarkResults, historyResults]) => {
+          if (cancelled) return
+
+          const seen = new Set<string>()
+          const suggestions: AddressSuggestion[] = []
+          const pushSuggestion = (item: BookmarkItem | HistoryItem, type: AddressSuggestion['type']): void => {
+            if (!item.url || seen.has(item.url)) return
+            seen.add(item.url)
+            suggestions.push({
+              type,
+              title: item.title || item.url,
+              url: item.url,
+              favicon: item.favicon
+            })
+          }
+
+          bookmarkResults.slice(0, 6).forEach((item) => pushSuggestion(item, 'bookmark'))
+          historyResults.slice(0, 8).forEach((item) => pushSuggestion(item, 'history'))
+
+          setAddressSuggestions(suggestions.slice(0, 8))
+          setSelectedAddressSuggestionIndex(0)
+        })
+        .catch(() => {
+          if (!cancelled) setAddressSuggestions([])
+        })
+    }, 120)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [inputUrl, isEditingAddress])
+
   // Handlers
   function triggerAddressRipple(): void {
     const wrapper = addressBarWrapperRef.current
@@ -1954,10 +2022,38 @@ function BrowserApp(): React.ReactElement {
     urlInputRef.current?.blur()
   }
 
+  function handleAddressSuggestionNavigate(suggestion: AddressSuggestion): void {
+    if (!activeTab) return
+    triggerAddressRipple()
+    setInputUrl(suggestion.url)
+    setAddressSuggestions([])
+    setIsEditingAddress(false)
+    window.api.loadUrl(activeTab.id, suggestion.url)
+    urlInputRef.current?.blur()
+  }
+
   function handleUrlKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
-    if (e.key === 'Enter') handleNavigate()
+    if (e.key === 'ArrowDown' && addressSuggestions.length > 0) {
+      e.preventDefault()
+      setSelectedAddressSuggestionIndex((idx) => (idx + 1) % addressSuggestions.length)
+    } else if (e.key === 'ArrowUp' && addressSuggestions.length > 0) {
+      e.preventDefault()
+      setSelectedAddressSuggestionIndex(
+        (idx) => (idx - 1 + addressSuggestions.length) % addressSuggestions.length
+      )
+    } else if (e.key === 'Enter') {
+      if (addressSuggestions.length > 0) {
+        e.preventDefault()
+        handleAddressSuggestionNavigate(
+          addressSuggestions[Math.min(selectedAddressSuggestionIndex, addressSuggestions.length - 1)]
+        )
+      } else {
+        handleNavigate()
+      }
+    }
     else if (e.key === 'Escape') {
       if (activeTab) setInputUrl(activeTab.isNewTab ? '' : activeTab.url)
+      setAddressSuggestions([])
       setIsEditingAddress(false)
       urlInputRef.current?.blur()
     }
@@ -2749,16 +2845,53 @@ function BrowserApp(): React.ReactElement {
                 onChange={(e) => setInputUrl(e.target.value)}
                 onKeyDown={handleUrlKeyDown}
                 onFocus={(e) => {
+                  if (addressBlurTimerRef.current) {
+                    window.clearTimeout(addressBlurTimerRef.current)
+                    addressBlurTimerRef.current = null
+                  }
                   setIsEditingAddress(true)
                   e.target.select()
                 }}
                 onBlur={() => {
-                  setIsEditingAddress(false)
-                  if (activeTab) setInputUrl(activeTab.isNewTab ? '' : activeTab.url)
+                  addressBlurTimerRef.current = window.setTimeout(() => {
+                    setIsEditingAddress(false)
+                    setAddressSuggestions([])
+                    if (activeTab) setInputUrl(activeTab.isNewTab ? '' : activeTab.url)
+                  }, 120)
                 }}
                 placeholder="输入网址或搜索内容"
                 spellCheck={false}
               />
+              {isEditingAddress && addressSuggestions.length > 0 && (
+                <div className="address-suggestions">
+                  {addressSuggestions.map((suggestion, index) => (
+                    <button
+                      key={`${suggestion.type}-${suggestion.url}`}
+                      className={`address-suggestion-item ${index === selectedAddressSuggestionIndex ? 'active' : ''}`}
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        handleAddressSuggestionNavigate(suggestion)
+                      }}
+                      onMouseEnter={() => setSelectedAddressSuggestionIndex(index)}
+                    >
+                      <span className="address-suggestion-icon">
+                        {suggestion.favicon ? (
+                          <img src={suggestion.favicon} alt="" />
+                        ) : (
+                          <span>{suggestion.type === 'bookmark' ? '★' : '↺'}</span>
+                        )}
+                      </span>
+                      <span className="address-suggestion-main">
+                        <span className="address-suggestion-title">{suggestion.title}</span>
+                        <span className="address-suggestion-url">{suggestion.url}</span>
+                      </span>
+                      <span className="address-suggestion-source">
+                        {suggestion.type === 'bookmark' ? '书签' : '历史'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Quick Search Box */}
@@ -3454,7 +3587,7 @@ function BrowserApp(): React.ReactElement {
           </div>
         )}
 
-        {previewTabId && previewImage && (
+        {previewTabId && (previewImage || previewKind === 'newtab') && (
           <div
             className="tab-preview-tooltip"
             style={{
@@ -3462,7 +3595,21 @@ function BrowserApp(): React.ReactElement {
               top: previewPosition.y
             }}
           >
-            <img src={previewImage} alt="preview" className="tab-preview-image" />
+            {previewKind === 'newtab' ? (
+              <div className="tab-preview-newtab">
+                <div className="tab-preview-newtab-bg" />
+                <div className="tab-preview-newtab-z">Z</div>
+                <div className="tab-preview-newtab-title">Zhi 导航</div>
+                <div className="tab-preview-newtab-search" />
+                <div className="tab-preview-newtab-grid">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <span key={index} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <img src={previewImage || ''} alt="preview" className="tab-preview-image" />
+            )}
           </div>
         )}
 
@@ -3507,18 +3654,12 @@ function BrowserApp(): React.ReactElement {
           </div>
         )}
 
-        {activeTab?.isNewTab && (
-          <div className="new-tab-content">
-            <h1 className="new-tab-title">Zhi Browser</h1>
-            <p className="new-tab-hint">在地址栏输入网址或搜索内容</p>
-            {browserState.recentlyClosed.length > 0 && (
-              <div className="new-tab-recent">
-                <button className="restore-btn" onClick={() => window.api.restoreClosed()}>
-                  恢复上次关闭的标签
-                </button>
-              </div>
-            )}
-          </div>
+        {(activeTab?.isNewTab || activeTab?.url === 'zhi://newtab' || activeTab?.url === '') && (
+          <NewTabPage 
+            onNavigate={(url) => {
+              if (activeTab) window.api.loadUrl(activeTab.id, url)
+            }}
+          />
         )}
 
         {/* ===== Add Panel Dialog ===== */}

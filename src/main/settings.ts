@@ -10,6 +10,7 @@ import {
   cloneDefaultPreferences,
   getSearchUrl as buildSearchUrl,
   migratePreferences,
+  normalizeUrl,
   validateImport
 } from '../shared/preferences'
 import { readJSON, writeJSON } from './storage'
@@ -341,7 +342,24 @@ function withRuntimeDefaults(prefs: Preferences): Preferences {
   if (!prefs.downloads.defaultDirectory) {
     prefs.downloads.defaultDirectory = app.getPath('downloads')
   }
+  prefs.startup.homepageUrl = prefs.startup.homepageUrl.trim()
+  prefs.startup.newTabUrl = prefs.startup.newTabUrl.trim()
+
+  if (isLegacyDefaultStartupUrl(prefs.startup.homepageUrl, ['jianavi.com', 'www.jianavi.com', 'baidu.com', 'www.baidu.com'])) {
+    prefs.startup.homepageUrl = DEFAULT_PREFERENCES.startup.homepageUrl
+  }
+  if (prefs.startup.newTabUrl === 'about:blank') {
+    prefs.startup.newTabUrl = DEFAULT_PREFERENCES.startup.newTabUrl
+  }
+  if (/^zhi:\/\/newtab\/?$/i.test(prefs.startup.newTabUrl)) {
+    prefs.startup.newTabUrl = DEFAULT_PREFERENCES.startup.newTabUrl
+  }
   return prefs
+}
+
+function isLegacyDefaultStartupUrl(value: string, hosts: string[]): boolean {
+  const normalized = (normalizeUrl(value) || value).trim().toLowerCase().replace(/\/+$/, '')
+  return hosts.some((host) => normalized === `https://${host}` || normalized === `http://${host}`)
 }
 
 function clonePreferences(prefs: Preferences): Preferences {

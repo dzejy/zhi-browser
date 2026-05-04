@@ -46,6 +46,8 @@ import { bindPasswordDetection } from './password'
 
 const UI_SCALE = 1.5
 const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
+const NEW_TAB_FAVICON =
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='18' fill='%23171a22'/><path d='M20 18c8-3 19-3 25 0M21 22h23L20 47h24' fill='none' stroke='%23f3f6ff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/><path d='M17 15c8-5 23-6 32 0' fill='none' stroke='%23dc2626' stroke-width='3' stroke-linecap='round' opacity='.85'/></svg>"
 
 interface ManagedTab {
   id: string
@@ -272,7 +274,8 @@ export class TabManager {
     }
 
     const isInternalPage = typeof targetUrl === 'string' && /^zhi:\/\/settings\/?$/i.test(targetUrl)
-    const isNewTab = !targetUrl || targetUrl === 'about:blank'
+    const isNewTab =
+      !targetUrl || targetUrl === 'about:blank' || /^zhi:\/\/newtab\/?$/i.test(targetUrl)
     const isIncognito = Boolean(options?.incognito && options.session)
 
     const view = new WebContentsView({
@@ -293,7 +296,7 @@ export class TabManager {
       darkModeHiddenUntilReady: Boolean(!isNewTab && targetUrl && prefs.webDarkMode),
       url: targetUrl || 'about:blank',
       title: isInternalPage ? '设置 - Zhi Browser' : isNewTab ? '新标签页' : '',
-      favicon: '',
+      favicon: isNewTab ? NEW_TAB_FAVICON : '',
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
@@ -337,6 +340,9 @@ export class TabManager {
 
     if (tab.darkModeHiddenUntilReady) {
       tab.view.setVisible(false)
+    }
+    if (isNewTab) {
+      clearTabPreview(view.webContents.id)
     }
 
     const openInBackground = options?.background ?? prefs.tabs.newTabFocus === 'background'
@@ -566,7 +572,7 @@ export class TabManager {
     const newTab = this.tabs.get(tabId)!
 
     applyViewBackgroundColor(newTab.view)
-    newTab.view.setVisible(!newTab.darkModeHiddenUntilReady)
+    newTab.view.setVisible(!newTab.isNewTab && !newTab.darkModeHiddenUntilReady)
     this.win.contentView.addChildView(newTab.view)
     this.updateLayout()
 
@@ -593,13 +599,16 @@ export class TabManager {
     }
 
     if (classified.type === 'newtab') {
+      clearTabPreview(tab.view.webContents.id)
       tab.isNewTab = true
-      tab.url = 'about:blank'
+      tab.url = 'zhi://newtab'
       tab.title = '新标签页'
+      tab.favicon = NEW_TAB_FAVICON
       tab.error = null
       tab.darkModeHiddenUntilReady = false
-      tab.view.setVisible(true)
+      tab.view.setVisible(false)
       applyViewBackgroundColor(tab.view)
+      this.updateLayout()
       this.pushState()
       return
     }
@@ -607,6 +616,8 @@ export class TabManager {
     tab.isNewTab = false
     tab.internalPage = ''
     tab.error = null
+      tab.favicon = ''
+      clearTabPreview(tab.view.webContents.id)
     tab.wwwFallbackAttempted = false
     tab.url = classified.value
     this.prepareDarkModeForNavigation(tab)
@@ -820,12 +831,13 @@ export class TabManager {
 
   updateLayout(): void {
     const { width, height } = this.win.getContentBounds()
-    const uiHeight = Math.max(0, Math.min(this.uiViewHeight, height))
+    const activeTab = this.tabs.get(this.activeTabId)
+    const isActiveNewTab = Boolean(activeTab?.isNewTab || activeTab?.url === 'zhi://newtab')
+    const uiHeight = isActiveNewTab ? height : Math.max(0, Math.min(this.uiViewHeight, height))
     const uiWidth =
       this.uiViewWidth === null ? width : Math.max(0, Math.min(this.uiViewWidth, width))
     this.uiView.setBounds({ x: 0, y: 0, width: uiWidth, height: uiHeight })
 
-    const activeTab = this.tabs.get(this.activeTabId)
     if (activeTab) {
       const pageHeight = Math.max(0, height - this.pageTop)
       const pageBounds = {
@@ -835,9 +847,10 @@ export class TabManager {
         height: pageHeight
       }
       activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
+      activeTab.view.setVisible(!isActiveNewTab && !activeTab.darkModeHiddenUntilReady)
     }
 
-    if (this.pageTop === 0) {
+    if (this.pageTop === 0 || isActiveNewTab) {
       try {
         this.win.contentView.removeChildView(this.uiView)
       } catch {
@@ -1014,6 +1027,8 @@ button.primary:hover{background:#4d6faa}
       tab.canGoBack = wc.navigationHistory.canGoBack()
       tab.canGoForward = wc.navigationHistory.canGoForward()
       tab.isNewTab = url === 'about:blank'
+      tab.view.setVisible(!tab.isNewTab && !tab.darkModeHiddenUntilReady)
+      this.updateLayout()
       this.pushState()
 
       if (!tab.isIncognito && url !== 'about:blank') {

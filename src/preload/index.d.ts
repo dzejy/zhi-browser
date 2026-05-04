@@ -316,6 +316,13 @@ export interface PreloadAPI {
   // Tab preview
   tabPreviewCapture(tabId: number): Promise<string | null>
   tabPreviewClear(tabId: number): Promise<void>
+  tabPreviewShow(options: {
+    x: number
+    y: number
+    image?: string
+    kind?: 'image' | 'newtab'
+  }): Promise<void>
+  tabPreviewHide(): Promise<void>
 
   // Web panel
   webPanelGetAll(): Promise<WebPanelItem[]>

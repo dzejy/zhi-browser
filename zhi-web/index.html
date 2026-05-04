@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zhi导航</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ========== Reset & Base ========== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow-x: hidden; font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif; }
+
+/* ========== Background ========== */
+.bg-layer {
+  position: fixed; inset: 0; z-index: 0;
+  background: url('./snow.jpg') center/cover no-repeat;
+  animation: bgBreath 25s ease-in-out infinite;
+}
+.bg-overlay {
+  position: fixed; inset: 0; z-index: 1;
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: blur(1.5px);
+}
+@keyframes bgBreath {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* ========== Main Container ========== */
+.main-container {
+  position: relative; z-index: 2;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 20px;
+}
+
+/* ========== Settings Button ========== */
+.settings-btn {
+  position: fixed; top: 18px; right: 22px; z-index: 1000;
+  width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.12); backdrop-filter: blur(14px);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s ease; color: rgba(255,255,255,0.85);
+}
+.settings-btn:hover {
+  background: rgba(255,255,255,0.22); transform: rotate(60deg);
+  box-shadow: 0 0 20px rgba(255,255,255,0.15);
+}
+.settings-btn svg { width: 20px; height: 20px; fill: currentColor; }
+
+/* ========== Search Section ========== */
+.search-section { 
+  margin-top: 9vh; width: 100%; 
+  display: flex; flex-direction: column; align-items: center;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.datetime-display {
+  text-align: center; color: #fff; margin-bottom: 36px;
+  text-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  user-select: none;
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.datetime-display .time { font-size: 76px; font-weight: 800; font-family: 'Nunito', 'Arial Rounded MT Bold', system-ui, sans-serif; letter-spacing: 3px; line-height: 1; font-variant-numeric: tabular-nums; }
+.datetime-display .date { font-size: 20px; font-weight: 400; opacity: 0.9; margin-top: 10px; letter-spacing: 2px; }
+
+.search-container {
+  display: flex; align-items: center; gap: 16px;
+  width: 100%; max-width: 832px;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center top;
+}
+
+.z-btn {
+  flex-shrink: 0;
+  width: 68px; height: 68px; border-radius: 50%;
+  background: rgba(255,255,255,0.13); backdrop-filter: blur(22px);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.9); font-size: 32px; font-weight: bold; font-family: 'Helvetica Neue', sans-serif;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+  user-select: none;
+}
+.z-btn:hover {
+  background: rgba(255,255,255,0.22);
+  box-shadow: 0 0 30px rgba(255,255,255,0.15);
+  transform: scale(1.05);
+}
+
+.search-bar-wrapper {
+  position: relative; flex: 1;
+  background: rgba(255,255,255,0.13); backdrop-filter: blur(22px);
+  border: 1px solid rgba(255,255,255,0.18); border-radius: 34px;
+  transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+}
+.search-bar-wrapper:focus-within {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.35);
+  box-shadow: 0 0 40px rgba(255,255,255,0.12), 0 4px 30px rgba(0,0,0,0.1);
+  transform: scale(1.02);
+}
+
+.search-input-row { display: flex; align-items: center; height: 68px; padding: 0 8px 0 28px; }
+
+.search-input {
+  flex: 1; height: 100%; border: none; outline: none; background: transparent;
+  font-size: 21px; color: #fff; caret-color: #8ab4f8;
+}
+.search-input::placeholder { color: rgba(255,255,255,0.45); }
+
+.engine-selector {
+  display: flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border-radius: 24px; border: none; background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85); font-size: 18px; cursor: pointer;
+  transition: background 0.2s; white-space: nowrap; position: relative;
+}
+.engine-selector:hover { background: rgba(255,255,255,0.2); }
+.engine-selector .arrow { font-size: 12px; margin-left: 2px; transition: transform 0.2s; }
+.engine-selector.open .arrow { transform: rotate(180deg); }
+
+.search-btn {
+  width: 52px; height: 52px; border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.85);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  margin-left: 8px; transition: all 0.2s;
+}
+.search-btn:hover { background: rgba(255,255,255,0.28); }
+.search-btn svg { width: 23px; height: 23px; fill: currentColor; }
+
+/* ========== Focus Mode (Z Button toggle) ========== */
+body.focus-mode .nav-area {
+  opacity: 0; pointer-events: none; transform: translateY(60px);
+}
+body.focus-mode .search-section {
+  transform: translateY(18vh);
+}
+body.focus-mode .datetime-display {
+  opacity: 0; pointer-events: none; transform: translateY(-30px);
+  margin-bottom: -110px; /* Collapse the space it took */
+}
+body.focus-mode .search-container {
+  transform: scale(2);
+}
+@media (max-width: 1700px) { body.focus-mode .search-container { transform: scale(1.6); } }
+@media (max-width: 1300px) { body.focus-mode .search-container { transform: scale(1.3); } }
+@media (max-width: 900px) { body.focus-mode .search-container { transform: scale(1.1); } }
+
+/* ========== Engine Dropdown ========== */
+.engine-dropdown {
+  position: absolute; bottom: calc(100% + 20px); left: 0; right: auto;
+  width: 320px;
+  background: rgba(255,255,255,0.18); backdrop-filter: blur(28px);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 20px; padding: 18px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+  opacity: 0; visibility: hidden; pointer-events: none; z-index: 100;
+  transform: translateY(15px) scale(0.95); transform-origin: bottom left;
+  transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+.engine-dropdown.show { 
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.engine-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.engine-item {
+  padding: 12px 0; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); font-size: 15px;
+  cursor: pointer; transition: all 0.2s; text-align: center;
+}
+.engine-item:hover { 
+  background: rgba(255,255,255,0.2); color: #fff; 
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.engine-item.active { 
+  background: rgba(255,255,255,0.25); color: #fff; font-weight: 700; 
+  border-color: rgba(255,255,255,0.3);
+}
+.engine-item.manage-btn {
+  background: rgba(0,0,0,0.15); color: rgba(255,255,255,0.75);
+  border: 1px dashed rgba(255,255,255,0.2);
+}
+.engine-item.manage-btn:hover {
+  background: rgba(0,0,0,0.25); color: #fff;
+}
+
+/* ========== Navigation Cards ========== */
+.nav-area {
+  margin-top: 48px; width: 100%; max-width: 1590px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px;
+  padding-bottom: 100px;
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-card {
+  background: rgba(255,255,255,0.08); backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 24px;
+  padding: 30px; transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+  opacity: 0; animation: cardIn 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.nav-card:nth-child(1) { animation-delay: 0.08s; }
+.nav-card:nth-child(2) { animation-delay: 0.16s; }
+.nav-card:nth-child(3) { animation-delay: 0.24s; }
+.nav-card:nth-child(4) { animation-delay: 0.32s; }
+.nav-card:nth-child(5) { animation-delay: 0.40s; }
+.nav-card:nth-child(6) { animation-delay: 0.48s; }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(36px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nav-card:hover {
+  transform: translateY(-6px) scale(1.01);
+  background: rgba(255,255,255,0.13);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.15);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.card-title {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 22.5px; font-weight: 600; color: rgba(255,255,255,0.9);
+  margin-bottom: 21px; padding-bottom: 15px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  position: relative;
+}
+.card-title::before {
+  content: ''; display: inline-block; width: 4.5px; height: 24px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #8ab4f8, #669df6);
+}
+.card-title .edit-icon {
+  display: none; width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(66,133,244,0.8); color: #fff;
+  font-size: 14px; align-items: center; justify-content: center;
+  cursor: pointer; margin-left: auto;
+}
+body.edit-mode .card-title .edit-icon { display: flex; }
+
+.card-links {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+
+.card-link {
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px 6px; border-radius: 15px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8); font-size: 19.5px;
+  text-decoration: none; transition: all 0.25s; cursor: pointer;
+  position: relative; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.card-link:hover {
+  background: rgba(255,255,255,0.15); color: #fff;
+  border-color: rgba(255,255,255,0.15);
+  transform: translateY(-1.5px);
+  box-shadow: 0 3px 18px rgba(0,0,0,0.1);
+}
+.card-link .edit-icon {
+  display: none; position: absolute; top: 3px; right: 3px;
+  width: 27px; height: 27px; border-radius: 50%;
+  background: rgba(66,133,244,0.8); color: #fff;
+  font-size: 15px; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 5;
+}
+body.edit-mode .card-link .edit-icon { display: flex; }
+body.edit-mode .card-link { border: 1px dashed rgba(138,180,248,0.4); }
+
+/* ========== Settings Drawer ========== */
+.drawer-overlay {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0,0,0,0.4); backdrop-filter: blur(2px);
+  opacity: 0; visibility: hidden; transition: all 0.3s;
+}
+.drawer-overlay.show { opacity: 1; visibility: visible; }
+
+.settings-drawer {
+  position: fixed; top: 0; right: -380px; z-index: 910;
+  width: 360px; height: 100vh; padding: 28px 24px;
+  background: rgba(30,32,40,0.92); backdrop-filter: blur(24px);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  transition: right 0.35s cubic-bezier(0.16,1,0.3,1);
+  overflow-y: auto; color: #e2e2e2;
+}
+.settings-drawer.show { right: 0; }
+
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px; padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.drawer-header h3 { font-size: 18px; font-weight: 600; }
+.drawer-close {
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.08); color: #e2e2e2;
+  cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.drawer-close:hover { background: rgba(255,255,255,0.16); }
+
+.drawer-section { margin-bottom: 24px; }
+.drawer-section label {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 14px; color: rgba(255,255,255,0.75); margin-bottom: 10px;
+}
+
+.mode-select {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+  color: #fff; border-radius: 8px; padding: 4px 8px; outline: none;
+}
+.mode-select option { background: #333; color: #fff; }
+
+.toggle-switch {
+  position: relative; width: 44px; height: 24px; cursor: pointer;
+}
+.toggle-switch input { display: none; }
+.toggle-track {
+  position: absolute; inset: 0; border-radius: 12px;
+  background: rgba(255,255,255,0.15); transition: background 0.2s;
+}
+.toggle-switch input:checked + .toggle-track { background: #4285f4; }
+.toggle-thumb {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
+  border-radius: 50%; background: #fff; transition: left 0.2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+.toggle-switch input:checked ~ .toggle-thumb { left: 22px; }
+
+.drawer-btn {
+  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06); color: #e2e2e2; font-size: 14px;
+  cursor: pointer; transition: all 0.2s; margin-top: 8px;
+}
+.drawer-btn:hover { background: rgba(255,255,255,0.12); }
+.drawer-btn.danger { border-color: rgba(244,67,54,0.3); color: #f44336; }
+.drawer-btn.danger:hover { background: rgba(244,67,54,0.1); }
+
+/* ========== Edit Dialogs ========== */
+.dialog-overlay {
+  position: fixed; inset: 0; z-index: 950;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+}
+.dialog-overlay.show { display: flex; }
+
+.edit-dialog {
+  width: 380px; padding: 28px; border-radius: 18px;
+  background: rgba(36,38,45,0.96); backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: dialogIn 0.3s cubic-bezier(0.16,1,0.3,1);
+  color: #e2e2e2;
+  max-height: 90vh; overflow-y: auto;
+}
+.engine-manage-dialog {
+  width: 480px;
+}
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.93); }
+  to { opacity: 1; transform: scale(1); }
+}
+.edit-dialog h4 { font-size: 17px; margin-bottom: 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;}
+
+.edit-field { margin-bottom: 16px; }
+.edit-field span { display: block; font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 6px; }
+.edit-field input {
+  width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06);
+  color: #e2e2e2; font-size: 14px; outline: none; transition: border-color 0.2s;
+}
+.edit-field input:focus { border-color: rgba(138,180,248,0.5); }
+
+.edit-hint {
+  font-size: 12px; color: rgba(255,255,255,0.35); margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.dialog-actions button {
+  padding: 8px 20px; border-radius: 10px; border: none;
+  font-size: 14px; cursor: pointer; transition: all 0.2s;
+}
+.btn-cancel {
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7);
+}
+.btn-cancel:hover { background: rgba(255,255,255,0.14); }
+.btn-reset {
+  background: rgba(244,67,54,0.1); color: #f44336; border: 1px solid rgba(244,67,54,0.2) !important;
+}
+.btn-reset:hover { background: rgba(244,67,54,0.2); }
+.btn-save { background: #4285f4; color: #fff; }
+.btn-save:hover { background: #5a9cf6; }
+
+/* Engine Manage List */
+.engine-list-item {
+  display: flex; gap: 10px; margin-bottom: 10px; align-items: center;
+}
+.engine-list-item input.name { width: 80px; }
+.engine-list-item input.url { flex: 1; }
+.engine-list-item .del-btn {
+  width: 32px; height: 32px; border-radius: 8px; border: none;
+  background: rgba(244,67,54,0.15); color: #f44336; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.2s;
+}
+.engine-list-item .del-btn:hover { background: rgba(244,67,54,0.3); }
+
+.add-engine-btn {
+  width: 100%; padding: 10px; border-radius: 10px; border: 1px dashed rgba(255,255,255,0.2);
+  background: transparent; color: rgba(255,255,255,0.7); cursor: pointer;
+  margin-top: 10px; transition: all 0.2s;
+}
+.add-engine-btn:hover { background: rgba(255,255,255,0.05); color: #fff; border-color: rgba(255,255,255,0.4); }
+
+/* ========== Footer ========== */
+.footer-left {
+  position: fixed; bottom: 22px; left: 30px;
+  z-index: 2; color: rgba(255,255,255,0.5);
+  font-size: 13px; letter-spacing: 1px;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.3);
+  user-select: none;
+}
+.footer-center {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  z-index: 2; color: rgba(255,255,255,0.5);
+  font-size: 13px; letter-spacing: 3px;
+  animation: footerFloat 4s ease-in-out infinite;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.3);
+  white-space: nowrap; user-select: none;
+}
+.footer-right {
+  position: fixed; bottom: 22px; right: 30px;
+  z-index: 2; color: rgba(255,255,255,0.5);
+  font-size: 14px; letter-spacing: 2px; font-style: italic;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.3);
+  user-select: none;
+}
+@keyframes footerFloat {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-5px); }
+}
+
+/* ========== Snow Canvas ========== */
+#snowCanvas {
+  position: fixed; inset: 0; z-index: 3;
+  pointer-events: none;
+}
+
+/* ========== Interactive Effects ========== */
+@keyframes clickSnowBurst {
+  0% { transform: translate(-50%, -50%) scale(0.2) rotate(0deg); opacity: 1; filter: blur(0px); }
+  50% { opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.6) rotate(90deg); opacity: 0; filter: blur(2px); }
+}
+.click-snowflake {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  width: 70px;
+  height: 70px;
+  background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="2" x2="12" y2="22"></line><line x1="12" y1="2" x2="15.5" y2="5.5"></line><line x1="12" y1="2" x2="8.5" y2="5.5"></line><line x1="12" y1="22" x2="15.5" y2="18.5"></line><line x1="12" y1="22" x2="8.5" y2="18.5"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="12" x2="5.5" y2="8.5"></line><line x1="2" y1="12" x2="5.5" y2="15.5"></line><line x1="22" y1="12" x2="18.5" y2="8.5"></line><line x1="22" y1="12" x2="18.5" y2="15.5"></line><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line><line x1="4.93" y1="4.93" x2="7.4" y2="3.51"></line><line x1="4.93" y1="4.93" x2="3.51" y2="7.4"></line><line x1="19.07" y1="19.07" x2="20.49" y2="16.6"></line><line x1="19.07" y1="19.07" x2="16.6" y2="20.49"></line><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"></line><line x1="19.07" y1="4.93" x2="20.49" y2="7.4"></line><line x1="19.07" y1="4.93" x2="16.6" y2="3.51"></line><line x1="4.93" y1="19.07" x2="3.51" y2="16.6"></line><line x1="4.93" y1="19.07" x2="7.4" y2="20.49"></line></svg>') center/contain no-repeat;
+  animation: clickSnowBurst 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 900px) {
+  .nav-area { grid-template-columns: repeat(2, 1fr); }
+  .engine-dropdown { right: 0; left: 0; bottom: calc(100% + 10px); width: auto; }
+  .search-container { flex-direction: column; }
+  .footer-left, .footer-right { display: none; }
+}
+@media (max-width: 600px) {
+  .nav-area { grid-template-columns: 1fr; }
+  .search-section { margin-top: 10vh; }
+  .settings-drawer { width: 100%; }
+}
+
+/* ========== Scrollbar ========== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+
+<!-- Background -->
+<div class="bg-layer"></div>
+<div class="bg-overlay"></div>
+
+<!-- Snow Canvas -->
+<canvas id="snowCanvas"></canvas>
+
+<!-- Main -->
+<div class="main-container">
+
+  <!-- Settings Button -->
+  <button class="settings-btn" id="settingsBtn" title="设置">
+    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.611 3.611 0 0112 15.6z"/></svg>
+  </button>
+
+  <!-- Search -->
+  <div class="search-section" id="searchSection">
+    <!-- Date Time -->
+    <div class="datetime-display" id="datetimeDisplay">
+      <div class="time" id="timeEl">00:00:00</div>
+      <div class="date" id="dateEl">2026年1月1日 星期一</div>
+    </div>
+    
+    <div class="search-container" id="searchContainer">
+      <button class="z-btn" id="zBtn" title="专注模式">Z</button>
+      <div class="search-bar-wrapper" id="searchBarWrapper">
+        <div class="search-input-row">
+          <input type="text" class="search-input" id="searchInput" placeholder="搜索你想要的内容..." autocomplete="off">
+          <div style="position: relative; display: flex;">
+            <button class="engine-selector" id="engineSelector">
+              <span id="engineLabel">百度</span>
+              <span class="arrow">▾</span>
+            </button>
+            <!-- Engine Dropdown -->
+            <div class="engine-dropdown" id="engineDropdown">
+              <div class="engine-grid" id="engineGrid"></div>
+            </div>
+          </div>
+          <button class="search-btn" id="searchBtn" title="搜索">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation Cards -->
+  <div class="nav-area" id="navArea"></div>
+
+</div>
+
+<!-- Footers -->
+<div class="footer-left">Tips：雪太多的时候点击Z清理雪吧</div>
+<div class="footer-center">@Dzejy — 2026 — Zhi导航</div>
+<div class="footer-right">孤舟蓑笠翁，独钓寒江雪。</div>
+
+<!-- Settings Drawer -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="settings-drawer" id="settingsDrawer">
+  <div class="drawer-header">
+    <h3>设置</h3>
+    <button class="drawer-close" id="drawerClose">✕</button>
+  </div>
+  <div class="drawer-section">
+    <label>
+      编辑模式
+      <div class="toggle-switch">
+        <input type="checkbox" id="editModeToggle">
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </div>
+    </label>
+    <p style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:4px;">开启后可编辑分类名称和链接</p>
+  </div>
+  <div class="drawer-section">
+    <label>
+      积雪模式
+      <select id="snowModeSelect" class="mode-select">
+        <option value="extreme">狂暴积雪 (持续堆积)</option>
+        <option value="normal">普通积雪 (自动融化)</option>
+        <option value="off">关闭积雪</option>
+      </select>
+    </label>
+  </div>
+  <div class="drawer-section">
+    <button class="drawer-btn danger" id="resetAllBtn" style="margin-top:12px;">恢复所有默认链接</button>
+  </div>
+</div>
+
+<!-- Edit Dialog -->
+<div class="dialog-overlay" id="dialogOverlay">
+  <div class="edit-dialog" id="editDialog" style="display: none;">
+    <h4 id="dialogTitle">编辑链接</h4>
+    <div class="edit-field">
+      <span>名称</span>
+      <input type="text" id="editName" placeholder="输入名称">
+    </div>
+    <div class="edit-field" id="editUrlField">
+      <span>网址</span>
+      <input type="text" id="editUrl" placeholder="https://example.com">
+    </div>
+    <div class="edit-hint">数据保存在本地浏览器，清除浏览器数据会丢失。</div>
+    <div class="dialog-actions">
+      <button class="btn-reset" id="dialogReset">恢复默认</button>
+      <button class="btn-cancel" id="dialogCancel">取消</button>
+      <button class="btn-save" id="dialogSave">确定</button>
+    </div>
+  </div>
+
+  <!-- Engine Manage Dialog -->
+  <div class="edit-dialog engine-manage-dialog" id="engineManageDialog" style="display: none;">
+    <h4>管理搜索引擎</h4>
+    <div id="engineManageList"></div>
+    <button class="add-engine-btn" id="addEngineBtn">+ 添加搜索引擎</button>
+    <div class="edit-hint" style="margin-top: 20px;">注意：最多显示前8个搜索引擎，其余的将被隐藏。</div>
+    <div class="dialog-actions">
+      <button class="btn-reset" id="engineManageReset">恢复默认</button>
+      <button class="btn-cancel" id="engineManageCancel">取消</button>
+      <button class="btn-save" id="engineManageSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== DATA ====================
+const STORAGE_KEY = 'zhi-nav-links';
+const ENGINES_KEY = 'zhi-nav-engines';
+
+const DEFAULT_CATEGORIES = [
+  {
+    name: '生活·常用', links: [
+      { name: '翻译', url: 'https://fanyi.baidu.com' },
+      { name: '豆包AI', url: 'https://www.doubao.com' },
+      { name: '地图', url: 'https://map.baidu.com' },
+      { name: '淘宝', url: 'https://www.taobao.com' },
+      { name: '京东', url: 'https://www.jd.com' },
+      { name: '天猫', url: 'https://www.tmall.com' },
+      { name: '唯品会', url: 'https://www.vip.com' },
+      { name: '邮箱', url: 'https://mail.qq.com' },
+      { name: 'DeepSeek', url: 'https://chat.deepseek.com' }
+    ]
+  },
+  {
+    name: '社区·互动', links: [
+      { name: '微信', url: 'https://weixin.qq.com' },
+      { name: '微博', url: 'https://weibo.com' },
+      { name: '知乎', url: 'https://www.zhihu.com' },
+      { name: '抖音', url: 'https://www.douyin.com' },
+      { name: '贴吧', url: 'https://tieba.baidu.com' },
+      { name: '小红书', url: 'https://www.xiaohongshu.com' },
+      { name: '虎扑', url: 'https://www.hupu.com' },
+      { name: '豆瓣', url: 'https://www.douban.com' },
+      { name: 'TapTap', url: 'https://www.taptap.cn' }
+    ]
+  },
+  {
+    name: '影音·娱乐', links: [
+      { name: '爱奇艺', url: 'https://www.iqiyi.com' },
+      { name: '腾讯视频', url: 'https://v.qq.com' },
+      { name: '哔哩哔哩', url: 'https://www.bilibili.com' },
+      { name: '斗鱼', url: 'https://www.douyu.com' },
+      { name: '咪咕体育', url: 'https://www.migusport.com' },
+      { name: 'QQ音乐', url: 'https://y.qq.com' },
+      { name: '电视直播', url: 'https://tv.cctv.com/live' },
+      { name: '茶杯狐', url: 'https://cupfox.app' },
+      { name: '低端影视', url: 'https://ddys.pro' }
+    ]
+  },
+  {
+    name: '资讯·新闻', links: [
+      { name: '今日头条', url: 'https://www.toutiao.com' },
+      { name: '凤凰新闻', url: 'https://news.ifeng.com' },
+      { name: '腾讯新闻', url: 'https://news.qq.com' },
+      { name: '少数派', url: 'https://sspai.com' },
+      { name: '煎蛋', url: 'https://jandan.net' },
+      { name: 'AI工具集', url: 'https://ai-bot.cn' },
+      { name: '趣站集合', url: 'https://fuun.fun' },
+      { name: '思谋学术', url: 'https://ac.scmor.com' },
+      { name: 'GitHub', url: 'https://github.com' }
+    ]
+  },
+  {
+    name: '在线·工具', links: [
+      { name: '在线PS', url: 'https://www.photopea.com' },
+      { name: '文件压缩', url: 'https://docsmall.com' },
+      { name: 'OCR识别', url: 'https://web.baimiaoapp.com' },
+      { name: '二维码', url: 'https://cli.im' },
+      { name: '文件传输', url: 'https://airportal.cn' },
+      { name: 'PDF工具', url: 'https://smallpdf.com' },
+      { name: '格式转换', url: 'https://convertio.co/zh' },
+      { name: '视频下载', url: 'https://snapany.com' },
+      { name: '音乐下载', url: 'https://tool.liumingye.cn/music' }
+    ]
+  },
+  {
+    name: '资源·发现', links: [
+      { name: '影视资源', url: 'https://www.btnull.org' },
+      { name: '电影天堂', url: 'https://www.dy2018.com' },
+      { name: '免费音乐', url: 'https://tools.liumingye.cn/music' },
+      { name: 'MikuTools', url: 'https://tools.miku.ac' },
+      { name: '小霸王', url: 'https://www.yikm.net' },
+      { name: '果壳', url: 'https://www.guokr.com' },
+      { name: '电子书', url: 'https://zh.zlibrary-global.se' },
+      { name: '图片素材', url: 'https://www.pexels.com/zh-cn' },
+      { name: 'Bookmate', url: 'https://bookmate.org' }
+    ]
+  }
+];
+
+const DEFAULT_ENGINES = [
+  { name: '百度', url: 'https://www.baidu.com/s?wd=' },
+  { name: '秘塔AI', url: 'https://metaso.cn/?q=' },
+  { name: 'Google', url: 'https://www.google.com/search?q=' },
+  { name: '必应', url: 'https://www.bing.com/search?q=' },
+  { name: 'Duck', url: 'https://duckduckgo.com/?q=' },
+  { name: 'B站', url: 'https://search.bilibili.com/all?keyword=' },
+  { name: '知乎', url: 'https://www.zhihu.com/search?type=content&q=' },
+  { name: '百度AI', url: 'https://chat.baidu.com/search?word=' }
+];
+
+// ==================== STATE ====================
+let categories = loadCategories();
+let engines = loadEngines();
+let currentEngine = engines[0] || DEFAULT_ENGINES[0];
+let editTarget = null; // { catIdx, linkIdx } // linkIdx null means edit category
+let snowPaused = false;
+let snowAccumMode = localStorage.getItem('zhi-snow-mode') || 'extreme'; // 'off', 'normal', 'extreme'
+let tempEngines = []; // For engine manage dialog
+
+function loadCategories() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+}
+
+function saveCategories() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(categories));
+}
+
+function loadEngines() {
+  try {
+    const saved = localStorage.getItem(ENGINES_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_ENGINES));
+}
+
+function saveEngines() {
+  localStorage.setItem(ENGINES_KEY, JSON.stringify(engines));
+}
+
+// ==================== DATETIME ====================
+function updateDateTime() {
+  const now = new Date();
+  const timeEl = document.getElementById('timeEl');
+  const dateEl = document.getElementById('dateEl');
+  if (!timeEl || !dateEl) return;
+  
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  timeEl.textContent = `${h}:${m}:${s}`;
+  
+  const y = now.getFullYear();
+  const mo = now.getMonth() + 1;
+  const d = now.getDate();
+  const weeks = ['日', '一', '二', '三', '四', '五', '六'];
+  const w = weeks[now.getDay()];
+  dateEl.textContent = `${y}年${mo}月${d}日 星期${w}`;
+}
+setInterval(updateDateTime, 1000);
+
+// ==================== RENDER NAV ====================
+function renderNav() {
+  const area = document.getElementById('navArea');
+  area.innerHTML = '';
+  categories.forEach((cat, ci) => {
+    const card = document.createElement('div');
+    card.className = 'nav-card';
+    
+    // Category Title
+    const titleEl = document.createElement('div');
+    titleEl.className = 'card-title';
+    const titleText = document.createElement('span');
+    titleText.textContent = cat.name;
+    titleEl.appendChild(titleText);
+    
+    const catEditIcon = document.createElement('span');
+    catEditIcon.className = 'edit-icon';
+    catEditIcon.textContent = '✎';
+    catEditIcon.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      openEditDialog(ci, null);
+    });
+    titleEl.appendChild(catEditIcon);
+    
+    // Category click for edit mode
+    titleEl.addEventListener('click', (e) => {
+      if (document.body.classList.contains('edit-mode')) {
+        e.preventDefault();
+        openEditDialog(ci, null);
+      }
+    });
+
+    card.appendChild(titleEl);
+
+    // Links
+    const linksEl = document.createElement('div');
+    linksEl.className = 'card-links';
+    cat.links.forEach((link, li) => {
+      const a = document.createElement('a');
+      a.className = 'card-link';
+      a.textContent = link.name;
+      a.href = link.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      // Edit icon
+      const icon = document.createElement('span');
+      icon.className = 'edit-icon';
+      icon.textContent = '✎';
+      icon.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openEditDialog(ci, li); });
+      a.appendChild(icon);
+      // If in edit mode, clicking the link itself also opens edit
+      a.addEventListener('click', (e) => {
+        if (document.body.classList.contains('edit-mode')) {
+          e.preventDefault();
+          openEditDialog(ci, li);
+        }
+      });
+      linksEl.appendChild(a);
+    });
+    card.appendChild(linksEl);
+    area.appendChild(card);
+  });
+}
+
+// ==================== RENDER ENGINES ====================
+function renderEngines() {
+  const grid = document.getElementById('engineGrid');
+  grid.innerHTML = '';
+  
+  // Show up to 8 engines
+  const displayEngines = engines.slice(0, 8);
+  displayEngines.forEach((eng, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'engine-item' + (eng.name === currentEngine.name ? ' active' : '');
+    btn.textContent = eng.name;
+    btn.addEventListener('click', () => {
+      currentEngine = eng;
+      document.getElementById('engineLabel').textContent = eng.name;
+      closeEngineDropdown();
+      renderEngines();
+      document.getElementById('searchInput').focus();
+    });
+    grid.appendChild(btn);
+  });
+
+  // Add 'Manage' button
+  const manageBtn = document.createElement('button');
+  manageBtn.className = 'engine-item manage-btn';
+  manageBtn.textContent = '设置/管理';
+  manageBtn.addEventListener('click', () => {
+    closeEngineDropdown();
+    openEngineManageDialog();
+  });
+  grid.appendChild(manageBtn);
+
+  // Update current engine label if needed and sync reference
+  const foundEngine = engines.find(e => e.name === currentEngine.name);
+  if (foundEngine) {
+    currentEngine = foundEngine;
+  } else {
+    currentEngine = engines[0] || DEFAULT_ENGINES[0];
+  }
+  document.getElementById('engineLabel').textContent = currentEngine.name;
+}
+
+// ==================== SEARCH ====================
+function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  window.open(currentEngine.url + encodeURIComponent(q), '_blank');
+}
+
+// ==================== ENGINE DROPDOWN ====================
+function toggleEngineDropdown() {
+  const dd = document.getElementById('engineDropdown');
+  const sel = document.getElementById('engineSelector');
+  dd.classList.toggle('show');
+  sel.classList.toggle('open');
+}
+function closeEngineDropdown() {
+  document.getElementById('engineDropdown').classList.remove('show');
+  document.getElementById('engineSelector').classList.remove('open');
+}
+
+// ==================== ENGINE MANAGE DIALOG ====================
+function openEngineManageDialog() {
+  document.getElementById('editDialog').style.display = 'none';
+  document.getElementById('engineManageDialog').style.display = 'block';
+  document.getElementById('dialogOverlay').classList.add('show');
+  
+  // Clone engines for editing
+  tempEngines = JSON.parse(JSON.stringify(engines));
+  renderEngineManageList();
+}
+
+function renderEngineManageList() {
+  const list = document.getElementById('engineManageList');
+  list.innerHTML = '';
+  tempEngines.forEach((eng, i) => {
+    const item = document.createElement('div');
+    item.className = 'engine-list-item';
+    
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'name';
+    nameInput.value = eng.name;
+    nameInput.placeholder = '名称';
+    nameInput.addEventListener('input', (e) => tempEngines[i].name = e.target.value);
+    
+    const urlInput = document.createElement('input');
+    urlInput.type = 'text';
+    urlInput.className = 'url';
+    urlInput.value = eng.url;
+    urlInput.placeholder = '搜索URL (含参数)';
+    urlInput.addEventListener('input', (e) => tempEngines[i].url = e.target.value);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.innerHTML = '✕';
+    delBtn.title = '删除';
+    delBtn.addEventListener('click', () => {
+      tempEngines.splice(i, 1);
+      renderEngineManageList();
+    });
+
+    item.appendChild(nameInput);
+    item.appendChild(urlInput);
+    item.appendChild(delBtn);
+    list.appendChild(item);
+  });
+}
+
+function closeEngineManageDialog() {
+  document.getElementById('dialogOverlay').classList.remove('show');
+}
+
+// ==================== SETTINGS DRAWER ====================
+function openDrawer() {
+  document.getElementById('settingsDrawer').classList.add('show');
+  document.getElementById('drawerOverlay').classList.add('show');
+}
+function closeDrawer() {
+  document.getElementById('settingsDrawer').classList.remove('show');
+  document.getElementById('drawerOverlay').classList.remove('show');
+}
+
+// ==================== EDIT DIALOG ====================
+function openEditDialog(ci, li) {
+  document.getElementById('engineManageDialog').style.display = 'none';
+  document.getElementById('editDialog').style.display = 'block';
+  
+  editTarget = { catIdx: ci, linkIdx: li };
+  if (li === null) {
+    document.getElementById('dialogTitle').textContent = '编辑分类名称';
+    document.getElementById('editName').value = categories[ci].name;
+    document.getElementById('editUrlField').style.display = 'none';
+  } else {
+    document.getElementById('dialogTitle').textContent = '编辑链接';
+    const link = categories[ci].links[li];
+    document.getElementById('editName').value = link.name;
+    document.getElementById('editUrl').value = link.url;
+    document.getElementById('editUrlField').style.display = 'block';
+  }
+  document.getElementById('dialogOverlay').classList.add('show');
+}
+function closeEditDialog() {
+  document.getElementById('dialogOverlay').classList.remove('show');
+  editTarget = null;
+}
+
+// ==================== SNOW SYSTEM ====================
+function initSnow() {
+  const canvas = document.getElementById('snowCanvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  const FLAKE_COUNT = 180;
+  const flakes = [];
+  const trailFlakes = [];
+
+  const accum = [];
+  let burstTimer = 0;
+  let burstIntensity = 0; // 0 to 1
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  class TrailFlake {
+    constructor(x, y) {
+      this.x = x + (Math.random() - 0.5) * 12;
+      this.y = y + (Math.random() - 0.5) * 12;
+      this.r = Math.random() * 2.5 + 1;
+      this.vx = (Math.random() - 0.5) * 1.5;
+      this.vy = (Math.random() - 0.5) * 1.5;
+      this.life = 1;
+      this.decay = Math.random() * 0.015 + 0.015;
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += 0.04; // slight gravity
+      this.life -= this.decay;
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${this.life * 0.8})`;
+      ctx.fill();
+    }
+  }
+
+  class Flake {
+    constructor() { this.reset(true); }
+    reset(init) {
+      this.x = Math.random() * W;
+      this.y = init ? Math.random() * H * -1 : -10;
+      this.r = Math.random() * 2.5 + 0.8;
+      
+      if (burstTimer > 0) {
+        this.speed = Math.random() * (10 + burstIntensity * 15) + (5 + burstIntensity * 5);
+        this.wind = (Math.random() - 0.5) * (15 + burstIntensity * 25);
+      } else {
+        this.speed = Math.random() * 1.2 + 0.4;
+        this.wind = Math.random() * 0.6 - 0.3;
+      }
+      
+      this.swing = Math.random() * 0.02 + 0.005;
+      this.phase = Math.random() * Math.PI * 2;
+      this.opacity = Math.random() * 0.6 + 0.3;
+    }
+    update() {
+      this.phase += this.swing;
+      this.x += Math.sin(this.phase) * 0.8 + this.wind;
+      this.y += this.speed;
+      
+      // Do not accumulate during burst
+      if (burstTimer === 0) {
+        if (this.y >= H - 60) {
+          this.tryAccumulate(this.x, H - 60);
+          this.reset(false);
+          return;
+        }
+        const targets = getAccumTargets();
+        for (const rect of targets) {
+          if (this.x >= rect.left - 10 && this.x <= rect.right + 10 &&
+              this.y >= rect.top - 3 && this.y <= rect.top + 3) {
+            this.tryAccumulate(this.x, rect.top);
+            this.reset(false);
+            return;
+          }
+        }
+      }
+      
+      if (this.x < -40 || this.x > W + 40 || this.y > H + 20) this.reset(false);
+    }
+    tryAccumulate(x, y) {
+      if (snowAccumMode === 'off') return;
+      if (snowAccumMode === 'normal' && accum.length > 500) accum.shift();
+      if (snowAccumMode === 'extreme' && accum.length > 10000) accum.shift();
+      
+      const chance = snowAccumMode === 'extreme' ? 0.85 : 0.3;
+      if (Math.random() < chance) { 
+        let stackY = y;
+        // Spread the flakes horizontally to create slopes instead of vertical pillars
+        let searchX = x + (Math.random() - 0.5) * 16; 
+        
+        for (let i = accum.length - 1; i >= Math.max(0, accum.length - 3000); i--) {
+          if (accum[i].baseY === y && Math.abs(accum[i].x - searchX) < 10) {
+            stackY = Math.min(stackY, accum[i].y - (Math.random() * 1.5 + 0.8));
+          }
+        }
+        accum.push({
+          x: searchX, 
+          y: stackY,
+          baseY: y,
+          r: this.r * (Math.random() * 0.8 + 1.2),
+          opacity: Math.random() * 0.5 + 0.5,
+          life: 1
+        });
+      }
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${this.opacity})`;
+      ctx.fill();
+    }
+  }
+
+  let accumTargets = [];
+  let targetTimer = 0;
+  function getAccumTargets() {
+    const isFocus = document.body.classList.contains('focus-mode');
+    const validTargets = [];
+    accumTargets.forEach(item => {
+      if (isFocus && item.type === 'nav') return;
+      validTargets.push(item.rect);
+    });
+    return validTargets;
+  }
+  function updateTargets() {
+    const rects = [];
+    const sb = document.getElementById('searchBarWrapper');
+    if (sb) { const r = sb.getBoundingClientRect(); rects.push({ type: 'search', rect: r }); }
+    document.querySelectorAll('.nav-card').forEach(el => {
+      const r = el.getBoundingClientRect();
+      rects.push({ type: 'nav', rect: r });
+    });
+    document.querySelectorAll('.card-link').forEach(el => {
+      const r = el.getBoundingClientRect();
+      rects.push({ type: 'nav', rect: r });
+    });
+    accumTargets = rects;
+  }
+
+  for (let i = 0; i < FLAKE_COUNT; i++) flakes.push(new Flake());
+
+  document.addEventListener('mousemove', (e) => {
+    if (!snowPaused) {
+      for(let i=0; i<2; i++) {
+         trailFlakes.push(new TrailFlake(e.clientX, e.clientY));
+      }
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    // Click snow burst effect
+    const icon = document.createElement('div');
+    icon.className = 'click-snowflake';
+    icon.style.left = e.clientX + 'px';
+    icon.style.top = e.clientY + 'px';
+    document.body.appendChild(icon);
+    setTimeout(() => icon.remove(), 900);
+
+    // Clear accumulated snow in a radius
+    const cx = e.clientX, cy = e.clientY;
+    const clearRadius = 60;
+    for (let i = accum.length - 1; i >= 0; i--) {
+      const dx = accum[i].x - cx, dy = accum[i].y - cy;
+      if (dx * dx + dy * dy < clearRadius * clearRadius) {
+        accum.splice(i, 1);
+      }
+    }
+  });
+
+  let animId;
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    targetTimer++;
+    if (targetTimer % 30 === 0) updateTargets();
+    
+    if (burstTimer > 0) burstTimer--;
+
+    if (!snowPaused) {
+      flakes.forEach(f => { f.update(); f.draw(); });
+    } else {
+      flakes.forEach(f => f.draw());
+    }
+
+    for (let i = trailFlakes.length - 1; i >= 0; i--) {
+      const t = trailFlakes[i];
+      t.update();
+      if (t.life <= 0) {
+        trailFlakes.splice(i, 1);
+      } else {
+        t.draw();
+      }
+    }
+
+    const meltRate = snowAccumMode === 'extreme' ? 0.000015 : 0.0008;
+    for (let i = accum.length - 1; i >= 0; i--) {
+      const a = accum[i];
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${a.opacity * a.life})`;
+      ctx.fill();
+      a.life -= meltRate;
+      if (a.life <= 0) accum.splice(i, 1);
+    }
+
+    animId = requestAnimationFrame(draw);
+  }
+  draw();
+
+  // Expose clear accum
+  window.triggerSnowBurst = () => {
+    const count = accum.length;
+    accum.length = 0; // Clear accumulated snow
+    burstIntensity = Math.min(count / 2500, 1); // scale 0 to 1 based on snow amount
+    burstTimer = 40 + Math.floor(burstIntensity * 80);  // duration scales up with snow amount
+    
+    flakes.forEach(f => {
+      f.speed = Math.random() * (10 + burstIntensity * 15) + (5 + burstIntensity * 5); 
+      f.wind = (Math.random() - 0.5) * (15 + burstIntensity * 25);
+    });
+  };
+}
+
+// ==================== INIT ====================
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('snowModeSelect').value = snowAccumMode;
+  updateDateTime();
+  renderNav();
+  renderEngines();
+  initSnow();
+
+  // Search events
+  document.getElementById('searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doSearch();
+  });
+  document.getElementById('searchBtn').addEventListener('click', doSearch);
+
+  // Engine selector
+  document.getElementById('engineSelector').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleEngineDropdown();
+  });
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('searchBarWrapper').contains(e.target) && !document.getElementById('engineDropdown').contains(e.target)) {
+      closeEngineDropdown();
+    }
+  });
+
+  // Settings drawer
+  document.getElementById('settingsBtn').addEventListener('click', openDrawer);
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+  document.getElementById('drawerOverlay').addEventListener('click', closeDrawer);
+
+  // Edit mode toggle
+  document.getElementById('editModeToggle').addEventListener('change', (e) => {
+    document.body.classList.toggle('edit-mode', e.target.checked);
+  });
+
+  // Snow Mode Selection
+  document.getElementById('snowModeSelect').addEventListener('change', (e) => {
+    snowAccumMode = e.target.value;
+    localStorage.setItem('zhi-snow-mode', snowAccumMode);
+  });
+
+  // Focus mode toggle (Z button)
+  document.getElementById('zBtn').addEventListener('click', () => {
+    document.body.classList.toggle('focus-mode');
+    if (window.triggerSnowBurst) window.triggerSnowBurst();
+  });
+
+  // Reset all
+  document.getElementById('resetAllBtn').addEventListener('click', () => {
+    if (confirm('确定恢复所有链接为默认值？自定义内容将丢失。')) {
+      categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+      saveCategories();
+      renderNav();
+      closeDrawer();
+    }
+  });
+
+  // Engine Manage Dialog Actions
+  document.getElementById('addEngineBtn').addEventListener('click', () => {
+    tempEngines.push({ name: '', url: '' });
+    renderEngineManageList();
+  });
+  document.getElementById('engineManageCancel').addEventListener('click', closeEngineManageDialog);
+  document.getElementById('engineManageReset').addEventListener('click', () => {
+    tempEngines = JSON.parse(JSON.stringify(DEFAULT_ENGINES));
+    renderEngineManageList();
+  });
+  document.getElementById('engineManageSave').addEventListener('click', () => {
+    // Filter out empty engines
+    engines = tempEngines.filter(e => e.name.trim() !== '' && e.url.trim() !== '');
+    if (engines.length === 0) engines = JSON.parse(JSON.stringify(DEFAULT_ENGINES));
+    saveEngines();
+    renderEngines();
+    closeEngineManageDialog();
+  });
+
+  // Edit dialog actions
+  document.getElementById('dialogCancel').addEventListener('click', closeEditDialog);
+  document.getElementById('dialogSave').addEventListener('click', () => {
+    if (!editTarget) return;
+    const name = document.getElementById('editName').value.trim();
+    if (editTarget.linkIdx === null) {
+      if (name) {
+        categories[editTarget.catIdx].name = name;
+        saveCategories();
+        renderNav();
+      }
+    } else {
+      const url = document.getElementById('editUrl').value.trim();
+      if (name && url) {
+        categories[editTarget.catIdx].links[editTarget.linkIdx] = { name, url };
+        saveCategories();
+        renderNav();
+      }
+    }
+    closeEditDialog();
+  });
+  document.getElementById('dialogReset').addEventListener('click', () => {
+    if (!editTarget) return;
+    if (editTarget.linkIdx === null) {
+      const def = DEFAULT_CATEGORIES[editTarget.catIdx].name;
+      categories[editTarget.catIdx].name = def;
+    } else {
+      const def = DEFAULT_CATEGORIES[editTarget.catIdx].links[editTarget.linkIdx];
+      categories[editTarget.catIdx].links[editTarget.linkIdx] = { ...def };
+    }
+    saveCategories();
+    renderNav();
+    closeEditDialog();
+  });
+
+  // Click overlay to close dialogs
+  document.getElementById('dialogOverlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('dialogOverlay')) {
+      closeEditDialog();
+      closeEngineManageDialog();
+    }
+  });
+});
+</script>
+</body>
+</html>

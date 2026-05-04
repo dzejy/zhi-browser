@@ -9,8 +9,8 @@ export interface ClassifiedUrl {
 export function classifyInput(input: string): ClassifiedUrl {
   const trimmed = input.trim()
 
-  if (!trimmed || trimmed === 'about:blank' || trimmed === 'zhi://newtab') {
-    return { type: 'newtab', value: 'about:blank' }
+  if (!trimmed || trimmed === 'about:blank' || /^zhi:\/\/newtab\/?$/i.test(trimmed)) {
+    return { type: 'newtab', value: 'zhi://newtab' }
   }
 
   if (/^zhi:\/\/settings\/?$/i.test(trimmed)) {

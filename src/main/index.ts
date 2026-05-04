@@ -796,10 +796,14 @@ function restoreSession(): void {
   const prefs = getPreferences()
 
   if (prefs.startup.behavior === 'homepage') {
-    const normalized = normalizeUrl(prefs.startup.homepageUrl)
-    const url = isValidNavigableUrl(prefs.startup.homepageUrl)
-      ? normalized || prefs.startup.homepageUrl
-      : 'https://www.baidu.com'
+    const homepageUrl = prefs.startup.homepageUrl.trim()
+    if (!homepageUrl || /^zhi:\/\/newtab\/?$/i.test(homepageUrl)) {
+      tabManager.createTab('zhi://newtab')
+      return
+    }
+
+    const normalized = normalizeUrl(homepageUrl)
+    const url = isValidNavigableUrl(homepageUrl) ? normalized || homepageUrl : 'zhi://newtab'
     tabManager.createTab(url)
     return
   }

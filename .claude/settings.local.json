@@ -6,7 +6,9 @@
       "Bash(dir \"C:\\\\zhi\\\\zhi-browser\\\\src\\\\main\" /B)",
       "Bash(dir \"C:\\\\zhi\\\\zhi-browser\\\\src\\\\renderer\\\\src\" /B)",
       "Bash(dir \"C:\\\\zhi\\\\zhi-browser\\\\src\\\\preload\" /B)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

@@ -253,6 +253,13 @@ const api = {
   tabPreviewCapture: (tabId: number): Promise<string | null> =>
     ipcRenderer.invoke('tabPreview:capture', tabId),
   tabPreviewClear: (tabId: number): Promise<void> => ipcRenderer.invoke('tabPreview:clear', tabId),
+  tabPreviewShow: (options: {
+    x: number
+    y: number
+    image?: string
+    kind?: 'image' | 'newtab'
+  }): Promise<void> => ipcRenderer.invoke('tabPreview:show', options),
+  tabPreviewHide: (): Promise<void> => ipcRenderer.invoke('tabPreview:hide'),
 // Web panel
 webPanelGetAll: () => ipcRenderer.invoke('webpanel:getAll'),
 webPanelAdd: (item: { name: string; url: string; icon: string }) =>
