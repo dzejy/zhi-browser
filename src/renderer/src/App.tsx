@@ -9,9 +9,6 @@ import duckduckgoIcon from './assets/icons/duckduckgo.ico'
 import githubIcon from './assets/icons/github.ico'
 import youtubeIcon from './assets/icons/youtube.ico'
 import { NewTabPage } from './pages/newtab/NewTabPage'
-import { BookmarksPage } from './pages/bookmarks/BookmarksPage'
-import { HistoryPage } from './pages/history/HistoryPage'
-import { DownloadsPage } from './pages/downloads/DownloadsPage'
 import { ShortcutsPage } from './pages/shortcuts/ShortcutsPage'
 import { CommandsPage } from './pages/commands/CommandsPage'
 import { ExtensionsPage } from './pages/extensions/ExtensionsPage'
@@ -257,6 +254,16 @@ interface AdBlockState {
   blockedCount: number
 }
 
+interface AdBlockBlockRecord {
+  id: string
+  url: string
+  hostname: string
+  resourceType: string
+  pageUrl: string
+  pageHostname: string
+  blockedAt: number
+}
+
 interface AdBlockCurrentSite {
   hostname: string
   canWhitelist: boolean
@@ -376,6 +383,8 @@ type SidePanelType =
   | 'webpanel'
   | 'sniffer'
 
+type SuperMenuPage = SidePanelType | 'shortcuts' | 'commands' | 'extensions' | 'notes'
+
 const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'bookmarks',
   'history',
@@ -391,6 +400,19 @@ const SIDE_PANEL_TYPES = new Set<SidePanelType>([
 
 function isSidePanelType(value: unknown): value is SidePanelType {
   return typeof value === 'string' && SIDE_PANEL_TYPES.has(value as SidePanelType)
+}
+
+function getSuperMenuPageFromUrl(url?: string): SuperMenuPage {
+  const page = url?.match(/^zhi:\/\/(all|settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i)?.[1]?.toLowerCase()
+  if (page === 'all') return 'settings'
+  if (page === 'settings') return 'settings'
+  if (page === 'bookmarks') return 'bookmarks'
+  if (page === 'history') return 'history'
+  if (page === 'downloads') return 'downloads'
+  if (page === 'shortcuts') return 'shortcuts'
+  if (page === 'commands') return 'commands'
+  if (page === 'extensions') return 'extensions'
+  return 'settings'
 }
 
 interface AIChatMessage {
@@ -1633,6 +1655,12 @@ function BrowserApp(): React.ReactElement {
     showToast(passwordSavePrompt.existing ? '密码已更新' : '密码已保存')
   }, [activeTab?.title, passwordSavePrompt, showToast])
 
+  useEffect(() => {
+    if (!passwordSavePrompt) return
+    const timer = window.setTimeout(() => setPasswordSavePrompt(null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [passwordSavePrompt])
+
   const handleFillDetectedPassword = useCallback(
     async (id: string): Promise<void> => {
       if (!passwordFillPrompt) return
@@ -1962,13 +1990,11 @@ function BrowserApp(): React.ReactElement {
 
   useEffect(() => {
     if (!isEditingAddress) {
-      setAddressSuggestions([])
       return
     }
 
     const query = inputUrl.trim()
     if (query.length < 1) {
-      setAddressSuggestions([])
       return
     }
 
@@ -2062,6 +2088,17 @@ function BrowserApp(): React.ReactElement {
       setAddressSuggestions([])
       setIsEditingAddress(false)
       urlInputRef.current?.blur()
+    }
+  }
+
+  function handleUrlMouseDown(e: React.MouseEvent<HTMLInputElement>): void {
+    const input = e.currentTarget
+    if (document.activeElement !== input) {
+      // Keep full-selection behavior on first click focus.
+      // Otherwise the click caret placement can override select() from onFocus.
+      e.preventDefault()
+      input.focus()
+      input.select()
     }
   }
 
@@ -2672,8 +2709,11 @@ function BrowserApp(): React.ReactElement {
             )}
             <button
               className="menu-button tabbar-aux-btn"
-              onClick={() => window.api.popupMenu().catch(console.error)}
-              title="菜单"
+              onClick={() => {
+                if (activeTab) window.api.loadUrl(activeTab.id, 'zhi://all')
+                else window.api.createTab('zhi://all')
+              }}
+              title="超级菜单"
             >
               ☰
             </button>
@@ -2810,6 +2850,7 @@ function BrowserApp(): React.ReactElement {
                 type="text"
                 value={inputUrl}
                 onChange={(e) => setInputUrl(e.target.value)}
+                onMouseDown={handleUrlMouseDown}
                 onKeyDown={handleUrlKeyDown}
                 onFocus={(e) => {
                   if (addressBlurTimerRef.current) {
@@ -2817,6 +2858,7 @@ function BrowserApp(): React.ReactElement {
                     addressBlurTimerRef.current = null
                   }
                   setIsEditingAddress(true)
+                  if (!e.target.value.trim()) setAddressSuggestions([])
                   e.target.select()
                 }}
                 onBlur={() => {
@@ -3187,6 +3229,15 @@ function BrowserApp(): React.ReactElement {
           <div className="panel bookmarks-panel">
             <div className="panel-header">
               <h3>书签</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://bookmarks', true)
+                  closePanel()
+                }}
+              >
+                打开完整页
+              </button>
               <input
                 className="panel-search"
                 type="text"
@@ -3252,6 +3303,15 @@ function BrowserApp(): React.ReactElement {
           <div className="panel history-panel">
             <div className="panel-header">
               <h3>历史</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://history', true)
+                  closePanel()
+                }}
+              >
+                打开完整页
+              </button>
               <input
                 className="panel-search"
                 type="text"
@@ -3299,6 +3359,15 @@ function BrowserApp(): React.ReactElement {
             <div className="panel-header download-panel-header">
               <h3>下载</h3>
               <div className="download-panel-actions">
+                <button
+                  className="panel-header-btn"
+                  onClick={() => {
+                    window.api.openUrl('zhi://downloads', true)
+                    closePanel()
+                  }}
+                >
+                  打开完整页
+                </button>
                 <button
                   onClick={handleDownloadClearCompleted}
                   title="清除已完成"
@@ -3582,44 +3651,48 @@ function BrowserApp(): React.ReactElement {
 
         {toast && <div className={`toast toast-${toast.tone || 'info'}`}>{toast.text}</div>}
 
-        {passwordSavePrompt && (
-          <div className="password-prompt password-save-prompt">
-            <div className="password-prompt-main">
-              <strong>{passwordSavePrompt.existing ? '更新密码？' : '保存密码？'}</strong>
-              <span>{passwordSavePrompt.username || '未填写用户名'}</span>
-            </div>
-            <div className="password-prompt-actions">
-              <button onClick={() => setPasswordSavePrompt(null)}>忽略</button>
-              <button
-                className="primary"
-                onClick={() => handleSaveDetectedPassword().catch(console.error)}
-              >
-                {passwordSavePrompt.existing ? '更新' : '保存'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {passwordFillPrompt && (
-          <div className="password-prompt password-fill-prompt">
-            <div className="password-prompt-main">
-              <strong>填充密码</strong>
-              <span>{passwordFillPrompt.entries[0]?.username || passwordFillPrompt.url}</span>
-            </div>
-            <div className="password-prompt-actions">
-              <button onClick={() => setPasswordFillPrompt(null)}>关闭</button>
-              {passwordFillPrompt.entries.slice(0, 2).map((entry) => (
+        {passwordSavePrompt &&
+          createPortal(
+            <div className="password-prompt password-save-prompt">
+              <div className="password-prompt-main">
+                <strong>{passwordSavePrompt.existing ? '更新密码？' : '保存密码？'}</strong>
+                <span>{passwordSavePrompt.username || '未填写用户名'}</span>
+              </div>
+              <div className="password-prompt-actions">
+                <button onClick={() => setPasswordSavePrompt(null)}>忽略</button>
                 <button
-                  key={entry.id}
                   className="primary"
-                  onClick={() => handleFillDetectedPassword(entry.id).catch(console.error)}
+                  onClick={() => handleSaveDetectedPassword().catch(console.error)}
                 >
-                  {entry.username || '填充'}
+                  {passwordSavePrompt.existing ? '更新' : '保存'}
                 </button>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            </div>,
+            document.body
+          )}
+
+        {passwordFillPrompt &&
+          createPortal(
+            <div className="password-prompt password-fill-prompt">
+              <div className="password-prompt-main">
+                <strong>填充密码</strong>
+                <span>{passwordFillPrompt.entries[0]?.username || passwordFillPrompt.url}</span>
+              </div>
+              <div className="password-prompt-actions">
+                <button onClick={() => setPasswordFillPrompt(null)}>关闭</button>
+                {passwordFillPrompt.entries.slice(0, 2).map((entry) => (
+                  <button
+                    key={entry.id}
+                    className="primary"
+                    onClick={() => handleFillDetectedPassword(entry.id).catch(console.error)}
+                  >
+                    {entry.username || '填充'}
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )}
 
         {(activeTab?.isNewTab || activeTab?.url === 'zhi://newtab' || activeTab?.url === '') && (
           <NewTabPage 
@@ -3628,12 +3701,16 @@ function BrowserApp(): React.ReactElement {
             }}
           />
         )}
-        {activeTab?.url === 'zhi://bookmarks' && <BookmarksPage />}
-        {activeTab?.url === 'zhi://history' && <HistoryPage />}
-        {activeTab?.url === 'zhi://downloads' && <DownloadsPage />}
-        {activeTab?.url === 'zhi://shortcuts' && <ShortcutsPage />}
-        {activeTab?.url === 'zhi://commands' && <CommandsPage />}
-        {activeTab?.url === 'zhi://extensions' && <ExtensionsPage />}
+        {activeTab?.url &&
+          /^zhi:\/\/(all|settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i.test(
+            activeTab.url
+          ) && (
+            <App_PanelOnly
+              key={activeTab.url}
+              mode="all"
+              initialPanelType={getSuperMenuPageFromUrl(activeTab.url)}
+            />
+          )}
 
         {/* ===== Add Panel Dialog ===== */}
         {showAddPanelDialog && (
@@ -3707,8 +3784,15 @@ function BrowserApp(): React.ReactElement {
   )
 }
 
-function App_PanelOnly(): React.ReactElement {
-  const [panelType, setPanelType] = useState<SidePanelType>('bookmarks')
+function App_PanelOnly({
+  mode = 'panel',
+  initialPanelType = 'bookmarks'
+}: {
+  mode?: 'panel' | 'all'
+  initialPanelType?: SuperMenuPage
+} = {}): React.ReactElement {
+  const isAllMenu = mode === 'all'
+  const [panelType, setPanelType] = useState<SuperMenuPage>(initialPanelType)
   const [browserState, setBrowserState] = useState<BrowserState>({
     tabs: [],
     activeTabId: '',
@@ -3729,6 +3813,7 @@ function App_PanelOnly(): React.ReactElement {
   const [showBookmarkBar, setShowBookmarkBar] = useState(true)
   const [webDarkMode, setWebDarkMode] = useState(false)
   const [adBlockState, setAdBlockState] = useState<AdBlockState | null>(null)
+  const [adBlockHistory, setAdBlockHistory] = useState<AdBlockBlockRecord[]>([])
   const [currentAdBlockSite, setCurrentAdBlockSite] = useState<AdBlockCurrentSite | null>(null)
   const [editingBookmark, setEditingBookmark] = useState<BookmarkEditState | null>(null)
   const [bookmarkEditError, setBookmarkEditError] = useState('')
@@ -3957,6 +4042,7 @@ function App_PanelOnly(): React.ReactElement {
 
   useEffect(() => {
     const unsubPanelType = window.api.onPanelType((type) => {
+      if (isAllMenu) return
       setPanelType(type)
       setAiShowSettings(false)
       setAiError(null)
@@ -4026,6 +4112,7 @@ function App_PanelOnly(): React.ReactElement {
 
     const unsubAdBlock = window.api.onAdBlockStateChanged((state) => {
       setAdBlockState(state)
+      window.api.getAdBlockBlockHistory().then(setAdBlockHistory).catch(console.error)
       window.api.getCurrentSiteForAdBlock().then(setCurrentAdBlockSite).catch(console.error)
     })
 
@@ -4043,7 +4130,7 @@ function App_PanelOnly(): React.ReactElement {
       if (toastTimer.current) clearTimeout(toastTimer.current)
       if (passwordRevealTimer.current) clearTimeout(passwordRevealTimer.current)
     }
-  }, [panelType, requestConfirm, showToast])
+  }, [panelType, requestConfirm, showToast, isAllMenu])
 
   useEffect(() => {
     const unsubscribe = window.api.onAITriggerAction(handleAITriggeredAction)
@@ -4070,12 +4157,13 @@ function App_PanelOnly(): React.ReactElement {
         setConfirmDialog(null)
         return
       }
+      if (isAllMenu) return
       window.api.hidePanel()
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editingBookmark, confirmDialog])
+  }, [editingBookmark, confirmDialog, isAllMenu])
 
   useEffect(() => {
     if (panelType === 'bookmarks') {
@@ -4099,6 +4187,7 @@ function App_PanelOnly(): React.ReactElement {
       })
       window.api.downloaderDetect().then(setDetectedDownloaders).catch(console.error)
       window.api.passwordsGetAll().then(setPasswordItems).catch(console.error)
+      window.api.getAdBlockBlockHistory().then(setAdBlockHistory).catch(console.error)
     } else if (panelType === 'about') {
       window.api.getAboutInfo().then(setAboutInfo).catch(console.error)
     } else if (panelType === 'ai') {
@@ -4193,6 +4282,7 @@ function App_PanelOnly(): React.ReactElement {
       setAiShowSettings(false)
       setAiError(null)
     }
+    if (isAllMenu) return
     window.api.hidePanel()
   }
 
@@ -4797,6 +4887,19 @@ function App_PanelOnly(): React.ReactElement {
     showToast('已清空 AdBlock Zhi 拦截计数')
   }
 
+  async function handleAddAdBlockHistoryHost(hostname: string): Promise<void> {
+    if (!hostname) return
+    const state = await window.api.addAdBlockWhitelist(hostname)
+    setAdBlockState(state)
+    showToast(`已加入白名单：${hostname}`)
+  }
+
+  async function handleClearAdBlockHistory(): Promise<void> {
+    await window.api.clearAdBlockBlockHistory()
+    setAdBlockHistory([])
+    showToast('已清空屏蔽记录')
+  }
+
   async function handleOpenUserDataFolder(): Promise<void> {
     await window.api.openUserDataFolder()
     showToast('已打开数据目录')
@@ -4840,13 +4943,91 @@ function App_PanelOnly(): React.ReactElement {
     }
   }
 
+  const superMenuGroups: Array<{
+    title: string
+    items: Array<{ id: SuperMenuPage; label: string; hint: string }>
+  }> = [
+    {
+      title: '常用',
+      items: [
+        { id: 'settings', label: '设置', hint: '常规、外观、下载、高级' },
+        { id: 'proxy', label: '代理', hint: proxyStatus?.enabled ? '已启用' : '订阅与节点' },
+        { id: 'notes', label: '笔记', hint: '快捷笔记' },
+        { id: 'ai', label: 'AI 助手', hint: '页面动作与聊天' }
+      ]
+    },
+    {
+      title: '资料',
+      items: [
+        { id: 'bookmarks', label: '书签', hint: `${bookmarks.length} 条` },
+        { id: 'history', label: '历史', hint: `${historyItems.length} 条` },
+        { id: 'downloads', label: '下载', hint: `${browserState.downloads.length} 条` }
+      ]
+    },
+    {
+      title: '工具',
+      items: [
+        { id: 'scripts', label: '用户脚本', hint: `${userScripts.length} 个` },
+        { id: 'sniffer', label: '资源嗅探', hint: `${sniffedResources.length} 项` },
+        { id: 'webpanel', label: '网页面板', hint: `${savedWebPanels.length} 个` },
+        { id: 'shortcuts', label: '快捷键', hint: '编辑键位' },
+        { id: 'commands', label: '命令', hint: '内部命令入口' },
+        { id: 'extensions', label: '扩展', hint: '扩展管理' }
+      ]
+    },
+    {
+      title: '浏览器',
+      items: [{ id: 'about', label: '关于', hint: '版本与数据目录' }]
+    }
+  ]
+
   return (
-    <div className="panel-only-shell">
+    <div className={`panel-only-shell ${isAllMenu ? 'all-menu-page' : ''}`}>
+      {isAllMenu && (
+        <aside className="all-menu-sidebar">
+          <div className="all-menu-brand">
+            <span className="all-menu-mark">Z</span>
+            <div>
+              <strong>超级菜单</strong>
+              <small>zhi://all</small>
+            </div>
+          </div>
+          <nav className="all-menu-nav" aria-label="超级菜单导航">
+            {superMenuGroups.map((group) => (
+              <div className="all-menu-nav-group" key={group.title}>
+                <div className="all-menu-nav-title">{group.title}</div>
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`all-menu-nav-item ${panelType === item.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setPanelType(item.id)
+                      setAiShowSettings(false)
+                    }}
+                  >
+                    <span>{item.label}</span>
+                    <small>{item.hint}</small>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </aside>
+      )}
       <div className={`panel panel-only-panel ${panelType}-panel`}>
         {panelType === 'bookmarks' && (
           <>
             <div className="panel-header">
               <h3>书签</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://bookmarks', true)
+                  closePanel()
+                }}
+              >
+                打开完整页
+              </button>
               <button
                 className={`panel-header-btn ${showBookmarkBar ? 'active' : ''}`}
                 onClick={() => handleToggleBookmarkBar().catch(console.error)}
@@ -4981,6 +5162,15 @@ function App_PanelOnly(): React.ReactElement {
           <>
             <div className="panel-header">
               <h3>历史</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://history', true)
+                  closePanel()
+                }}
+              >
+                打开完整页
+              </button>
               <button className="panel-close" onClick={closePanel}>
                 ✕
               </button>
@@ -5086,6 +5276,15 @@ function App_PanelOnly(): React.ReactElement {
           <>
             <div className="panel-header">
               <h3>下载</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://downloads', true)
+                  closePanel()
+                }}
+              >
+                打开完整页
+              </button>
               <button className="panel-close" onClick={closePanel}>
                 ✕
               </button>
@@ -5163,10 +5362,60 @@ function App_PanelOnly(): React.ReactElement {
           </>
         )}
 
+        {panelType === 'notes' && (
+          <>
+            <div className="panel-header">
+              <h3>快捷笔记</h3>
+              <button className="panel-close" onClick={closePanel}>
+                ✕
+              </button>
+            </div>
+            <div className="panel-list settings-list">
+              <div className="settings-group-title">笔记功能页</div>
+              <div className="settings-row">
+                <div className="settings-copy">
+                  <label>打开快捷笔记</label>
+                  <p>沿用现有的 Alt+N 快捷笔记窗口，入口保留在超级菜单里。</p>
+                </div>
+                <button onClick={() => window.api.quickNoteToggle().catch(console.error)}>
+                  打开笔记
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {panelType === 'shortcuts' && (
+          <div className="all-embedded-page">
+            <ShortcutsPage />
+          </div>
+        )}
+
+        {panelType === 'commands' && (
+          <div className="all-embedded-page">
+            <CommandsPage />
+          </div>
+        )}
+
+        {panelType === 'extensions' && (
+          <div className="all-embedded-page">
+            <ExtensionsPage />
+          </div>
+        )}
+
         {panelType === 'scripts' && (
           <>
             <div className="panel-header">
               <h3>用户脚本</h3>
+              <button
+                className="panel-header-btn"
+                onClick={() => {
+                  window.api.openUrl('zhi://extensions', true)
+                  closePanel()
+                }}
+              >
+                【脚本还不够?试试拓展】
+              </button>
               <button className="panel-close" onClick={closePanel}>
                 ✕
               </button>
@@ -5593,16 +5842,106 @@ function App_PanelOnly(): React.ReactElement {
                   <div className="settings-group-title">设置页</div>
                   <div className="settings-row settings-shortcuts">
                     <div className="settings-copy">
-                      <label>在独立内部页打开设置</label>
-                      <p>打开 `zhi://settings` 新标签页进行设置修改。</p>
+                      <label>超级菜单入口</label>
+                      <p>旧设置入口继续可用，并会进入本页的设置分区。</p>
                     </div>
                     <button
                       onClick={() => {
-                        window.api.openUrl('zhi://settings', true)
+                        window.api.openUrl('zhi://all', true)
                         closePanel()
                       }}
                     >
-                      打开设置页
+                      打开 zhi://all
+                    </button>
+                  </div>
+                  {isAllMenu && (
+                    <>
+                      <div className="settings-group-title">经典菜单命令</div>
+                      <div className="classic-command-grid">
+                        {[
+                          ['新标签页', () => window.api.createTab()],
+                          ['新建无痕标签页', () => window.api.incognitoNewTab()],
+                          [
+                            '关闭当前标签页',
+                            () => {
+                              const tab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
+                              if (tab) window.api.closeTab(tab.id)
+                            }
+                          ],
+                          [
+                            '刷新当前标签页',
+                            () => {
+                              const tab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
+                              if (tab) window.api.reload(tab.id)
+                            }
+                          ],
+                          ['恢复关闭的标签', () => window.api.restoreClosed()],
+                          ['收藏当前页', () => {
+                            const tab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
+                            if (tab && !tab.isNewTab) window.api.addBookmark(tab.url, tab.title, tab.favicon)
+                          }],
+                          ['显示/隐藏书签栏', () => handleToggleBookmarkBar()],
+                          ['截图', () => window.api.screenshotOpen()],
+                          ['快捷笔记', () => window.api.quickNoteToggle()],
+                          ['休眠其他标签页', () => window.api.hibernationHibernateOthers()],
+                          ['命令面板', () => window.api.commandPaletteToggle()],
+                          ['打开数据目录', () => handleOpenUserDataFolder()],
+                          ['清除浏览数据', () => {
+                            requestConfirm(
+                              '清除浏览数据？',
+                              '将清空浏览历史和下载记录。书签和设置不受影响。',
+                              '清除',
+                              async () => {
+                                await window.api.clearHistory()
+                                await window.api.clearDownloads()
+                                setHistoryItems([])
+                                const freshState = await window.api.getBrowserState()
+                                setBrowserState(freshState)
+                                showToast('已清除')
+                              },
+                              '取消'
+                            )
+                          }],
+                          ['设置默认浏览器', () => window.api.setDefaultBrowser()]
+                        ].map(([label, action]) => (
+                          <button
+                            key={label as string}
+                            onClick={() => {
+                              Promise.resolve((action as () => unknown)()).catch(console.error)
+                            }}
+                          >
+                            {label as string}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div className="settings-row settings-shortcuts">
+                    <div className="settings-copy">
+                      <label>快捷键编辑</label>
+                      <p>打开 `zhi://shortcuts` 新标签页编辑快捷键。</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        window.api.openUrl('zhi://shortcuts', true)
+                        closePanel()
+                      }}
+                    >
+                      打开快捷键编辑
+                    </button>
+                  </div>
+                  <div className="settings-row settings-shortcuts">
+                    <div className="settings-copy">
+                      <label>命令编辑</label>
+                      <p>打开 `zhi://commands` 新标签页编辑命令。</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        window.api.openUrl('zhi://commands', true)
+                        closePanel()
+                      }}
+                    >
+                      打开命令编辑
                     </button>
                   </div>
 
@@ -6335,6 +6674,50 @@ function App_PanelOnly(): React.ReactElement {
                     <button onClick={() => handleClearAdBlockCount().catch(console.error)}>
                       清空计数
                     </button>
+                  </div>
+                  <div className="settings-row adblock-history-section">
+                    <div className="settings-copy">
+                      <label>屏蔽记录</label>
+                      <p>最近 {adBlockHistory.length} 条被拦截请求，可快速加入白名单。</p>
+                    </div>
+                    <button
+                      disabled={adBlockHistory.length === 0}
+                      onClick={() => handleClearAdBlockHistory().catch(console.error)}
+                    >
+                      清空记录
+                    </button>
+                  </div>
+                  <div className="adblock-history-list">
+                    {adBlockHistory.length === 0 ? (
+                      <p className="adblock-empty-hint">暂无屏蔽记录</p>
+                    ) : (
+                      adBlockHistory.slice(0, 60).map((record) => {
+                        const whitelisted = (adBlockState?.whitelist || settings.adblock.whitelist).includes(
+                          record.hostname
+                        )
+                        return (
+                          <div className="adblock-history-item" key={record.id}>
+                            <div className="adblock-history-main">
+                              <strong>{record.hostname}</strong>
+                              <span>{record.url}</span>
+                              <small>
+                                {record.resourceType} ·{' '}
+                                {record.pageHostname || '未知来源'} ·{' '}
+                                {new Date(record.blockedAt).toLocaleString()}
+                              </small>
+                            </div>
+                            <button
+                              disabled={whitelisted}
+                              onClick={() =>
+                                handleAddAdBlockHistoryHost(record.hostname).catch(console.error)
+                              }
+                            >
+                              {whitelisted ? '已在白名单' : '加入白名单'}
+                            </button>
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
                   <div className="settings-row adblock-whitelist-section">
                     <div className="settings-copy">

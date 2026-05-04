@@ -41,6 +41,7 @@ const builtInCommands: CommandItem[] = [
   createBuiltin('bm', '书签页', 'zhi://bookmarks', 'system'),
   createBuiltin('hs', '历史记录', 'zhi://history', 'system'),
   createBuiltin('dl', '下载页', 'zhi://downloads', 'system'),
+  createBuiltin('all', '超级菜单', 'zhi://all', 'system'),
   createBuiltin('st', '设置页', 'zhi://settings', 'system'),
   createBuiltin('kb', '快捷键页', 'zhi://shortcuts', 'system')
 ]

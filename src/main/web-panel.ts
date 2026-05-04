@@ -120,6 +120,11 @@ function hidePanel(): void {
   state.activeId = null
 }
 
+export function hideWebPanel(): void {
+  hidePanel()
+  notifyLayoutChanged()
+}
+
 export function getWebPanelOffset(): number {
   if (!state.visible) return 0
   return state.width

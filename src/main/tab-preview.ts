@@ -7,6 +7,8 @@ const previewCache = new Map<number, string>()
 const PREVIEW_WIDTH = 320
 const PREVIEW_HEIGHT = 200
 let previewWindow: BrowserWindow | null = null
+let blurHideTimer: ReturnType<typeof setTimeout> | null = null
+const trackedParentWindows = new WeakSet<BrowserWindow>()
 
 function getPreviewWindow(): BrowserWindow {
   if (previewWindow && !previewWindow.isDestroyed()) return previewWindow
@@ -39,6 +41,39 @@ function getPreviewWindow(): BrowserWindow {
     previewWindow = null
   })
   return previewWindow
+}
+
+function clearBlurHideTimer(): void {
+  if (!blurHideTimer) return
+  clearTimeout(blurHideTimer)
+  blurHideTimer = null
+}
+
+function hidePreviewWindow(): void {
+  clearBlurHideTimer()
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    previewWindow.hide()
+  }
+}
+
+function attachParentFocusFallback(parent: BrowserWindow): void {
+  if (trackedParentWindows.has(parent)) return
+  trackedParentWindows.add(parent)
+
+  parent.on('blur', () => {
+    clearBlurHideTimer()
+    blurHideTimer = setTimeout(() => {
+      hidePreviewWindow()
+    }, 1000)
+  })
+
+  parent.on('focus', () => {
+    clearBlurHideTimer()
+  })
+
+  parent.on('closed', () => {
+    clearBlurHideTimer()
+  })
 }
 
 function escapeHtml(value: string): string {
@@ -119,10 +154,12 @@ export function registerTabPreviewHandlers(
 
   ipcMain.handle(
     'tabPreview:show',
-    async (
-      _event,
-      options: { x: number; y: number; image?: string; kind?: 'image' | 'newtab' }
-    ) => {
+    async (event, options: { x: number; y: number; image?: string; kind?: 'image' | 'newtab' }) => {
+      const parent = BrowserWindow.fromWebContents(event.sender)
+      if (parent && !parent.isDestroyed()) {
+        attachParentFocusFallback(parent)
+      }
+      clearBlurHideTimer()
       const win = getPreviewWindow()
       const x = Math.round(options.x - PREVIEW_WIDTH / 2)
       const y = Math.round(options.y)
@@ -135,9 +172,7 @@ export function registerTabPreviewHandlers(
   )
 
   ipcMain.handle('tabPreview:hide', async () => {
-    if (previewWindow && !previewWindow.isDestroyed()) {
-      previewWindow.hide()
-    }
+    hidePreviewWindow()
   })
 }
 

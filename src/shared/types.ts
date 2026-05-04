@@ -125,6 +125,16 @@ export interface AdBlockState {
   blockedCount: number
 }
 
+export interface AdBlockBlockRecord {
+  id: string
+  url: string
+  hostname: string
+  resourceType: string
+  pageUrl: string
+  pageHostname: string
+  blockedAt: number
+}
+
 export interface AdBlockCurrentSite {
   hostname: string
   canWhitelist: boolean

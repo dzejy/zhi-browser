@@ -40,6 +40,16 @@ export function registerAdBlockIPC(options: AdBlockIPCOptions): void {
     return controller.clearBlockedCount()
   })
 
+  ipcMain.handle('adblock:get-block-history', (event) => {
+    if (!isValidSender(event)) return []
+    return controller.getBlockHistory()
+  })
+
+  ipcMain.handle('adblock:clear-block-history', (event) => {
+    if (!isValidSender(event)) return []
+    return controller.clearBlockHistory()
+  })
+
   ipcMain.handle('adblock:get-current-site', (event) => {
     if (!isValidSender(event)) return null
     const url = getActiveTabUrl()

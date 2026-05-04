@@ -10,6 +10,7 @@ import {
   BrowserLayout,
   SidePanelType,
   AdBlockState,
+  AdBlockBlockRecord,
   AdBlockCurrentSite
 } from '../shared/types'
 import type {
@@ -188,6 +189,8 @@ export interface PreloadAPI {
   addAdBlockWhitelist(hostname: string): Promise<AdBlockState>
   removeAdBlockWhitelist(hostname: string): Promise<AdBlockState>
   clearAdBlockCount(): Promise<AdBlockState>
+  getAdBlockBlockHistory(): Promise<AdBlockBlockRecord[]>
+  clearAdBlockBlockHistory(): Promise<AdBlockBlockRecord[]>
   getCurrentSiteForAdBlock(): Promise<AdBlockCurrentSite>
   toggleCurrentSiteAdBlockWhitelist(): Promise<AdBlockState>
 

@@ -154,6 +154,15 @@ export interface Preferences {
     enabled: boolean
     whitelist: string[]
     blockedCount: number
+    blockHistory: Array<{
+      id: string
+      url: string
+      hostname: string
+      resourceType: string
+      pageUrl: string
+      pageHostname: string
+      blockedAt: number
+    }>
   }
   ai: {
     enabled: boolean
@@ -285,7 +294,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   adblock: {
     enabled: true,
     whitelist: [],
-    blockedCount: 0
+    blockedCount: 0,
+    blockHistory: []
   },
   ai: {
     enabled: false,
@@ -600,6 +610,20 @@ function sanitizePreferences(prefs: Preferences): Preferences {
   if (typeof prefs.adblock.blockedCount !== 'number' || prefs.adblock.blockedCount < 0) {
     prefs.adblock.blockedCount = 0
   }
+  if (!Array.isArray(prefs.adblock.blockHistory)) prefs.adblock.blockHistory = []
+  prefs.adblock.blockHistory = prefs.adblock.blockHistory
+    .filter((entry) => isPlainRecord(entry))
+    .map((entry) => ({
+      id: typeof entry.id === 'string' ? entry.id : `${Date.now()}-${Math.random()}`,
+      url: typeof entry.url === 'string' ? entry.url : '',
+      hostname: typeof entry.hostname === 'string' ? entry.hostname : '',
+      resourceType: typeof entry.resourceType === 'string' ? entry.resourceType : 'other',
+      pageUrl: typeof entry.pageUrl === 'string' ? entry.pageUrl : '',
+      pageHostname: typeof entry.pageHostname === 'string' ? entry.pageHostname : '',
+      blockedAt: typeof entry.blockedAt === 'number' ? entry.blockedAt : Date.now()
+    }))
+    .filter((entry) => entry.url && entry.hostname)
+    .slice(0, 200)
   if (typeof prefs.ai.enabled !== 'boolean') prefs.ai.enabled = defaults.ai.enabled
   if (typeof prefs.ai.providerName !== 'string') {
     prefs.ai.providerName = defaults.ai.providerName

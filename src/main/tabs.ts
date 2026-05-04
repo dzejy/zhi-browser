@@ -17,7 +17,6 @@ import {
 } from '../shared/types'
 import type { AISelectionAction } from '../shared/aiTypes'
 import { classifyInput, getWwwFallbackUrl } from './navigation'
-import { is } from '@electron-toolkit/utils'
 import { addHistory } from './history'
 import { getDownloads } from './downloads'
 import { getPreferences, getSettings } from './settings'
@@ -41,6 +40,7 @@ import {
   wakeTab
 } from './hibernation/manager'
 import { bindPasswordDetection } from './password'
+import { bindInputAssist } from './input-assist'
 import { dispatchAppShortcut } from './shortcuts'
 
 const UI_SCALE = 1.5
@@ -50,6 +50,7 @@ const NEW_TAB_FAVICON =
 
 type InternalPage =
   | ''
+  | 'all'
   | 'settings'
   | 'bookmarks'
   | 'history'
@@ -59,6 +60,7 @@ type InternalPage =
   | 'extensions'
 
 const INTERNAL_PAGE_TITLES: Record<Exclude<InternalPage, ''>, string> = {
+  all: '超级菜单 - Zhi Browser',
   settings: '设置 - Zhi Browser',
   bookmarks: '书签管理 - Zhi Browser',
   history: '历史记录 - Zhi Browser',
@@ -69,12 +71,12 @@ const INTERNAL_PAGE_TITLES: Record<Exclude<InternalPage, ''>, string> = {
 }
 
 function getInternalPageFromUrl(url?: string): InternalPage {
-  const match = url?.match(/^zhi:\/\/(settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i)
+  const match = url?.match(/^zhi:\/\/(all|settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i)
   return (match?.[1]?.toLowerCase() as InternalPage) || ''
 }
 
 function isOverlayInternalPage(page: InternalPage): boolean {
-  return Boolean(page && page !== 'settings')
+  return Boolean(page)
 }
 
 interface ManagedTab {
@@ -138,20 +140,24 @@ export class TabManager {
   private onStateChange: () => void
   private onAIAction?: (action: AISelectionAction) => void
   private onUserScriptInstalled?: (payload: { name: string }) => void
+  private onPageFocus?: () => void
   private pageBoundsProvider: ((bounds: PageBounds) => PageBounds) | null = null
+  private modalOverlayActive: boolean = false
 
   constructor(
     win: BaseWindow,
     uiView: WebContentsView,
     onStateChange: () => void,
     onAIAction?: (action: AISelectionAction) => void,
-    onUserScriptInstalled?: (payload: { name: string }) => void
+    onUserScriptInstalled?: (payload: { name: string }) => void,
+    onPageFocus?: () => void
   ) {
     this.win = win
     this.uiView = uiView
     this.onStateChange = onStateChange
     this.onAIAction = onAIAction
     this.onUserScriptInstalled = onUserScriptInstalled
+    this.onPageFocus = onPageFocus
   }
 
   // ===== State aggregation =====
@@ -271,21 +277,6 @@ export class TabManager {
 
   // ===== Tab creation =====
 
-  private async loadInternalSettingsPage(tab: ManagedTab): Promise<void> {
-    tab.isLoading = true
-    tab.error = null
-    tab.url = 'zhi://settings'
-    tab.title = INTERNAL_PAGE_TITLES.settings
-    tab.isNewTab = false
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      await tab.view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/settings-page`)
-    } else {
-      await tab.view.webContents.loadFile(join(__dirname, '../renderer/index.html'), {
-        hash: 'settings-page'
-      })
-    }
-  }
-
   createTab(url?: string, options?: CreateTabOptions): string {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
     let targetUrl = url
@@ -348,6 +339,7 @@ export class TabManager {
     this.setupContextMenu(tab)
     setupScriptInjection(view.webContents)
     bindPasswordDetection(view.webContents)
+    bindInputAssist(view.webContents)
     setupInstallInterceptor(
       view.webContents,
       () => this.win,
@@ -377,16 +369,7 @@ export class TabManager {
       this.pushState()
     }
 
-    if (tab.internalPage === 'settings') {
-      this.loadInternalSettingsPage(tab).catch(() => {
-        tab.error = {
-          url: 'zhi://settings',
-          errorCode: -1,
-          errorDescription: '设置页加载失败'
-        }
-        this.pushState()
-      })
-    } else if (isOverlayInternalPage(tab.internalPage)) {
+    if (isOverlayInternalPage(tab.internalPage)) {
       tab.isLoading = false
       tab.darkModeHiddenUntilReady = false
       tab.view.setVisible(false)
@@ -622,13 +605,6 @@ export class TabManager {
 
     const classified = classifyInput(input)
     const internalPage = getInternalPageFromUrl(classified.value)
-
-    if (internalPage === 'settings') {
-      tab.internalPage = 'settings'
-      this.loadInternalSettingsPage(tab).catch(() => {})
-      this.pushState()
-      return
-    }
 
     if (isOverlayInternalPage(internalPage)) {
       clearTabPreview(tab.view.webContents.id)
@@ -909,7 +885,7 @@ export class TabManager {
       activeTab.view.setVisible(!usesRendererOverlay && !activeTab.darkModeHiddenUntilReady)
     }
 
-    if (this.pageTop === 0 || usesRendererOverlay) {
+    if (this.pageTop === 0 || usesRendererOverlay || this.modalOverlayActive) {
       try {
         this.win.contentView.removeChildView(this.uiView)
       } catch {
@@ -917,6 +893,12 @@ export class TabManager {
       }
       this.win.contentView.addChildView(this.uiView)
     }
+  }
+
+  setModalOverlayActive(active: boolean): void {
+    this.modalOverlayActive = active
+    this.updateLayout()
+    this.pushState()
   }
 
   // ===== Cleanup =====
@@ -1065,6 +1047,12 @@ button.primary:hover{background:#4d6faa}
 
     wc.on('destroyed', () => {
       cleanupDarkMode(wc)
+    })
+
+    wc.on('focus', () => {
+      if (tab.id === this.activeTabId) {
+        this.onPageFocus?.()
+      }
     })
 
     wc.on('did-navigate', (_event, url) => {

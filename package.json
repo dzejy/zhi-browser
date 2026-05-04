@@ -1,7 +1,7 @@
 {
   "name": "zhi-browser",
   "productName": "Zhi Browser",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",

@@ -75,7 +75,12 @@ import { registerReaderHandlers } from './reader'
 import { registerSnifferHandlers } from './sniffer'
 import { registerDownloaderHandlers, registerBuiltinDownloaderHandlers } from './downloader'
 import { registerTabPreviewHandlers } from './tab-preview'
-import { registerWebPanelHandlers, getWebPanelOffset, getWebPanelRailWidth } from './web-panel'
+import {
+  registerWebPanelHandlers,
+  getWebPanelOffset,
+  getWebPanelRailWidth,
+  hideWebPanel
+} from './web-panel'
 import { registerMouseGestureHandlers } from './mouse-gesture'
 import { executeGestureAction } from './mouse-gesture-actions'
 import {
@@ -299,6 +304,26 @@ function openAIPanelFromAction(action?: AISelectionAction): void {
   }
 }
 
+function collapseTransientChromeFromPage(): void {
+  hidePanelView(true)
+  hideWebPanel()
+  sendToUi('browser:panel-closed')
+  try {
+    if (quickSearchMenuWindow && !quickSearchMenuWindow.isDestroyed()) {
+      quickSearchMenuWindow.close()
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (themeMenuWindow && !themeMenuWindow.isDestroyed()) {
+      themeMenuWindow.close()
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function getVerticalTabWidth(): number {
   if (isFullscreenChromeMode()) return 0
   return getEffectiveSidebarWidth()
@@ -385,7 +410,8 @@ function createWindow(): void {
     (payload) => {
       sendToUi('userscript:installed', payload)
       sendToPanel('userscript:installed', payload)
-    }
+    },
+    collapseTransientChromeFromPage
   )
   installAppMenu()
 
@@ -994,6 +1020,14 @@ function setupIPC(): void {
     applyBrowserLayout(normalized)
   })
 
+  ipcMain.on('ui-overlay-show', () => {
+    tabManager.setModalOverlayActive(true)
+  })
+
+  ipcMain.on('ui-overlay-hide', () => {
+    tabManager.setModalOverlayActive(false)
+  })
+
   ipcMain.on('panel:show', (event, args: { type?: unknown }) => {
     if (!validateSender(event)) return
     if (!isSidePanelType(args?.type)) return
@@ -1020,6 +1054,12 @@ function setupIPC(): void {
   ipcMain.handle('menu:popup', (event) => {
     if (!validateUiSender(event)) return
     popupMenu({ window: win })
+  })
+
+  ipcMain.on('page:primary-pointer', (event) => {
+    const activeWebContents = tabManager.getActiveWebContents()
+    if (!activeWebContents || event.sender !== activeWebContents) return
+    collapseTransientChromeFromPage()
   })
 
   ipcMain.handle('window:toggle-fullscreen', (event) => {

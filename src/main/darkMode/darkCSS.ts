@@ -17,13 +17,11 @@ import {
 // before the page paints. Replaced (or removed for already-dark sites) on dom-ready.
 export const DARK_MODE_INSTANT_CSS = `
 :root {
-  color-scheme: dark !important;
 }
 
 html,
 body {
   background-color: ${DARK_BG_COLOR} !important;
-  color-scheme: dark !important;
 }
 `
 
@@ -31,13 +29,11 @@ body {
 // Goal: keep the page's structural hierarchy readable, not flatten everything to one shade.
 export const DARK_MODE_FORCE_CSS = `
 :root {
-  color-scheme: dark !important;
 }
 
 html,
 body {
   background-color: ${DARK_BG_COLOR} !important;
-  color-scheme: dark !important;
   color: ${DARK_TEXT} !important;
 }
 

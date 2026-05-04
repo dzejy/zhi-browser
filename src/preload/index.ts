@@ -146,6 +146,8 @@ const api = {
   removeAdBlockWhitelist: (hostname: string) =>
     ipcRenderer.invoke('adblock:remove-whitelist', hostname),
   clearAdBlockCount: () => ipcRenderer.invoke('adblock:clear-count'),
+  getAdBlockBlockHistory: () => ipcRenderer.invoke('adblock:get-block-history'),
+  clearAdBlockBlockHistory: () => ipcRenderer.invoke('adblock:clear-block-history'),
   getCurrentSiteForAdBlock: () => ipcRenderer.invoke('adblock:get-current-site'),
   toggleCurrentSiteAdBlockWhitelist: () =>
     ipcRenderer.invoke('adblock:toggle-current-site-whitelist'),
@@ -669,6 +671,14 @@ ipcRenderer.on('splitView:openFromMenu', (_event, url: string) => {
 })
 
 if (!isRendererApp) {
+  document.addEventListener(
+    'mousedown',
+    () => {
+      ipcRenderer.send('page:primary-pointer')
+    },
+    { capture: true, passive: true }
+  )
+
   void (function setupMouseGesture() {
     const threshold = 30
     const knownGestures = new Set(['L', 'R', 'D', 'U', 'DR', 'UD', 'DU', 'LR', 'RD'])

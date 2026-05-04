@@ -1,5 +1,5 @@
 import type { Session } from 'electron'
-import type { AdBlockState } from '../shared/types'
+import type { AdBlockBlockRecord, AdBlockState } from '../shared/types'
 import type { DeepPartial, Preferences } from '../shared/preferences'
 import { BUILTIN_ADBLOCK_RULES, matchesAdRule } from './adblockRules'
 
@@ -19,6 +19,7 @@ export class AdBlockController {
   private readonly ignoredWebContentsIds: number[]
   private listenerRegistered = false
   private blockedCountBuffer = 0
+  private blockedHistoryBuffer: AdBlockBlockRecord[] = []
   private flushTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(options: AdBlockControllerOptions) {
@@ -60,7 +61,7 @@ export class AdBlockController {
 
         const matched = matchesAdRule(details.url, details.resourceType, BUILTIN_ADBLOCK_RULES)
         if (matched) {
-          this.incrementBlockedCount()
+          this.recordBlockedRequest(details)
           callback({ cancel: true })
           return
         }
@@ -126,6 +127,16 @@ export class AdBlockController {
     return state
   }
 
+  getBlockHistory(): AdBlockBlockRecord[] {
+    return [...(this.getPrefs().adblock.blockHistory || [])]
+  }
+
+  clearBlockHistory(): AdBlockBlockRecord[] {
+    this.blockedHistoryBuffer = []
+    this.updatePrefs({ adblock: { blockHistory: [] } })
+    return []
+  }
+
   isWhitelisted(url: string): boolean {
     try {
       return this.hostnameInList(new URL(url).hostname, this.getPrefs().adblock.whitelist)
@@ -157,18 +168,60 @@ export class AdBlockController {
     return whitelist.some((entry) => hostname === entry || hostname.endsWith(`.${entry}`))
   }
 
-  private incrementBlockedCount(): void {
+  private recordBlockedRequest(details: Electron.OnBeforeRequestListenerDetails): void {
     this.blockedCountBuffer++
+    const record = this.createBlockRecord(details)
+    if (record) {
+      this.blockedHistoryBuffer.unshift(record)
+      this.blockedHistoryBuffer = this.blockedHistoryBuffer.slice(0, 50)
+    }
+    this.scheduleFlush()
+  }
+
+  private scheduleFlush(): void {
     if (this.flushTimer) return
 
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
       const prefs = this.getPrefs()
       const blockedCount = prefs.adblock.blockedCount + this.blockedCountBuffer
+      const blockHistory = [
+        ...this.blockedHistoryBuffer,
+        ...(prefs.adblock.blockHistory || [])
+      ].slice(0, 200)
       this.blockedCountBuffer = 0
-      this.updatePrefs({ adblock: { blockedCount } })
+      this.blockedHistoryBuffer = []
+      this.updatePrefs({ adblock: { blockedCount, blockHistory } })
       this.notifyUI(this.getState())
     }, 500)
+  }
+
+  private createBlockRecord(
+    details: Electron.OnBeforeRequestListenerDetails
+  ): AdBlockBlockRecord | null {
+    try {
+      const requestUrl = new URL(details.url)
+      const pageUrl = details.referrer || (details as { initiator?: string }).initiator || ''
+      let pageHostname = ''
+      if (pageUrl) {
+        try {
+          pageHostname = new URL(pageUrl).hostname
+        } catch {
+          pageHostname = ''
+        }
+      }
+      return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        url: details.url,
+        hostname: requestUrl.hostname,
+        resourceType: details.resourceType,
+        pageUrl,
+        pageHostname,
+        blockedAt: Date.now()
+      }
+    } catch {
+      return null
+    }
   }
 
   private notifyUI(state: AdBlockState): void {

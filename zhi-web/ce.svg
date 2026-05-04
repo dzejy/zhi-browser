@@ -1,0 +1,266 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <defs>
+    <linearGradient id="gradAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff4a6a"/>
+      <stop offset="50%" stop-color="#cc2a4a"/>
+      <stop offset="100%" stop-color="#aa1a3a"/>
+    </linearGradient>
+    <linearGradient id="gradAccentBright" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6a8a"/>
+      <stop offset="100%" stop-color="#ff3a5a"/>
+    </linearGradient>
+    <linearGradient id="gradBgVertical" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#151525"/>
+      <stop offset="100%" stop-color="#0a0a12"/>
+    </linearGradient>
+    <linearGradient id="gradTitleBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#16161f"/>
+      <stop offset="100%" stop-color="#0e0e18"/>
+    </linearGradient>
+    <linearGradient id="gradSidebar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#14101c"/>
+      <stop offset="100%" stop-color="#0c0810"/>
+    </linearGradient>
+    <radialGradient id="gradGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff3a5a" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ff3a5a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 画布背景：深色 + 角落光晕 -->
+  <rect x="0" y="0" width="1600" height="1000" fill="#08080d"/>
+  <ellipse cx="200" cy="150" rx="400" ry="300" fill="url(#gradGlow)"/>
+  <ellipse cx="1400" cy="900" rx="400" ry="300" fill="url(#gradGlow)"/>
+
+  <!-- ============== 浏览器窗口外壳 ============== -->
+  <g transform="translate(50, 50)">
+    <!-- 主体 -->
+    <rect x="0" y="0" width="1500" height="900" rx="16" fill="url(#gradBgVertical)" stroke="rgba(255,58,90,0.25)" stroke-width="1"/>
+
+    <!-- 标题栏 -->
+    <rect x="0" y="0" width="1500" height="44" rx="16" fill="url(#gradTitleBar)"/>
+    <rect x="0" y="28" width="1500" height="16" fill="url(#gradTitleBar)"/>
+    <circle cx="24" cy="22" r="6" fill="#ff3a5a"/>
+    <circle cx="44" cy="22" r="6" fill="#cc2a4a"/>
+    <circle cx="64" cy="22" r="6" fill="#881a3a"/>
+
+    <!-- 地址栏 -->
+    <rect x="510" y="8" width="480" height="28" rx="6" fill="#1a1a2a" stroke="rgba(255,58,90,0.15)" stroke-width="1"/>
+    <circle cx="528" cy="22" r="4" fill="#ff3a5a" opacity="0.7"/>
+    <text x="544" y="26" font-family="Inter, sans-serif" font-size="11" fill="#808090">zhi-browser://example.com/article</text>
+
+    <!-- 右侧工具图标 -->
+    <rect x="1430" y="14" width="16" height="16" rx="3" fill="#1a1a2a"/>
+    <rect x="1454" y="14" width="16" height="16" rx="3" fill="#1a1a2a"/>
+    <rect x="1478" y="14" width="16" height="16" rx="3" fill="url(#gradAccent)" opacity="0.9"/>
+
+    <!-- 标签栏 -->
+    <rect x="0" y="44" width="1500" height="36" fill="#0e0e18"/>
+    <rect x="12" y="50" width="220" height="26" rx="6" fill="#1a1a2a" stroke="rgba(255,58,90,0.4)" stroke-width="1"/>
+    <circle cx="26" cy="63" r="4" fill="#ff3a5a"/>
+    <text x="38" y="67" font-family="Inter, sans-serif" font-size="11" fill="#f0f0f5" font-weight="500">深度学习入门指南</text>
+    <rect x="240" y="50" width="180" height="26" rx="6" fill="#0e0e18"/>
+    <circle cx="254" cy="63" r="4" fill="#606070"/>
+    <text x="266" y="67" font-family="Inter, sans-serif" font-size="11" fill="#b0b0c0">GitHub - dzejy</text>
+    <rect x="428" y="50" width="160" height="26" rx="6" fill="#0e0e18"/>
+    <circle cx="442" cy="63" r="4" fill="#606070"/>
+    <text x="454" y="67" font-family="Inter, sans-serif" font-size="11" fill="#b0b0c0">Hacker News</text>
+    <text x="600" y="69" font-family="Inter, sans-serif" font-size="18" fill="#606070" font-weight="300">+</text>
+
+    <!-- ============== 主内容区：左网页 + 右AI面板 ============== -->
+
+    <!-- 左侧：网页正文区 -->
+    <g transform="translate(0, 80)">
+      <!-- 文章标题 -->
+      <text x="60" y="60" font-family="Inter, sans-serif" font-size="28" font-weight="700" fill="#f0f0f5">深度学习中的注意力机制</text>
+      <text x="60" y="90" font-family="Inter, sans-serif" font-size="13" fill="#808090">2026 年 4 月 · 阅读时间 12 分钟 · 作者：示例</text>
+
+      <!-- 分隔线 -->
+      <rect x="60" y="110" width="60" height="3" rx="1.5" fill="url(#gradAccent)"/>
+
+      <!-- 正文段落（用矩形条模拟文字行） -->
+      <g fill="#404050">
+        <rect x="60" y="140" width="900" height="8" rx="2"/>
+        <rect x="60" y="158" width="940" height="8" rx="2"/>
+        <rect x="60" y="176" width="880" height="8" rx="2"/>
+        <rect x="60" y="194" width="920" height="8" rx="2"/>
+        <rect x="60" y="212" width="600" height="8" rx="2"/>
+      </g>
+
+      <!-- 二级标题 -->
+      <text x="60" y="260" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f0f0f5">为什么需要注意力机制</text>
+
+      <!-- 高亮选中段落（这段被用户选中，要交给 AI 分析） -->
+      <rect x="56" y="282" width="950" height="92" rx="8" fill="rgba(255,58,90,0.08)" stroke="rgba(255,58,90,0.4)" stroke-width="1" stroke-dasharray="4 3"/>
+      <g fill="#b0b0c0">
+        <rect x="68" y="296" width="920" height="8" rx="2"/>
+        <rect x="68" y="314" width="940" height="8" rx="2"/>
+        <rect x="68" y="332" width="900" height="8" rx="2"/>
+        <rect x="68" y="350" width="780" height="8" rx="2"/>
+      </g>
+
+      <!-- "选中" 提示气泡（指向选区） -->
+      <g transform="translate(840, 270)">
+        <rect x="0" y="0" width="120" height="28" rx="14" fill="url(#gradAccent)"/>
+        <text x="60" y="18" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#ffffff" text-anchor="middle">已选中文本</text>
+      </g>
+
+      <!-- 更多正文 -->
+      <g fill="#404050">
+        <rect x="60" y="400" width="900" height="8" rx="2"/>
+        <rect x="60" y="418" width="940" height="8" rx="2"/>
+        <rect x="60" y="436" width="880" height="8" rx="2"/>
+        <rect x="60" y="454" width="500" height="8" rx="2"/>
+      </g>
+
+      <!-- 代码块示意 -->
+      <rect x="60" y="490" width="940" height="120" rx="8" fill="#0a0a12" stroke="rgba(255,58,90,0.2)" stroke-width="1"/>
+      <g fill="#606070">
+        <rect x="80" y="510" width="200" height="6" rx="2"/>
+        <rect x="80" y="526" width="280" height="6" rx="2"/>
+        <rect x="80" y="542" width="160" height="6" rx="2"/>
+        <rect x="80" y="558" width="240" height="6" rx="2"/>
+        <rect x="80" y="574" width="180" height="6" rx="2"/>
+      </g>
+      <circle cx="975" cy="500" r="3" fill="#ff3a5a"/>
+      <circle cx="985" cy="500" r="3" fill="#ffaa00"/>
+      <circle cx="995" cy="500" r="3" fill="#4ade80"/>
+
+      <!-- 更多正文 -->
+      <g fill="#404050">
+        <rect x="60" y="640" width="900" height="8" rx="2"/>
+        <rect x="60" y="658" width="940" height="8" rx="2"/>
+        <rect x="60" y="676" width="700" height="8" rx="2"/>
+      </g>
+    </g>
+
+    <!-- ============== 右侧 AI 侧边栏 ============== -->
+    <g transform="translate(1060, 80)">
+      <!-- 侧边栏背景 -->
+      <rect x="0" y="0" width="440" height="820" fill="url(#gradSidebar)"/>
+      <!-- 左侧分隔线（带渐变）-->
+      <rect x="0" y="0" width="1" height="820" fill="rgba(255,58,90,0.3)"/>
+
+      <!-- 侧边栏头部 -->
+      <g transform="translate(20, 20)">
+        <!-- AI 图标 -->
+        <rect x="0" y="0" width="36" height="36" rx="10" fill="url(#gradAccent)" filter="url(#softGlow)"/>
+        <text x="18" y="25" font-family="Inter, sans-serif" font-size="18" font-weight="800" fill="#ffffff" text-anchor="middle">Z</text>
+        <!-- 标题 -->
+        <text x="48" y="16" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#f0f0f5">Zhi AI 助手</text>
+        <text x="48" y="32" font-family="Inter, sans-serif" font-size="11" fill="#808090">围绕当前网页对话</text>
+        <!-- 关闭按钮 -->
+        <rect x="370" y="8" width="20" height="20" rx="4" fill="#1a1a2a"/>
+        <line x1="376" y1="14" x2="384" y2="22" stroke="#808090" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="384" y1="14" x2="376" y2="22" stroke="#808090" stroke-width="1.5" stroke-linecap="round"/>
+      </g>
+
+      <!-- 模式切换 tabs -->
+      <g transform="translate(20, 76)">
+        <!-- 省流模式（激活态） -->
+        <rect x="0" y="0" width="96" height="32" rx="8" fill="url(#gradAccent)" filter="url(#softGlow)"/>
+        <text x="48" y="20" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">🎯 省流</text>
+
+        <rect x="104" y="0" width="96" height="32" rx="8" fill="#1a1a2a" stroke="rgba(255,58,90,0.2)" stroke-width="1"/>
+        <text x="152" y="20" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#b0b0c0" text-anchor="middle">🔍 丁真</text>
+
+        <rect x="208" y="0" width="96" height="32" rx="8" fill="#1a1a2a" stroke="rgba(255,58,90,0.2)" stroke-width="1"/>
+        <text x="256" y="20" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#b0b0c0" text-anchor="middle">🌐 全网</text>
+
+        <rect x="312" y="0" width="88" height="32" rx="8" fill="#1a1a2a" stroke="rgba(255,58,90,0.2)" stroke-width="1"/>
+        <text x="356" y="20" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#b0b0c0" text-anchor="middle">💭 大司马</text>
+      </g>
+
+      <!-- 对话区 -->
+      <g transform="translate(20, 130)">
+        <!-- AI 消息气泡 1 -->
+        <g transform="translate(0, 0)">
+          <circle cx="14" cy="14" r="14" fill="url(#gradAccent)"/>
+          <text x="14" y="19" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#ffffff" text-anchor="middle">Z</text>
+          <rect x="36" y="0" width="364" height="120" rx="12" fill="#1a1a2a" stroke="rgba(255,58,90,0.15)" stroke-width="1"/>
+          <text x="48" y="20" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#ff6a8a">📌 核心要点</text>
+          <g fill="#b0b0c0">
+            <rect x="48" y="32" width="320" height="6" rx="2"/>
+            <rect x="48" y="46" width="340" height="6" rx="2"/>
+            <rect x="48" y="60" width="280" height="6" rx="2"/>
+            <rect x="48" y="78" width="320" height="6" rx="2"/>
+            <rect x="48" y="92" width="260" height="6" rx="2"/>
+          </g>
+          <!-- 来源链接 -->
+          <rect x="48" y="100" width="80" height="14" rx="4" fill="rgba(255,58,90,0.1)" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+          <text x="88" y="111" font-family="Inter, sans-serif" font-size="9" fill="#ff6a8a" text-anchor="middle">来源：当前页</text>
+        </g>
+
+        <!-- 用户消息气泡 -->
+        <g transform="translate(0, 140)">
+          <rect x="80" y="0" width="320" height="48" rx="12" fill="url(#gradAccent)" opacity="0.92"/>
+          <text x="96" y="22" font-family="Inter, sans-serif" font-size="12" fill="#ffffff" font-weight="500">基于我刚选中的段落，</text>
+          <text x="96" y="38" font-family="Inter, sans-serif" font-size="12" fill="#ffffff" font-weight="500">详细解释一下注意力机制</text>
+        </g>
+
+        <!-- AI 消息气泡 2（流式输出中） -->
+        <g transform="translate(0, 208)">
+          <circle cx="14" cy="14" r="14" fill="url(#gradAccent)"/>
+          <text x="14" y="19" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#ffffff" text-anchor="middle">Z</text>
+          <rect x="36" y="0" width="364" height="200" rx="12" fill="#1a1a2a" stroke="rgba(255,58,90,0.25)" stroke-width="1"/>
+          <text x="48" y="20" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#ff6a8a">💡 详细解读</text>
+          <g fill="#b0b0c0">
+            <rect x="48" y="32" width="340" height="6" rx="2"/>
+            <rect x="48" y="46" width="320" height="6" rx="2"/>
+            <rect x="48" y="60" width="340" height="6" rx="2"/>
+            <rect x="48" y="74" width="280" height="6" rx="2"/>
+          </g>
+          <!-- 关键概念高亮 -->
+          <rect x="48" y="90" width="100" height="20" rx="4" fill="rgba(255,58,90,0.1)" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+          <text x="98" y="104" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#ff6a8a" text-anchor="middle">Self-Attention</text>
+          <rect x="156" y="90" width="80" height="20" rx="4" fill="rgba(255,58,90,0.1)" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+          <text x="196" y="104" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#ff6a8a" text-anchor="middle">QKV</text>
+
+          <g fill="#b0b0c0">
+            <rect x="48" y="124" width="340" height="6" rx="2"/>
+            <rect x="48" y="138" width="320" height="6" rx="2"/>
+            <rect x="48" y="152" width="200" height="6" rx="2"/>
+          </g>
+          <!-- 流式光标（闪烁感用透明度变化的矩形）-->
+          <rect x="252" y="148" width="8" height="10" fill="#ff3a5a">
+            <animate attributeName="opacity" values="1;0.2;1" dur="1s" repeatCount="indefinite"/>
+          </rect>
+
+          <!-- 操作按钮 -->
+          <g transform="translate(48, 170)">
+            <rect x="0" y="0" width="56" height="20" rx="10" fill="#0e0e18" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+            <text x="28" y="14" font-family="Inter, sans-serif" font-size="10" fill="#b0b0c0" text-anchor="middle">复制</text>
+            <rect x="64" y="0" width="56" height="20" rx="10" fill="#0e0e18" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+            <text x="92" y="14" font-family="Inter, sans-serif" font-size="10" fill="#b0b0c0" text-anchor="middle">重新生成</text>
+            <rect x="128" y="0" width="56" height="20" rx="10" fill="#0e0e18" stroke="rgba(255,58,90,0.3)" stroke-width="0.5"/>
+            <text x="156" y="14" font-family="Inter, sans-serif" font-size="10" fill="#b0b0c0" text-anchor="middle">追问</text>
+          </g>
+        </g>
+      </g>
+
+      <!-- 底部输入框 -->
+      <g transform="translate(20, 740)">
+        <rect x="0" y="0" width="400" height="60" rx="12" fill="#1a1a2a" stroke="rgba(255,58,90,0.3)" stroke-width="1"/>
+        <text x="16" y="24" font-family="Inter, sans-serif" font-size="12" fill="#606070">问点什么呢…</text>
+        <!-- 附加按钮 -->
+        <rect x="14" y="34" width="20" height="20" rx="4" fill="#0e0e18"/>
+        <text x="24" y="48" font-family="Inter, sans-serif" font-size="12" fill="#808090" text-anchor="middle">📎</text>
+        <rect x="40" y="34" width="20" height="20" rx="4" fill="#0e0e18"/>
+        <text x="50" y="48" font-family="Inter, sans-serif" font-size="12" fill="#808090" text-anchor="middle">🌐</text>
+        <!-- 发送按钮 -->
+        <rect x="340" y="14" width="48" height="32" rx="8" fill="url(#gradAccent)" filter="url(#softGlow)"/>
+        <path d="M 358 24 L 372 30 L 358 36 Z" fill="#ffffff"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- 底部水印 -->
+  <text x="800" y="980" font-family="Inter, sans-serif" font-size="11" fill="#404050" text-anchor="middle" letter-spacing="2">ZHI BROWSER · AI 侧边栏</text>
+</svg>
