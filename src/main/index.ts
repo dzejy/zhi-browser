@@ -113,7 +113,7 @@ import {
   registerCommandPaletteHandlers,
   toggleCommandPalette
 } from './command-palette'
-import { registerHibernationHandlers, initHibernation, hibernateOthers, cleanupHibernationManager } from './hibernation'
+import { registerHibernationHandlers, initHibernation, hibernateOthers } from './hibernation'
 import { initQuickNote, registerQuickNoteHandlers, toggleQuickNote } from './quick-note'
 import { registerPasswordHandlers as registerPasswordAutoHandlers } from './password'
 import { getExtensionSystem } from './extensions'
@@ -914,7 +914,7 @@ function createWindow(): void {
       leftIconBar: fullscreen ? 0 : getWebPanelRailWidth(),
       verticalTab: fullscreen ? 0 : getVerticalTabWidth()
     }
-  }, () => updateLayout(), validateSender)
+  }, () => updateLayout())
 
   registerMouseGestureHandlers((action) => {
     executeGestureAction(
@@ -1143,9 +1143,7 @@ function restoreSession(): void {
         tabManager.createTab(url, {
           background: true,
           insertMode: 'atEnd',
-          pinned: Boolean(tabData.isPinned),
-          deferLoad: true,
-          initialTitle: tabData.title
+          pinned: Boolean(tabData.isPinned)
         })
       }
 
@@ -2209,6 +2207,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   appIsQuitting = true
   saveSession()
-  cleanupHibernationManager()
   import('./proxy/core').then(m => m.stopCore()).catch(() => {})
 })
