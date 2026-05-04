@@ -1,6 +1,21 @@
 appId: com.zhi.browser
 productName: Zhi Browser
 
+protocols:
+  name: Zhi Browser URL
+  schemes:
+    - http
+    - https
+    - zhi
+
+fileAssociations:
+  - ext: html
+    name: HTML Document
+    role: Viewer
+  - ext: htm
+    name: HTML Document
+    role: Viewer
+
 directories:
   buildResources: build
   output: dist

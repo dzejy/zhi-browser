@@ -4,6 +4,7 @@ import { setAsDefaultBrowser, isDefaultBrowser } from './default-browser'
 export interface MenuActions {
   newTab: () => void
   newIncognitoTab: () => void
+  openFile: () => void
   closeTab: () => void
   reload: () => void
   zoomIn: () => void
@@ -44,6 +45,8 @@ export function buildMenu(actions: MenuActions): void {
           click: actions.newIncognitoTab
         },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: actions.closeTab },
+        { type: 'separator' },
+        { label: '打开文件', accelerator: 'CmdOrCtrl+O', click: actions.openFile },
         { type: 'separator' },
         { label: '退出', accelerator: 'Alt+F4', click: () => app.quit() }
       ]

@@ -1,5 +1,6 @@
-import { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, clipboard, session, screen } from 'electron'
+import { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, clipboard, session, screen, dialog } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'node:url'
 import { is } from '@electron-toolkit/utils'
 import { TabManager } from './tabs'
 import { readJSON, writeJSON } from './storage'
@@ -127,6 +128,45 @@ let currentPanelType: SidePanelType = 'bookmarks'
 let panelReady = false
 let quickSearchMenuWindow: BrowserWindow | null = null
 let themeMenuWindow: BrowserWindow | null = null
+let pendingStartupUrl: string | null = null
+
+function extractUrlFromArgs(args: string[]): string | null {
+  for (let i = args.length - 1; i >= 0; i--) {
+    const arg = args[i]
+    if (/^https?:\/\//i.test(arg) || /^file:\/\//i.test(arg)) {
+      return arg
+    }
+    const unquoted = arg.replace(/^"|"$/g, '')
+    if (/^https?:\/\//i.test(unquoted) || /^file:\/\//i.test(unquoted)) {
+      return unquoted
+    }
+  }
+  return null
+}
+
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    const url = extractUrlFromArgs(commandLine)
+    if (url) {
+      if (win) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
+      if (tabManager) {
+        tabManager.createTab(url)
+      }
+    } else {
+      if (win) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
+    }
+  })
+}
 
 function getMenuThemePalette(themeId: string): {
   bg: string
@@ -250,6 +290,24 @@ function installAppMenu(): void {
     newIncognitoTab: () => {
       tabManager.createTab(undefined, { session: getIncognitoSession(), incognito: true })
       sendToUi('browser:focus-address-bar')
+    },
+    openFile: () => {
+      dialog
+        .showOpenDialog({
+          title: '打开文件',
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: '网页文件', extensions: ['html', 'htm', 'xhtml', 'svg'] },
+            { name: '所有文件', extensions: ['*'] }
+          ]
+        })
+        .then((result) => {
+          if (result.canceled) return
+          for (const filePath of result.filePaths) {
+            const fileUrl = pathToFileURL(filePath).toString()
+            tabManager.createTab(fileUrl)
+          }
+        })
     },
     closeTab: () => tabManager.closeTab(tabManager.getActiveTabId()),
     reload: () => tabManager.reload(tabManager.getActiveTabId()),
@@ -844,9 +902,14 @@ function saveSession(): void {
 }
 
 function restoreSession(): void {
+  const isExternalInvocation = pendingStartupUrl !== null
   const prefs = getPreferences()
 
   if (prefs.startup.behavior === 'homepage') {
+    if (isExternalInvocation) {
+      tabManager.createTab('zhi://newtab')
+      return
+    }
     const homepageUrl = prefs.startup.homepageUrl.trim()
     if (!homepageUrl || /^zhi:\/\/newtab\/?$/i.test(homepageUrl)) {
       tabManager.createTab('zhi://newtab')
@@ -860,6 +923,10 @@ function restoreSession(): void {
   }
 
   if (prefs.startup.behavior === 'specificPages') {
+    if (isExternalInvocation) {
+      tabManager.createTab('zhi://newtab')
+      return
+    }
     const pages = prefs.startup.specificPages
       .map((page) => normalizeUrl(page) || page)
       .filter((page) => isValidNavigableUrl(page))
@@ -895,7 +962,11 @@ function restoreSession(): void {
     }
   }
 
-  tabManager.createTab(prefs.startup.newTabUrl || undefined)
+  if (isExternalInvocation) {
+    tabManager.createTab('zhi://newtab')
+  } else {
+    tabManager.createTab(prefs.startup.newTabUrl || undefined)
+  }
 }
 
 function showPanelView(type: SidePanelType): void {
@@ -1874,7 +1945,12 @@ app.whenReady().then(async () => {
     }
   })
   setupIPC()
+  pendingStartupUrl = extractUrlFromArgs(process.argv)
   createWindow()
+  if (pendingStartupUrl) {
+    tabManager.createTab(pendingStartupUrl)
+    pendingStartupUrl = null
+  }
   const extensionSystem = getExtensionSystem()
   await extensionSystem.initialize()
   await proxyAutoStart(getPreferences)

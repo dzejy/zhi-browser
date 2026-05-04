@@ -4,7 +4,8 @@ import {
   Menu,
   MenuItemConstructorOptions,
   clipboard,
-  Session
+  Session,
+  session
 } from 'electron'
 import { join } from 'path'
 import {
@@ -290,14 +291,20 @@ export class TabManager {
     const isNewTab =
       !targetUrl || targetUrl === 'about:blank' || /^zhi:\/\/newtab\/?$/i.test(targetUrl)
     const isIncognito = Boolean(options?.incognito && options.session)
+    const isFileUrl = Boolean(targetUrl && targetUrl.startsWith('file://'))
 
     const view = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true,
-        ...(options?.session ? { session: options.session } : {})
+        sandbox: !isFileUrl,
+        webSecurity: !isFileUrl,
+        ...(options?.session
+          ? { session: options.session }
+          : isFileUrl
+            ? { session: session.fromPartition('persist:local-files') }
+            : {})
       }
     })
     applyViewBackgroundColor(view)
@@ -1247,13 +1254,45 @@ button.primary:hover{background:#4d6faa}
   }
 
   private setupWindowOpenHandler(tab: ManagedTab): void {
-    tab.view.webContents.setWindowOpenHandler(({ url }) => {
-      if (url && url !== 'about:blank') {
-        this.createTab(
-          url,
-          tab.isIncognito ? { session: tab.view.webContents.session, incognito: true } : undefined
-        )
+    tab.view.webContents.setWindowOpenHandler(({ url, disposition }) => {
+      if (!url || url === 'about:blank') {
+        return { action: 'deny' }
       }
+
+      let isOAuthPopup = false
+      try {
+        const urlObj = new URL(url)
+        isOAuthPopup =
+          /oauth|auth|login|signin|authorize|callback|connect\/authorize/i.test(url) ||
+          urlObj.hostname === 'localhost' ||
+          urlObj.hostname === '127.0.0.1' ||
+          disposition === 'new-window'
+      } catch {
+        // URL parse failed, treat as normal link
+      }
+
+      if (isOAuthPopup) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 800,
+            height: 600,
+            autoHideMenuBar: true,
+            webPreferences: {
+              preload: join(__dirname, '../preload/index.js'),
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: true,
+              session: tab.view.webContents.session
+            }
+          }
+        }
+      }
+
+      this.createTab(
+        url,
+        tab.isIncognito ? { session: tab.view.webContents.session, incognito: true } : undefined
+      )
       return { action: 'deny' }
     })
   }
