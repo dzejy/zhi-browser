@@ -1,5 +1,6 @@
 import { app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, clipboard, session, screen, dialog } from 'electron'
-import { join } from 'path'
+import { appendFileSync, existsSync, statSync } from 'node:fs'
+import { join, resolve } from 'path'
 import { pathToFileURL } from 'node:url'
 import { is } from '@electron-toolkit/utils'
 import { TabManager } from './tabs'
@@ -112,7 +113,7 @@ import {
   registerCommandPaletteHandlers,
   toggleCommandPalette
 } from './command-palette'
-import { registerHibernationHandlers, initHibernation, hibernateOthers } from './hibernation'
+import { registerHibernationHandlers, initHibernation, hibernateOthers, cleanupHibernationManager } from './hibernation'
 import { initQuickNote, registerQuickNoteHandlers, toggleQuickNote } from './quick-note'
 import { registerPasswordHandlers as registerPasswordAutoHandlers } from './password'
 import { getExtensionSystem } from './extensions'
@@ -126,21 +127,144 @@ let panelVisible = false
 let panelCloseTimeout: ReturnType<typeof setTimeout> | null = null
 let currentPanelType: SidePanelType = 'bookmarks'
 let panelReady = false
+let ensurePanelLoaded: (() => void) | null = null
 let quickSearchMenuWindow: BrowserWindow | null = null
 let themeMenuWindow: BrowserWindow | null = null
 let pendingStartupUrl: string | null = null
+let appIsQuitting = false
 
-function extractUrlFromArgs(args: string[]): string | null {
-  for (let i = args.length - 1; i >= 0; i--) {
-    const arg = args[i]
-    if (/^https?:\/\//i.test(arg) || /^file:\/\//i.test(arg)) {
+const STARTUP_FILE_EXTENSIONS = new Set(['.html', '.htm', '.xhtml', '.svg'])
+
+function getStartupIntentLogPath(): string {
+  try {
+    return join(app.getPath('userData'), 'startup-intent.log')
+  } catch {
+    return join(process.cwd(), 'startup-intent.log')
+  }
+}
+
+function logStartupIntent(message: string, payload?: unknown): void {
+  const line =
+    `${new Date().toISOString()} ${message}` +
+    (typeof payload === 'undefined' ? '' : ` ${JSON.stringify(payload)}`)
+  try {
+    appendFileSync(getStartupIntentLogPath(), line + '\n', { encoding: 'utf8' })
+  } catch {
+    /* ignore logging failures */
+  }
+  if (typeof payload === 'undefined') console.info(message)
+  else console.info(message, payload)
+}
+
+function isMainWindowAlive(): boolean {
+  try {
+    return typeof win !== 'undefined' && Boolean(win) && !win.isDestroyed()
+  } catch {
+    return false
+  }
+}
+
+function focusMainWindow(): boolean {
+  if (!isMainWindowAlive()) return false
+  try {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function ensureMainWindow(): boolean {
+  if (appIsQuitting) return false
+  if (isMainWindowAlive()) return true
+
+  sessionSaved = false
+  try {
+    createWindow()
+    return true
+  } catch (err) {
+    console.error('[main-window] failed to recreate window', err)
+    return false
+  }
+}
+
+function extractUrlFromArgs(args: string[], workingDirectory?: string): string | null {
+  const normalizeCandidate = (value: string): string => value.trim().replace(/^"|"$/g, '')
+  const isSchemeUrl = (value: string): boolean => /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value)
+  const isSwitch = (value: string): boolean => /^--?\w+/.test(value)
+  const isProjectEntry = (value: string): boolean => value === '.' || value === './' || value === '.\\'
+  const hasAllowedFileExtension = (value: string): boolean => {
+    const normalized = value.replace(/\\/g, '/').toLowerCase()
+    const clean = normalized.split(/[?#]/, 1)[0]
+    for (const ext of STARTUP_FILE_EXTENSIONS) {
+      if (clean.endsWith(ext)) return true
+    }
+    return false
+  }
+  const toFileUrlIfLocalFile = (value: string): string | null => {
+    if (!value || isSwitch(value) || isProjectEntry(value) || !hasAllowedFileExtension(value)) {
+      return null
+    }
+    const candidates = new Set<string>()
+    if (workingDirectory) candidates.add(resolve(workingDirectory, value))
+    candidates.add(resolve(value))
+    candidates.add(value)
+    for (const resolved of candidates) {
+      if (!existsSync(resolved)) continue
+      try {
+        if (!statSync(resolved).isFile()) continue
+        return pathToFileURL(resolved).toString()
+      } catch {
+        continue
+      }
+    }
+    return null
+  }
+  const extractEmbeddedPath = (value: string): string | null => {
+    const match = value.match(/[a-zA-Z]:\\[^:*?"<>|\r\n]+\.(html?|xhtml|svg)/i)
+    if (!match) return null
+    return toFileUrlIfLocalFile(match[0])
+  }
+
+  logStartupIntent('[startup-intent] parse args begin', { args, workingDirectory })
+  const userArgs = args.slice(1)
+  for (let i = userArgs.length - 1; i >= 0; i--) {
+    const rawArg = userArgs[i]
+    const arg = normalizeCandidate(rawArg)
+    if (!arg || isSwitch(arg) || isProjectEntry(arg)) continue
+
+    if (/^https?:\/\//i.test(arg) || /^file:\/\//i.test(arg) || /^zhi:\/\//i.test(arg)) {
+      logStartupIntent('[startup-intent] matched url argument', { raw: rawArg, normalized: arg })
       return arg
     }
-    const unquoted = arg.replace(/^"|"$/g, '')
-    if (/^https?:\/\//i.test(unquoted) || /^file:\/\//i.test(unquoted)) {
-      return unquoted
+
+    if (isSchemeUrl(arg)) {
+      logStartupIntent('[startup-intent] matched generic scheme argument', { raw: rawArg, normalized: arg })
+      return arg
+    }
+
+    const localFileUrl = toFileUrlIfLocalFile(arg)
+    if (localFileUrl) {
+      logStartupIntent('[startup-intent] matched local file argument', {
+        raw: rawArg,
+        normalized: arg,
+        resolved: localFileUrl
+      })
+      return localFileUrl
+    }
+
+    const embeddedFileUrl = extractEmbeddedPath(arg)
+    if (embeddedFileUrl) {
+      logStartupIntent('[startup-intent] matched embedded local file argument', {
+        raw: rawArg,
+        normalized: arg,
+        resolved: embeddedFileUrl
+      })
+      return embeddedFileUrl
     }
   }
+  logStartupIntent('[startup-intent] no explicit startup target found')
   return null
 }
 
@@ -149,20 +273,17 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on('second-instance', (_event, commandLine) => {
-    const url = extractUrlFromArgs(commandLine)
+  app.on('second-instance', (_event, commandLine, workingDirectory) => {
+    const url = extractUrlFromArgs(commandLine, workingDirectory)
+    logStartupIntent('[startup-intent] second-instance', { commandLine, workingDirectory, url })
+    if (!ensureMainWindow()) {
+      pendingStartupUrl = url
+      return
+    }
+    focusMainWindow()
     if (url) {
-      if (win) {
-        if (win.isMinimized()) win.restore()
-        win.focus()
-      }
       if (tabManager) {
         tabManager.createTab(url)
-      }
-    } else {
-      if (win) {
-        if (win.isMinimized()) win.restore()
-        win.focus()
       }
     }
   })
@@ -218,7 +339,25 @@ const SIDE_PANEL_TYPES = new Set<SidePanelType>([
   'sniffer'
 ])
 
+function isUiViewAlive(): boolean {
+  try {
+    return typeof uiView !== 'undefined' && Boolean(uiView) && !uiView.webContents.isDestroyed()
+  } catch {
+    return false
+  }
+}
+
+function isPanelViewAlive(): boolean {
+  try {
+    const view = panelView
+    return view !== null && !view.webContents.isDestroyed()
+  } catch {
+    return false
+  }
+}
+
 function sendToUi(channel: string, ...args: unknown[]): void {
+  if (!isUiViewAlive()) return
   try {
     uiView.webContents.send(channel, ...args)
   } catch {
@@ -227,9 +366,10 @@ function sendToUi(channel: string, ...args: unknown[]): void {
 }
 
 function sendToPanel(channel: string, ...args: unknown[]): void {
-  if (!panelView) return
+  if (!isPanelViewAlive()) return
 
   const send = (): void => {
+    if (!isPanelViewAlive()) return
     try {
       panelView?.webContents.send(channel, ...args)
     } catch {
@@ -240,16 +380,30 @@ function sendToPanel(channel: string, ...args: unknown[]): void {
   if (panelReady) {
     send()
   } else {
-    panelView.webContents.once('did-finish-load', send)
+    panelView?.webContents.once('did-finish-load', send)
   }
 }
 
 function isTrustedRendererShell(sender: Electron.WebContents): boolean {
-  const url = sender.getURL()
+  let url = ''
+  try {
+    if (sender.isDestroyed()) return false
+    url = sender.getURL()
+  } catch {
+    return false
+  }
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     return url.startsWith(process.env['ELECTRON_RENDERER_URL'])
   }
   return url.startsWith('file://') && url.replace(/\\/g, '/').includes('/renderer/index.html')
+}
+
+function validateSender(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return (
+    (isUiViewAlive() && event.sender === uiView.webContents) ||
+    (isPanelViewAlive() && event.sender === panelView?.webContents) ||
+    isTrustedRendererShell(event.sender)
+  )
 }
 
 function broadcastBookmarkBarVisibility(visible: boolean): void {
@@ -388,7 +542,12 @@ function getVerticalTabWidth(): number {
 }
 
 function isFullscreenChromeMode(): boolean {
-  return win.isFullScreen() || currentChromeHeight === 0
+  if (!isMainWindowAlive()) return currentChromeHeight === 0
+  try {
+    return win.isFullScreen() || currentChromeHeight === 0
+  } catch {
+    return currentChromeHeight === 0
+  }
 }
 
 function applyBrowserLayout(layout: BrowserLayout): void {
@@ -520,7 +679,8 @@ function createWindow(): void {
   })
   registerPasswordHandlers()
   registerWorkspaceHandlers({
-    onLayoutChanged: () => updateLayout()
+    onLayoutChanged: () => updateLayout(),
+    validateSender
   })
   initShortcuts()
   registerShortcutHandlers()
@@ -651,7 +811,12 @@ function createWindow(): void {
     sendToUi('browser:toast', { id: 'zoom', text: '缩放：100%', duration: 2000 })
   })
   registerAction('page:fullscreen', () => {
-    win.setFullScreen(!win.isFullScreen())
+    if (!isMainWindowAlive()) return
+    try {
+      win.setFullScreen(!win.isFullScreen())
+    } catch {
+      /* window may have been destroyed while handling the shortcut */
+    }
   })
   registerAction('page:print', () => {
     const wc = tabManager.getActiveWebContents()
@@ -749,7 +914,7 @@ function createWindow(): void {
       leftIconBar: fullscreen ? 0 : getWebPanelRailWidth(),
       verticalTab: fullscreen ? 0 : getVerticalTabWidth()
     }
-  }, () => updateLayout())
+  }, () => updateLayout(), validateSender)
 
   registerMouseGestureHandlers((action) => {
     executeGestureAction(
@@ -767,7 +932,8 @@ function createWindow(): void {
     () => win,
     getBrowserContentBounds,
     () => updateLayout(),
-    (url) => tabManager.createTab(url)
+    (url) => tabManager.createTab(url),
+    validateSender
   )
   tabManager.setPageBoundsProvider((bounds) => {
     if (isFullscreenChromeMode()) return bounds
@@ -805,13 +971,29 @@ function createWindow(): void {
 
   startShortcuts()
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    panelView.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=true`)
-  } else {
-    panelView.webContents.loadFile(join(__dirname, '../renderer/index.html'), {
-      query: { panel: 'true' }
-    })
+  // Defer panel renderer startup until the main UI has finished loading. This
+  // avoids two renderer processes spinning up simultaneously and competing for
+  // CPU/IPC during the user-visible first paint. A backstop timer + lazy
+  // trigger in showPanelView ensure the panel always loads in time for use.
+  let panelLoadTriggered = false
+  const triggerPanelLoad = (): void => {
+    if (panelLoadTriggered) return
+    panelLoadTriggered = true
+    if (!panelView || panelView.webContents.isDestroyed()) return
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      panelView.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=true`)
+    } else {
+      panelView.webContents.loadFile(join(__dirname, '../renderer/index.html'), {
+        query: { panel: 'true' }
+      })
+    }
   }
+  ensurePanelLoaded = triggerPanelLoad
+  uiView.webContents.once('did-finish-load', () => {
+    setImmediate(triggerPanelLoad)
+  })
+  // Backstop in case the UI view never finishes loading (rare).
+  setTimeout(triggerPanelLoad, 4000)
 
   // Handle keyboard shortcuts from uiView via the central shortcut registry.
   uiView.webContents.on('before-input-event', (event, input) => {
@@ -833,63 +1015,73 @@ function createWindow(): void {
   })
 
   win.on('close', () => {
-    const isMaximized = win.isMaximized()
-    if (!isMaximized) {
-      const [width, height] = win.getSize()
-      const [x, y] = win.getPosition()
-      updatePreferences({
-        windowBounds: { x, y, width, height, isMaximized: false }
-      })
-    } else {
-      updatePreferences({
-        windowBounds: { ...getPreferences().windowBounds, isMaximized: true }
-      })
+    try {
+      const isMaximized = win.isMaximized()
+      if (!isMaximized) {
+        const [width, height] = win.getSize()
+        const [x, y] = win.getPosition()
+        updatePreferences({
+          windowBounds: { x, y, width, height, isMaximized: false }
+        })
+      } else {
+        updatePreferences({
+          windowBounds: { ...getPreferences().windowBounds, isMaximized: true }
+        })
+      }
+    } catch {
+      /* window may already be torn down */
     }
     saveSession()
     tabManager.destroyAll()
   })
+  win.on('closed', () => {
+    panelView = null
+    panelVisible = false
+    panelReady = false
+    ensurePanelLoaded = null
+  })
 }
 
 function updateLayout(): void {
+  if (!isMainWindowAlive() || typeof tabManager === 'undefined') return
   if (isFullscreenChromeMode() && panelVisible) {
     hidePanelView(false)
   }
-  tabManager.updateLayout()
-  relayoutSplitView(getBrowserContentBounds)
-  if (panelVisible && panelView) {
-    const { width, height } = win.getContentBounds()
-    panelView.setBounds({
-      x: width - PANEL_WIDTH - PANEL_RIGHT_MARGIN,
-      y: currentChromeHeight,
-      width: PANEL_WIDTH,
-      height: Math.max(0, height - currentChromeHeight)
-    })
+  try {
+    tabManager.updateLayout()
+    relayoutSplitView(getBrowserContentBounds)
+    if (panelVisible && isPanelViewAlive()) {
+      const { width, height } = win.getContentBounds()
+      panelView?.setBounds({
+        x: width - PANEL_WIDTH - PANEL_RIGHT_MARGIN,
+        y: currentChromeHeight,
+        width: PANEL_WIDTH,
+        height: Math.max(0, height - currentChromeHeight)
+      })
+    }
+  } catch {
+    /* ignore layout events racing with window teardown */
   }
 }
 
 function sendPanelType(): void {
-  if (!panelReady || !panelView) return
-  panelView.webContents.send('browser:panel-type', currentPanelType)
+  if (!panelReady || !isPanelViewAlive()) return
+  sendToPanel('browser:panel-type', currentPanelType)
 }
 
 function pushBrowserState(): void {
+  if (typeof tabManager === 'undefined') return
   const state = tabManager.getBrowserState()
-  try {
-    uiView.webContents.send('browser:state', state)
-  } catch {
-    // uiView may not be ready yet
-  }
-  if (panelReady && panelView && !panelView.webContents.isDestroyed()) {
-    try {
-      panelView.webContents.send('browser:state', state)
-    } catch {
-      // panel view may not be ready yet
-    }
-  }
+  sendToUi('browser:state', state)
+  if (panelReady) sendToPanel('browser:state', state)
 
   const activeTab = tabManager.getActiveTab()
-  if (activeTab) {
-    win.title = activeTab.title ? `${activeTab.title} - Zhi Browser` : 'Zhi Browser'
+  if (activeTab && isMainWindowAlive()) {
+    try {
+      win.title = activeTab.title ? `${activeTab.title} - Zhi Browser` : 'Zhi Browser'
+    } catch {
+      /* window may be gone */
+    }
   }
 }
 
@@ -902,14 +1094,16 @@ function saveSession(): void {
 }
 
 function restoreSession(): void {
-  const isExternalInvocation = pendingStartupUrl !== null
+  const explicitStartupTarget = pendingStartupUrl
+  pendingStartupUrl = null
   const prefs = getPreferences()
 
+  if (explicitStartupTarget) {
+    tabManager.createTab(explicitStartupTarget)
+    return
+  }
+
   if (prefs.startup.behavior === 'homepage') {
-    if (isExternalInvocation) {
-      tabManager.createTab('zhi://newtab')
-      return
-    }
     const homepageUrl = prefs.startup.homepageUrl.trim()
     if (!homepageUrl || /^zhi:\/\/newtab\/?$/i.test(homepageUrl)) {
       tabManager.createTab('zhi://newtab')
@@ -923,10 +1117,6 @@ function restoreSession(): void {
   }
 
   if (prefs.startup.behavior === 'specificPages') {
-    if (isExternalInvocation) {
-      tabManager.createTab('zhi://newtab')
-      return
-    }
     const pages = prefs.startup.specificPages
       .map((page) => normalizeUrl(page) || page)
       .filter((page) => isValidNavigableUrl(page))
@@ -943,13 +1133,19 @@ function restoreSession(): void {
   if (prefs.startup.behavior === 'restoreSession') {
     const saved = readJSON<PersistedSession>('session.json', { tabs: [], activeIndex: 0 })
     if (saved.tabs.length > 0) {
+      // Restore every saved tab in deferred-load mode so we don't spawn N
+      // renderer processes simultaneously at startup. The active tab's load is
+      // triggered immediately by the switchTab call below; the rest load when
+      // the user first switches to them.
       for (let i = 0; i < saved.tabs.length; i++) {
         const tabData = saved.tabs[i]
         const url = tabData.url && tabData.url !== 'about:blank' ? tabData.url : undefined
         tabManager.createTab(url, {
           background: true,
           insertMode: 'atEnd',
-          pinned: Boolean(tabData.isPinned)
+          pinned: Boolean(tabData.isPinned),
+          deferLoad: true,
+          initialTitle: tabData.title
         })
       }
 
@@ -962,20 +1158,28 @@ function restoreSession(): void {
     }
   }
 
-  if (isExternalInvocation) {
-    tabManager.createTab('zhi://newtab')
-  } else {
-    tabManager.createTab(prefs.startup.newTabUrl || undefined)
-  }
+  tabManager.createTab(prefs.startup.newTabUrl || undefined)
 }
 
 function showPanelView(type: SidePanelType): void {
-  if (!panelView) return
+  if (!isMainWindowAlive() || !isPanelViewAlive()) return
+  const view = panelView
+  if (!view) return
 
-  const { width, height } = win.getContentBounds()
+  // Make sure the panel renderer has been kicked off (it may have been deferred
+  // during startup). Calling this is idempotent.
+  ensurePanelLoaded?.()
+
+  let width = 0
+  let height = 0
+  try {
+    ;({ width, height } = win.getContentBounds())
+  } catch {
+    return
+  }
   currentPanelType = type
 
-  panelView.setBounds({
+  view.setBounds({
     x: width - PANEL_WIDTH - PANEL_RIGHT_MARGIN,
     y: currentChromeHeight,
     width: PANEL_WIDTH,
@@ -986,31 +1190,48 @@ function showPanelView(type: SidePanelType): void {
 
   if (panelVisible) {
     try {
-      win.contentView.removeChildView(panelView)
+      win.contentView.removeChildView(view)
     } catch {
       // may not be attached
     }
   }
-  win.contentView.addChildView(panelView)
+  try {
+    win.contentView.addChildView(view)
+  } catch {
+    return
+  }
   panelVisible = true
-  panelView.webContents.focus()
+  try {
+    view.webContents.focus()
+  } catch {
+    /* panel may have closed */
+  }
 }
 
 function hidePanelView(notifyRenderer = true): void {
-  if (!panelView || !panelVisible) return
+  if (!isMainWindowAlive() || !isPanelViewAlive() || !panelVisible) return
   try {
-    win.contentView.removeChildView(panelView)
+    win.contentView.removeChildView(panelView!)
   } catch {
     // may not be attached
   }
   panelVisible = false
   if (notifyRenderer) {
-    uiView.webContents.send('browser:panel-closed')
+    sendToUi('browser:panel-closed')
   }
 }
 
 function getRawContentBounds(): { x: number; y: number; width: number; height: number } {
-  const { width, height } = win.getContentBounds()
+  let width = 0
+  let height = 0
+  try {
+    if (isMainWindowAlive()) {
+      ;({ width, height } = win.getContentBounds())
+    }
+  } catch {
+    width = 0
+    height = 0
+  }
   return {
     x: 0,
     y: currentChromeHeight,
@@ -1039,15 +1260,7 @@ function setupIPC(): void {
   const validateUiSender = (
     event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent
   ): boolean => {
-    return event.sender === uiView.webContents
-  }
-
-  const validateSender = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean => {
-    return (
-      event.sender === uiView.webContents ||
-      event.sender === panelView?.webContents ||
-      isTrustedRendererShell(event.sender)
-    )
+    return isUiViewAlive() && event.sender === uiView.webContents
   }
 
   const isSidePanelType = (type: unknown): type is SidePanelType => {
@@ -1085,7 +1298,7 @@ function setupIPC(): void {
   ipcMain.on('ui:set-layout', (event, layout: BrowserLayout) => {
     if (!validateUiSender(event)) return
     const normalized = normalizeLayout(layout)
-    if (!win.isFullScreen() && normalized.pageTop > 0) {
+    if (!isFullscreenChromeMode() && normalized.pageTop > 0) {
       lastWindowedLayout = normalized
     }
     applyBrowserLayout(normalized)
@@ -1123,7 +1336,7 @@ function setupIPC(): void {
   })
 
   ipcMain.handle('menu:popup', (event) => {
-    if (!validateUiSender(event)) return
+    if (!validateUiSender(event) || !isMainWindowAlive()) return
     popupMenu({ window: win })
   })
 
@@ -1134,16 +1347,24 @@ function setupIPC(): void {
   })
 
   ipcMain.handle('window:toggle-fullscreen', (event) => {
-    if (!validateUiSender(event)) return false
-    const nextState = !win.isFullScreen()
-    win.setFullScreen(nextState)
-    handleFullscreenChanged(nextState)
-    return nextState
+    if (!validateUiSender(event) || !isMainWindowAlive()) return false
+    try {
+      const nextState = !win.isFullScreen()
+      win.setFullScreen(nextState)
+      handleFullscreenChanged(nextState)
+      return nextState
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('window:is-fullscreen', (event) => {
-    if (!validateUiSender(event)) return false
-    return win.isFullScreen()
+    if (!validateUiSender(event) || !isMainWindowAlive()) return false
+    try {
+      return win.isFullScreen()
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('default-browser:set', (event) => {
@@ -1914,8 +2135,13 @@ window.addEventListener('mouseleave',()=>{});
 
 // ===== App lifecycle =====
 
-app.whenReady().then(async () => {
-  loadCompletedDownloads()
+app.whenReady().then(() => {
+  // Critical-path: register IPC handlers and download infrastructure synchronously
+  // so the renderer can query state immediately on mount. These calls are cheap
+  // (just hooking up listeners) and don't actually do work.
+  pendingStartupUrl = extractUrlFromArgs(process.argv, process.cwd())
+  logStartupIntent('[startup-intent] process argv', { argv: process.argv, cwd: process.cwd() })
+  logStartupIntent('[startup-intent] initial resolved target', { url: pendingStartupUrl })
   registerDownloaderHandlers()
   registerBuiltinDownloaderHandlers(
     () => getPreferences(),
@@ -1945,15 +2171,35 @@ app.whenReady().then(async () => {
     }
   })
   setupIPC()
-  pendingStartupUrl = extractUrlFromArgs(process.argv)
+
+  // Show the window as early as possible.
   createWindow()
-  if (pendingStartupUrl) {
-    tabManager.createTab(pendingStartupUrl)
-    pendingStartupUrl = null
+
+  // Heavy non-critical work runs after the main UI renderer has had a chance
+  // to start, so it does not contend with first-paint for CPU/IPC bandwidth.
+  let deferredStartupRan = false
+  const runDeferredStartup = (): void => {
+    if (deferredStartupRan) return
+    deferredStartupRan = true
+    try {
+      loadCompletedDownloads()
+      pushBrowserState()
+    } catch (err) {
+      console.warn('[startup] loadCompletedDownloads failed', err)
+    }
+    getExtensionSystem()
+      .initialize()
+      .catch((err) => console.warn('[startup] extension init failed', err))
+    proxyAutoStart(getPreferences).catch((err) =>
+      console.warn('[startup] proxy auto-start failed', err)
+    )
   }
-  const extensionSystem = getExtensionSystem()
-  await extensionSystem.initialize()
-  await proxyAutoStart(getPreferences)
+  uiView.webContents.once('did-finish-load', () => {
+    setImmediate(runDeferredStartup)
+  })
+  // Backstop: if did-finish-load somehow does not fire (load aborted, etc.),
+  // ensure deferred work still runs within a few seconds.
+  setTimeout(runDeferredStartup, 5000)
 })
 
 app.on('window-all-closed', () => {
@@ -1961,5 +2207,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  appIsQuitting = true
   saveSession()
+  cleanupHibernationManager()
+  import('./proxy/core').then(m => m.stopCore()).catch(() => {})
 })

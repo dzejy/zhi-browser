@@ -1,5 +1,6 @@
-import { ipcMain, WebContentsView, BaseWindow } from 'electron'
+import { ipcMain, WebContentsView, BaseWindow, IpcMainInvokeEvent } from 'electron'
 import { join } from 'path'
+import { classifyInput } from './navigation'
 import { setupScriptInjection } from './userscript/injector'
 import { setupInstallInterceptor } from './userscript/install-interceptor'
 
@@ -15,11 +16,22 @@ export function registerSplitViewHandlers(
   getMainWindow: () => BaseWindow | null,
   getContentBounds: () => { x: number; y: number; width: number; height: number },
   onLayoutChange: () => void,
-  openInTab: (url: string) => void
+  openInTab: (url: string) => void,
+  validateSender?: (event: IpcMainInvokeEvent) => boolean
 ): void {
-  ipcMain.handle('splitView:open', async (_event, url: string) => {
+  const isAllowed = (event: IpcMainInvokeEvent): boolean => validateSender?.(event) ?? true
+  const normalizeTarget = (url: string): string | null => {
+    const value = typeof url === 'string' ? url.trim() : ''
+    if (!value) return null
+    return classifyInput(value).value
+  }
+
+  ipcMain.handle('splitView:open', async (event, url: string) => {
+    if (!isAllowed(event)) return { success: false }
     const mainWindow = getMainWindow()
     if (!mainWindow) return { success: false }
+    const targetUrl = normalizeTarget(url)
+    if (!targetUrl) return { success: false }
 
     try {
       if (!rightView) {
@@ -36,7 +48,7 @@ export function registerSplitViewHandlers(
         mainWindow.contentView.addChildView(rightView)
       }
 
-      await rightView.webContents.loadURL(url)
+      await rightView.webContents.loadURL(targetUrl)
       splitMode = true
       layoutSplitView(getContentBounds)
       onLayoutChange()
@@ -47,13 +59,15 @@ export function registerSplitViewHandlers(
     }
   })
 
-  ipcMain.handle('splitView:close', async () => {
+  ipcMain.handle('splitView:close', async (event) => {
+    if (!isAllowed(event)) return false
     closeSplitView(getMainWindow)
     onLayoutChange()
     return true
   })
 
-  ipcMain.handle('splitView:getState', async (): Promise<SplitViewState> => {
+  ipcMain.handle('splitView:getState', async (event): Promise<SplitViewState> => {
+    if (!isAllowed(event)) return { active: false, rightUrl: null }
     return {
       active: splitMode,
       rightUrl:
@@ -61,15 +75,19 @@ export function registerSplitViewHandlers(
     }
   })
 
-  ipcMain.handle('splitView:navigate', async (_event, url: string) => {
+  ipcMain.handle('splitView:navigate', async (event, url: string) => {
+    if (!isAllowed(event)) return false
+    const targetUrl = normalizeTarget(url)
+    if (!targetUrl) return false
     if (rightView && !rightView.webContents.isDestroyed()) {
-      await rightView.webContents.loadURL(url)
+      await rightView.webContents.loadURL(targetUrl)
       return true
     }
     return false
   })
 
-  ipcMain.handle('splitView:goBack', async () => {
+  ipcMain.handle('splitView:goBack', async (event) => {
+    if (!isAllowed(event)) return false
     if (rightView?.webContents.navigationHistory.canGoBack()) {
       rightView.webContents.navigationHistory.goBack()
       return true
@@ -77,7 +95,8 @@ export function registerSplitViewHandlers(
     return false
   })
 
-  ipcMain.handle('splitView:goForward', async () => {
+  ipcMain.handle('splitView:goForward', async (event) => {
+    if (!isAllowed(event)) return false
     if (rightView?.webContents.navigationHistory.canGoForward()) {
       rightView.webContents.navigationHistory.goForward()
       return true
@@ -85,16 +104,28 @@ export function registerSplitViewHandlers(
     return false
   })
 
-  ipcMain.handle('splitView:reload', async () => {
+  ipcMain.handle('splitView:reload', async (event) => {
+    if (!isAllowed(event)) return false
     if (rightView && !rightView.webContents.isDestroyed()) {
       rightView.webContents.reload()
     }
     return true
   })
 
-  ipcMain.handle('splitView:swap', async () => {
+  ipcMain.handle('splitView:swap', async (event, leftUrl?: string) => {
+    if (!isAllowed(event)) return false
     if (!rightView || !splitMode || rightView.webContents.isDestroyed()) return false
-    return rightView.webContents.getURL()
+    const rightUrl = rightView.webContents.getURL()
+    if (leftUrl) {
+      const targetUrl = normalizeTarget(leftUrl)
+      if (targetUrl) rightView.webContents.loadURL(targetUrl)
+    }
+    return rightUrl
+  })
+
+  ipcMain.handle('splitView:onSwap', (event) => {
+    if (!isAllowed(event)) return false
+    return true
   })
 }
 

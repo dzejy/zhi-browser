@@ -1,0 +1,3232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zhi Browser · 个人 AI 浏览器</title>
+<style>
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./src/renderer/src/assets/fonts/HarmonyOS_Sans_SC_Regular.woff2') format('woff2');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('./src/renderer/src/assets/fonts/HarmonyOS_Sans_SC_Bold.woff2') format('woff2');
+  font-weight: 700 900;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #0a0a0f;
+  --bg-primary: #10101a;
+  --bg-card: rgba(20, 15, 25, 0.85);
+  --bg-card-hover: rgba(30, 20, 40, 0.95);
+  --glass: rgba(255,255,255,0.03);
+  --glass-border: rgba(220, 50, 70, 0.25);
+  --text-primary: #f0f0f5;
+  --text-secondary: #b0b0c0;
+  --text-dim: #606070;
+  --accent: #ff3a5a;
+  --accent-secondary: #cc2a4a;
+  --accent-tertiary: #881a3a;
+  --gradient-accent: linear-gradient(135deg, #ff4a6a 0%, #cc2a4a 50%, #aa1a3a 100%);
+  --shadow-glow: 0 0 40px rgba(255,58,90,0.15), 0 0 80px rgba(255,58,90,0.08);
+  --font-main: 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Sarasa Mono SC', 'Consolas', monospace;
+  --font-display: 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
+
+  --grad-basics: radial-gradient(ellipse at 20% 30%, rgba(255,58,90,0.18) 0%, rgba(180,30,60,0.08) 30%, transparent 60%);
+  --grad-ai: radial-gradient(ellipse at 80% 40%, rgba(255,100,140,0.18) 0%, rgba(200,50,90,0.08) 30%, transparent 60%);
+  --grad-tools: radial-gradient(ellipse at 30% 70%, rgba(255,80,80,0.16) 0%, rgba(180,40,40,0.08) 30%, transparent 60%);
+  --grad-resource: radial-gradient(ellipse at 70% 30%, rgba(255,60,110,0.16) 0%, rgba(170,30,80,0.08) 30%, transparent 60%);
+  --grad-data: radial-gradient(ellipse at 50% 60%, rgba(220,50,90,0.18) 0%, rgba(140,30,70,0.08) 30%, transparent 60%);
+}
+
+html { scroll-behavior: smooth; }
+html, body { scroll-padding-top: 90px; }
+body {
+  font-family: var(--font-main);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  cursor: default;
+}
+a { color: var(--accent); text-decoration: none; transition: all 0.3s; }
+a:hover { text-shadow: 0 0 10px rgba(255,58,90,0.5); }
+
+[id] { scroll-margin-top: 90px; }
+
+/* ===== 鼠标彩虹轨迹 ===== */
+.mouse-trail {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 99999;
+  mix-blend-mode: screen;
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+#particles-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bg-gradient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 15% 10%, rgba(255,58,90,0.12) 0%, transparent 40%),
+    radial-gradient(ellipse at 85% 25%, rgba(200,40,80,0.10) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 50%, rgba(170,30,70,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 80%, rgba(255,80,110,0.10) 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 90%, rgba(140,20,60,0.10) 0%, transparent 45%),
+    linear-gradient(180deg, #0a0a12 0%, #12101a 25%, #0e0a16 50%, #14101c 75%, #0a0a12 100%);
+}
+
+.region-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.9;
+}
+.region-bg.basics    { background: var(--grad-basics); }
+.region-bg.ai        { background: var(--grad-ai); }
+.region-bg.tools     { background: var(--grad-tools); }
+.region-bg.resource  { background: var(--grad-resource); }
+.region-bg.data      { background: var(--grad-data); }
+
+.bg-glow {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.bg-glow .orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.22;
+  animation: orbFloat 20s ease-in-out infinite;
+}
+.bg-glow .orb1 { width: 600px; height: 600px; background: rgba(255,58,90,0.25); top: -200px; left: -100px; animation-delay: 0s; }
+.bg-glow .orb2 { width: 500px; height: 500px; background: rgba(204,42,74,0.18); top: 40%; right: -150px; animation-delay: -7s; }
+.bg-glow .orb3 { width: 400px; height: 400px; background: rgba(136,26,58,0.12); bottom: -100px; left: 30%; animation-delay: -14s; }
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(60px, -40px) scale(1.1); }
+  50% { transform: translate(-30px, 50px) scale(0.95); }
+  75% { transform: translate(40px, 20px) scale(1.05); }
+}
+
+/* ===== 导航栏 ===== */
+.navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  padding: 14px 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(30px);
+  background: rgba(10, 10, 20, 0.85);
+  border-bottom: 1px solid var(--glass-border);
+  transition: all 0.3s ease;
+}
+.navbar.scrolled {
+  padding: 10px 60px;
+  background: rgba(10, 10, 20, 0.95);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.logo-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1a1a2a, #10101a);
+  border: 2px solid var(--glass-border);
+  box-shadow: 0 0 30px rgba(255,58,90,0.12);
+  animation: glowPulse 3s ease-in-out infinite;
+}
+.logo-icon img { width: 100%; height: 100%; object-fit: cover; }
+.logo-placeholder {
+  font-size: 22px;
+  font-weight: 900;
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(255,58,90,0.12); }
+  50% { box-shadow: 0 0 40px rgba(255,58,90,0.25); }
+}
+.logo span {
+  background: linear-gradient(90deg, var(--accent), #ff6a8a, var(--accent));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientShift 4s ease infinite;
+}
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.nav-links {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.nav-links a {
+  position: relative;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 12px 20px;
+  border-radius: 12px;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  letter-spacing: 0.5px;
+}
+.nav-links a:hover {
+  color: #ff8a9a;
+  background: rgba(255,58,90,0.12);
+  text-shadow: 0 0 20px rgba(255,138,154,0.6);
+  transform: translateY(-2px);
+}
+.nav-links a.active {
+  color: var(--accent);
+  background: linear-gradient(135deg, rgba(255,58,90,0.18), rgba(255,58,90,0.08));
+  text-shadow: 0 0 25px rgba(255,58,90,0.7);
+}
+.nav-links a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 20px;
+  right: 20px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), #ff6a8a, var(--accent), transparent);
+  border-radius: 3px;
+  box-shadow: 0 0 15px rgba(255,58,90,0.5);
+  animation: navLinePulse 2s ease-in-out infinite;
+}
+@keyframes navLinePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.nav-cta {
+  padding: 12px 28px;
+  background: var(--gradient-accent);
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(255,58,90,0.35);
+  margin-left: 16px;
+}
+.nav-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(255,58,90,0.5); }
+
+/* =========================================================
+   ===== 左侧导航：动态弧形导引条 + 流动 hover + 实时追踪 =====
+   ========================================================= */
+.toc {
+  position: fixed;
+  left: 24px;
+  top: 100px;
+  z-index: 900;
+  width: 290px;
+  background: transparent;
+  padding: 0;
+  max-height: calc(100vh - 130px);
+  overflow: hidden;
+}
+.toc-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 100%;
+}
+.toc h3 {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--accent);
+  margin-bottom: 14px;
+  padding: 0 0 10px 14px;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  flex-shrink: 0;
+  text-shadow: 0 0 20px rgba(255,58,90,0.5);
+  position: relative;
+}
+.toc h3::after {
+  content: '';
+  position: absolute;
+  left: 14px; bottom: 0;
+  width: 32px; height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  box-shadow: 0 0 8px rgba(255,58,90,0.6);
+}
+
+/* === SVG 弧形指示条容器 === */
+.toc-rail {
+  position: absolute;
+  left: 0; top: 0;
+  width: 14px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+.toc-rail svg {
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* 背景轨道（柔和的微弧线） */
+.rail-track {
+  fill: none;
+  stroke: rgba(255,58,90,0.12);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+/* 当前激活段（明亮带光） */
+.rail-active {
+  fill: none;
+  stroke: url(#railGradient);
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(255,58,90,0.85)) drop-shadow(0 0 14px rgba(255,58,90,0.5));
+  transition: stroke-dashoffset 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+              stroke-dasharray 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 激活节点小圆点 */
+.rail-dot {
+  fill: #ff8aa0;
+  filter: drop-shadow(0 0 6px rgba(255,138,160,1)) drop-shadow(0 0 14px rgba(255,58,90,0.8));
+  transition: cy 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.rail-dot-pulse {
+  fill: rgba(255,138,160,0.45);
+  transition: cy 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: railDotPulse 2s ease-in-out infinite;
+}
+@keyframes railDotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(2.2); opacity: 0; }
+}
+
+/* === 分组 === */
+.toc-group {
+  margin-bottom: 6px;
+  position: relative;
+}
+.toc-group-title {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  padding: 12px 0 6px 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  transition: color 0.4s ease;
+}
+.toc-group-title::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.5;
+  box-shadow: 0 0 6px rgba(255,58,90,0.5);
+}
+.toc-group.has-active .toc-group-title {
+  color: #ff8a9a;
+  text-shadow: 0 0 10px rgba(255,138,154,0.4);
+}
+
+.toc ul { list-style: none; position: relative; z-index: 2; }
+.toc li {
+  margin: 0;
+  position: relative;
+}
+
+/* 菜单项基础 */
+.toc a {
+  position: relative;
+  display: block;
+  padding: 9px 14px 9px 28px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition:
+    color 0.4s ease,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    padding-left 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    font-size 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    text-shadow 0.4s ease,
+    opacity 0.4s ease;
+  /* 流动 hover 用：默认无位移，由 JS 写入 CSS 变量 */
+  --flow-x: 0px;
+  --flow-scale: 1;
+  transform: translateX(var(--flow-x)) scale(var(--flow-scale));
+  will-change: transform, color, font-size;
+}
+
+/* hover：仅"可交互感"，不要喧宾夺主 */
+.toc li:not(.is-active) a:hover {
+  color: #ffb0bd;
+  text-shadow: 0 0 12px rgba(255,138,154,0.45);
+}
+
+/* === 当前激活项：放大约 2x + 霓虹文字，无背景块 === */
+.toc li.is-active a {
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 14px 14px 14px 32px;
+  background: transparent;
+  /* 渐变霓虹文字 */
+  background-image: linear-gradient(95deg, #ffd1da 0%, #ff8aa0 25%, #ff3a5a 55%, #ff6a8a 80%, #ffd1da 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 14px rgba(255,58,90,0.55)) drop-shadow(0 0 28px rgba(255,58,90,0.3));
+  animation: tocActiveShine 5s ease infinite;
+}
+@keyframes tocActiveShine {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* 激活项的副标光晕条（在文字下方浅浅扫一下） */
+.toc li.is-active a::after {
+  content: '';
+  position: absolute;
+  left: 32px;
+  bottom: 6px;
+  height: 2px;
+  width: 38%;
+  background: linear-gradient(90deg, rgba(255,58,90,0.9), rgba(255,138,154,0.4), transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 12px rgba(255,58,90,0.7);
+  opacity: 0.85;
+}
+
+/* 激活项 hover 时不被覆盖 */
+.toc li.is-active a:hover {
+  color: #ffffff;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ===== 右侧：开发路线图 Roadmap Sidebar ===== */
+.roadmap-sidebar {
+  position: fixed;
+  right: 24px;
+  top: 100px;
+  z-index: 900;
+  width: 320px;
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rm-header {
+  flex-shrink: 0;
+  padding: 0 6px 14px;
+  position: relative;
+}
+.rm-eyebrow {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(255,58,90,0.6);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rm-eyebrow::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  box-shadow: 0 0 8px rgba(255,58,90,0.7);
+}
+.rm-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  background: linear-gradient(95deg, #ffd1da, #ff6a8a, #ff3a5a, #ff8aa0, #ffd1da);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 14px rgba(255,58,90,0.45));
+  animation: tocActiveShine 6s ease infinite;
+  line-height: 1.2;
+}
+.rm-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  letter-spacing: 1px;
+}
+
+.rm-body {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 4px 0 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,58,90,0.4) transparent;
+}
+
+.rm-track {
+  position: absolute;
+  left: 22px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(255,58,90,0.15) 5%,
+    rgba(255,58,90,0.55) 30%,
+    rgba(255,58,90,0.85) 50%,
+    rgba(255,58,90,0.55) 70%,
+    rgba(255,58,90,0.15) 95%,
+    transparent 100%);
+  box-shadow: 0 0 12px rgba(255,58,90,0.35);
+  border-radius: 2px;
+}
+.rm-track::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 4px;
+  height: 80px;
+  background: linear-gradient(180deg, transparent, rgba(255,180,200,0.9), transparent);
+  border-radius: 4px;
+  filter: blur(1px);
+  animation: rmTrackFlow 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes rmTrackFlow {
+  0% { top: -80px; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.rm-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rm-item {
+  position: relative;
+  padding: 6px 6px 6px 50px;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 节点 */
+.rm-node {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  width: 18px;
+  height: 18px;
+}
+.rm-node::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--bg-deep);
+  border: 2px solid rgba(255,58,90,0.55);
+  box-shadow: 0 0 8px rgba(255,58,90,0.3);
+  transition: all 0.4s ease;
+}
+.rm-node::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,58,90,0.5), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+/* 节点连接小臂 */
+.rm-arm {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  width: 22px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(255,58,90,0.7), rgba(255,58,90,0.15));
+  box-shadow: 0 0 6px rgba(255,58,90,0.35);
+  border-radius: 2px;
+}
+
+/* 已完成 */
+.rm-item.done .rm-node::before {
+  background: linear-gradient(135deg, #ff6a8a, #cc2a4a);
+  border-color: #ff8aa0;
+  box-shadow: 0 0 12px rgba(255,138,160,0.7), 0 0 24px rgba(255,58,90,0.4);
+}
+/* 当前 */
+.rm-item.current .rm-node::before {
+  background: linear-gradient(135deg, #ffd1da, #ff3a5a);
+  border-color: #ffffff;
+  box-shadow: 0 0 16px rgba(255,255,255,0.9), 0 0 32px rgba(255,58,90,0.7);
+  animation: rmNodeBeat 1.6s ease-in-out infinite;
+}
+.rm-item.current .rm-node::after {
+  opacity: 1;
+  animation: rmNodeRipple 2s ease-out infinite;
+}
+@keyframes rmNodeBeat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+@keyframes rmNodeRipple {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+/* 未来 */
+.rm-item.future .rm-node::before {
+  background: var(--bg-deep);
+  border-color: rgba(255,58,90,0.35);
+  border-style: dashed;
+}
+.rm-item.future .rm-arm {
+  background: linear-gradient(90deg, rgba(255,58,90,0.4), rgba(255,58,90,0.08));
+  opacity: 0.8;
+}
+
+/* 卡片 */
+.rm-card {
+  position: relative;
+  padding: 8px 12px 10px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(30,18,30,0.55), rgba(18,12,20,0.35));
+  border: 1px solid rgba(255,58,90,0.18);
+  backdrop-filter: blur(10px);
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+.rm-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,138,154,0.4), transparent 40%, transparent 60%, rgba(255,58,90,0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.rm-item:hover .rm-card {
+  transform: translateX(3px);
+  border-color: rgba(255,58,90,0.45);
+  box-shadow: 0 8px 26px rgba(255,58,90,0.18), 0 0 0 1px rgba(255,58,90,0.15) inset;
+}
+.rm-item.current .rm-card {
+  background: linear-gradient(135deg, rgba(60,20,40,0.7), rgba(30,12,24,0.5));
+  border-color: rgba(255,138,160,0.5);
+  box-shadow: 0 0 24px rgba(255,58,90,0.3), 0 0 0 1px rgba(255,138,160,0.2) inset;
+}
+
+.rm-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.rm-version {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  background: linear-gradient(95deg, #ffd1da, #ff6a8a, #ff3a5a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 8px rgba(255,58,90,0.4));
+}
+.rm-item.current .rm-version {
+  font-size: 18px;
+  background: linear-gradient(95deg, #ffffff, #ffd1da, #ff8aa0, #ff3a5a, #ffd1da);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: tocActiveShine 4s ease infinite;
+  filter: drop-shadow(0 0 12px rgba(255,138,160,0.7));
+}
+.rm-item.future .rm-version {
+  background: linear-gradient(95deg, #b0b0c0, #8a8aa0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: none;
+}
+
+.rm-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 50px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.rm-item.done .rm-tag {
+  background: rgba(80, 200, 120, 0.12);
+  color: #6ed99a;
+  border: 1px solid rgba(110, 217, 154, 0.35);
+}
+.rm-item.current .rm-tag {
+  background: rgba(255, 58, 90, 0.18);
+  color: #ff8aa0;
+  border: 1px solid rgba(255, 138, 160, 0.5);
+  box-shadow: 0 0 10px rgba(255,58,90,0.4);
+  animation: rmTagPulse 2s ease-in-out infinite;
+}
+@keyframes rmTagPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(255,58,90,0.4); }
+  50% { box-shadow: 0 0 20px rgba(255,58,90,0.7); }
+}
+.rm-item.future .rm-tag {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-dim);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.rm-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  letter-spacing: 0.3px;
+  line-height: 1.35;
+}
+.rm-item.current .rm-name {
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(255,138,160,0.55);
+  font-size: 14px;
+}
+.rm-item.future .rm-name { color: var(--text-secondary); }
+
+.rm-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  letter-spacing: 0.2px;
+}
+.rm-item.current .rm-desc { color: #d8d8e8; }
+.rm-item.future .rm-desc { color: var(--text-dim); }
+
+/* 路线图底部装饰 */
+.rm-footer-glow {
+  flex-shrink: 0;
+  margin-top: 4px;
+  height: 28px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,58,90,0.18), transparent 70%);
+  pointer-events: none;
+}
+
+/* ===== Hero ===== */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 160px 60px 120px;
+  z-index: 1;
+}
+.hero-content {
+  text-align: center;
+  max-width: 950px;
+  z-index: 2;
+}
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  background: rgba(255,58,90,0.08);
+  border: 1px solid var(--glass-border);
+  border-radius: 50px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.8s ease;
+}
+.hero-badge .dot {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero h1 {
+  font-size: clamp(48px, 9vw, 100px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 24px;
+  animation: fadeInUp 0.8s ease 0.15s both;
+}
+.hero h1 .grad {
+  background: linear-gradient(90deg, var(--accent), #ff6a8a, #ff8a9a, var(--accent));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientShift 5s ease infinite;
+}
+.hero-sub {
+  font-size: clamp(16px, 2.3vw, 20px);
+  color: #d6cbd4;
+  line-height: 1.9;
+  max-width: 750px;
+  margin: 0 auto 48px;
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.35);
+  animation: fadeInUp 0.8s ease 0.3s both;
+}
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  animation: fadeInUp 0.8s ease 0.45s both;
+}
+.btn-primary {
+  padding: 16px 40px;
+  background: var(--gradient-accent);
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 8px 30px rgba(255,58,90,0.4);
+}
+.btn-primary:hover { transform: translateY(-3px); box-shadow: 0 12px 50px rgba(255,58,90,0.55); }
+.btn-secondary {
+  padding: 16px 40px;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 16px;
+  border: 2px solid var(--glass-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-3px);
+  background: rgba(255,58,90,0.05);
+}
+
+/* ===== Stats ===== */
+.stats {
+  position: relative;
+  z-index: 1;
+  padding: 80px 60px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 36px 30px;
+  text-align: center;
+  transition: all 0.4s;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.stat-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(255,58,90,0.4);
+  box-shadow: var(--shadow-glow);
+}
+.stat-card:hover::before { opacity: 1; }
+.stat-num {
+  font-size: 52px;
+  font-weight: 900;
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.stat-label { font-size: 15px; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px; }
+.stat-desc { font-size: 13px; color: var(--text-dim); }
+
+/* ===== Region ===== */
+.region { position: relative; padding: 100px 0 60px; }
+.region-anchor { position: absolute; top: -90px; left: 0; }
+
+.section {
+  position: relative;
+  z-index: 1;
+  padding: 60px 60px 80px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.section-header { text-align: center; margin-bottom: 80px; }
+.section-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  background: rgba(255,58,90,0.08);
+  border: 1px solid var(--glass-border);
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+.section-title {
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 900;
+  letter-spacing: -1px;
+  margin-bottom: 20px;
+  line-height: 1.1;
+}
+.section-title .grad {
+  background: linear-gradient(135deg, var(--accent), #ff6a8a, var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.section-desc {
+  font-size: 17px;
+  color: var(--text-secondary);
+  max-width: 700px;
+  margin: 0 auto;
+  line-height: 1.8;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-border), rgba(255,58,90,0.35), var(--glass-border), transparent);
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.feature-detail { margin-bottom: 100px; }
+.feature-detail:last-child { margin-bottom: 0; }
+.feature-header {
+  display: flex;
+  gap: 28px;
+  margin-bottom: 50px;
+  align-items: flex-start;
+}
+.feature-icon-box {
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44px;
+  background: linear-gradient(135deg, rgba(255,58,90,0.18), rgba(255,58,90,0.05));
+  border: 2px solid var(--glass-border);
+  box-shadow: 0 0 40px rgba(255,58,90,0.15);
+  flex-shrink: 0;
+}
+.feature-info h2 { font-size: 38px; font-weight: 900; margin-bottom: 10px; }
+.feature-info .feature-cat {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 800;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.feature-info .feature-desc {
+  font-size: 17px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.feature-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+.feature-text {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  padding: 40px;
+  backdrop-filter: blur(10px);
+}
+.feature-text h3 {
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.feature-text h3::before {
+  content: '';
+  width: 5px;
+  height: 24px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
+  border-radius: 3px;
+}
+.feature-text p { color: var(--text-secondary); margin-bottom: 20px; line-height: 1.8; }
+.feature-text ul { list-style: none; margin-bottom: 20px; }
+.feature-text li {
+  padding: 10px 0;
+  padding-left: 32px;
+  position: relative;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.feature-text li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 900;
+  font-size: 16px;
+}
+.feature-text .highlight {
+  background: rgba(255,58,90,0.06);
+  border: 1px solid rgba(255,58,90,0.18);
+  border-radius: 16px;
+  padding: 22px;
+  margin-bottom: 22px;
+}
+.feature-text .highlight strong { color: var(--accent); }
+.feature-preview {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  padding: 36px;
+  position: sticky;
+  top: 110px;
+  backdrop-filter: blur(10px);
+}
+.preview-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.preview-demo {
+  background: linear-gradient(180deg, #151525, #0a0a12);
+  border: 1px solid rgba(255,58,90,0.15);
+  border-radius: 20px;
+  padding: 36px;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.preview-demo::before {
+  content: '';
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(255,58,90,0.12), transparent 70%);
+  animation: orbFloat 6s ease-in-out infinite;
+}
+.preview-inner { text-align: center; z-index: 2; position: relative; }
+.preview-inner .icon-large {
+  font-size: 72px;
+  margin-bottom: 18px;
+  display: block;
+  filter: drop-shadow(0 0 20px rgba(255,58,90,0.4));
+}
+.preview-inner h4 { font-size: 22px; font-weight: 800; margin-bottom: 14px; }
+.preview-inner p { font-size: 14px; color: var(--text-secondary); }
+.preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  justify-content: center;
+}
+.preview-tags span {
+  font-size: 13px;
+  padding: 7px 16px;
+  background: rgba(255,58,90,0.08);
+  border: 1px solid rgba(255,58,90,0.18);
+  border-radius: 50px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.features-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+.feat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 36px 30px;
+  transition: all 0.4s;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+.feat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.feat-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(255,58,90,0.4);
+  box-shadow: var(--shadow-glow);
+}
+.feat-card:hover::before { opacity: 1; }
+.feat-icon { font-size: 40px; margin-bottom: 18px; }
+.feat-card h4 { font-size: 20px; font-weight: 800; margin-bottom: 12px; }
+.feat-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+.tech-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 60px;
+}
+.tech-card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 36px;
+  transition: all 0.4s;
+  backdrop-filter: blur(10px);
+}
+.tech-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(255,58,90,0.4);
+  box-shadow: var(--shadow-glow);
+}
+.tech-card h4 { font-size: 22px; font-weight: 800; margin-bottom: 16px; color: var(--accent); }
+.tech-card p { font-size: 15px; color: var(--text-secondary); line-height: 1.7; margin-bottom: 16px; }
+.tech-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.tech-items span {
+  padding: 6px 14px;
+  background: rgba(255,58,90,0.08);
+  border: 1px solid rgba(255,58,90,0.18);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.roadmap { max-width: 800px; margin: 0 auto; position: relative; }
+.roadmap::before {
+  content: '';
+  position: absolute;
+  left: 28px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-secondary), var(--accent-tertiary), transparent);
+}
+.roadmap-item { position: relative; padding-left: 80px; margin-bottom: 60px; }
+.roadmap-dot {
+  position: absolute;
+  left: 18px;
+  top: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-deep);
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 20px rgba(255,58,90,0.3);
+}
+.roadmap-item.done .roadmap-dot { background: var(--accent); }
+.roadmap-item.current .roadmap-dot {
+  animation: dotPulse 2s ease-in-out infinite;
+  border-color: #ffaa00;
+  background: #ffaa00;
+  box-shadow: 0 0 20px rgba(255,170,0,0.4);
+}
+.roadmap-date { font-size: 14px; color: var(--accent); font-weight: 700; margin-bottom: 8px; }
+.roadmap-title { font-size: 24px; font-weight: 800; margin-bottom: 12px; }
+.roadmap-desc { font-size: 15px; color: var(--text-secondary); line-height: 1.8; }
+
+.footer {
+  position: relative;
+  z-index: 1;
+  padding: 80px 60px 60px;
+  border-top: 1px solid var(--glass-border);
+  text-align: center;
+}
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 36px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.footer-links a { color: var(--text-secondary); font-size: 14px; font-weight: 600; transition: all 0.3s; }
+.footer-links a:hover { color: var(--accent); }
+.footer-copy { font-size: 14px; color: var(--text-dim); }
+.footer-copy .heart {
+  color: var(--accent);
+  animation: heartbeat 1.5s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Responsive */
+@media (max-width: 1400px) {
+  .toc { width: 260px; }
+  .roadmap-sidebar { width: 290px; }
+}
+@media (max-width: 1280px) {
+  .toc, .roadmap-sidebar { display: none; }
+  .feature-content { grid-template-columns: 1fr; }
+  .feature-preview { position: relative; top: 0; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .features-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .tech-list { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 900px) { .nav-links { display: none; } }
+@media (max-width: 768px) {
+  .navbar { padding: 12px 24px; }
+  .hero { padding: 120px 24px 80px; }
+  .section { padding: 50px 24px 60px; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .features-grid-4 { grid-template-columns: 1fr; }
+  .tech-list { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-gradient"></div>
+<canvas id="particles-canvas"></canvas>
+<div class="bg-glow">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<!-- 导航栏 -->
+<nav class="navbar" id="navbar">
+  <div class="logo">
+    <div class="logo-icon">
+      <img src="./icon.png" alt="Zhi Browser Logo" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'logo-placeholder\'>Z</span>';">
+    </div>
+    <span>Zhi Browser</span>
+  </div>
+  <div class="nav-links" id="nav-links">
+    <a href="#hero" data-target="hero">首页</a>
+    <a href="#region-basics" data-target="region-basics">浏览基础</a>
+    <a href="#region-ai" data-target="region-ai">AI · 阅读</a>
+    <a href="#region-tools" data-target="region-tools">效率工具</a>
+    <a href="#region-resource" data-target="region-resource">资源 · 下载</a>
+    <a href="#region-data" data-target="region-data">数据 · 隐私</a>
+    <a href="#tech" data-target="tech">技术栈</a>
+    <a href="#roadmap" data-target="roadmap">路线图</a>
+  </div>
+  <button class="nav-cta" id="download-btn" onclick="openLatestRelease()">下载</button>
+</nav>
+
+<!-- ============== 左侧动态导航 ============== -->
+<aside class="toc" id="toc">
+  <h3>功能导航</h3>
+  <div class="toc-inner" id="tocInner">
+    <!-- 弧形指示条 SVG -->
+    <div class="toc-rail" id="tocRail">
+      <svg id="tocRailSvg" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="railGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stop-color="#ffd1da"/>
+            <stop offset="50%" stop-color="#ff3a5a"/>
+            <stop offset="100%" stop-color="#cc2a4a"/>
+          </linearGradient>
+        </defs>
+        <path id="railTrack" class="rail-track" d=""/>
+        <path id="railActive" class="rail-active" d="" stroke-dasharray="0 1" stroke-dashoffset="0"/>
+        <circle id="railDotPulse" class="rail-dot-pulse" r="6" cx="7" cy="0"/>
+        <circle id="railDot" class="rail-dot" r="3.5" cx="7" cy="0"/>
+      </svg>
+    </div>
+
+    <div class="toc-group" data-group="basics">
+      <div class="toc-group-title">浏览基础</div>
+      <ul>
+        <li><a href="#tabs"><span>标签系统</span></a></li>
+        <li><a href="#splitview"><span>分屏浏览</span></a></li>
+        <li><a href="#workspaces"><span>工作区</span></a></li>
+        <li><a href="#fullscreen"><span>全屏模式</span></a></li>
+        <li><a href="#dark"><span>暗色主题</span></a></li>
+      </ul>
+    </div>
+
+    <div class="toc-group" data-group="ai">
+      <div class="toc-group-title">AI · 阅读</div>
+      <ul>
+        <li><a href="#ai-sidebar"><span>AI 侧边栏</span></a></li>
+        <li><a href="#reading"><span>阅读模式</span></a></li>
+        <li><a href="#translate"><span>翻译功能</span></a></li>
+        <li><a href="#notes"><span>快捷笔记</span></a></li>
+      </ul>
+    </div>
+
+    <div class="toc-group" data-group="tools">
+      <div class="toc-group-title">效率工具</div>
+      <ul>
+        <li><a href="#gestures"><span>鼠标手势</span></a></li>
+        <li><a href="#shortcuts"><span>快捷键系统</span></a></li>
+        <li><a href="#webpanel"><span>侧边栏网页</span></a></li>
+        <li><a href="#screenshot"><span>截图工具</span></a></li>
+        <li><a href="#hibernate"><span>标签休眠</span></a></li>
+      </ul>
+    </div>
+
+    <div class="toc-group" data-group="resource">
+      <div class="toc-group-title">资源 · 下载</div>
+      <ul>
+        <li><a href="#sniffing"><span>资源嗅探</span></a></li>
+        <li><a href="#downloader"><span>外部下载器</span></a></li>
+        <li><a href="#download"><span>下载管理</span></a></li>
+        <li><a href="#scripts"><span>用户脚本</span></a></li>
+      </ul>
+    </div>
+
+    <div class="toc-group" data-group="data">
+      <div class="toc-group-title">数据 · 隐私</div>
+      <ul>
+        <li><a href="#bookmarks"><span>书签管理</span></a></li>
+        <li><a href="#history"><span>历史记录</span></a></li>
+        <li><a href="#passwords"><span>密码管理</span></a></li>
+        <li><a href="#proxy"><span>代理管理</span></a></li>
+        <li><a href="#incognito"><span>无痕模式</span></a></li>
+        <li><a href="#adblock"><span>广告拦截</span></a></li>
+        <li><a href="#extensions"><span>扩展管理</span></a></li>
+      </ul>
+    </div>
+  </div>
+</aside>
+
+<!-- ============== 右侧 开发路线图 ============== -->
+<aside class="roadmap-sidebar" id="roadmapSide">
+  <div class="rm-header">
+    <div class="rm-eyebrow">Roadmap · 演进轨迹</div>
+    <div class="rm-title">开发路线图</div>
+    <div class="rm-sub">FROM v1.0 → BEYOND v4.0</div>
+  </div>
+  <div class="rm-body">
+    <div class="rm-track"></div>
+    <div class="rm-list">
+
+      <div class="rm-item done">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v1.0</div>
+            <div class="rm-tag">已完成</div>
+          </div>
+          <div class="rm-name">浏览器基底</div>
+          <div class="rm-desc">多标签、地址栏、书签、历史与下载——奠定核心浏览能力</div>
+        </div>
+      </div>
+
+      <div class="rm-item done">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v2.0</div>
+            <div class="rm-tag">已完成</div>
+          </div>
+          <div class="rm-name">效率工具进化</div>
+          <div class="rm-desc">手势 / 快捷键 / 截图 / 资源嗅探 / 用户脚本引擎全部上线</div>
+        </div>
+      </div>
+
+      <div class="rm-item done">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v3.0</div>
+            <div class="rm-tag">已完成</div>
+          </div>
+          <div class="rm-name">AI 深度集成</div>
+          <div class="rm-desc">AI 侧边栏 · 四种内容模式 · 阅读 / 翻译 / 笔记三件套成型</div>
+        </div>
+      </div>
+
+      <div class="rm-item done">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v3.2</div>
+            <div class="rm-tag">已完成</div>
+          </div>
+          <div class="rm-name">25 项能力矩阵 · 体验打磨</div>
+          <div class="rm-desc">五大功能区全部稳定，性能与交互细节持续抛光，分屏 / 工作区 / 标签休眠定型</div>
+        </div>
+      </div>
+
+      <div class="rm-item current">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v3.3</div>
+            <div class="rm-tag">当前版本</div>
+          </div>
+          <div class="rm-name">功能中心与控制台</div>
+          <div class="rm-desc">统一 zhi://all 功能中心，重构超级菜单、独立页面入口与扩展测试版，设置、书签、历史、下载、快捷键、命令和扩展能力收束为产品级控制台</div>
+        </div>
+      </div>
+
+      <div class="rm-item future">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v3.4</div>
+            <div class="rm-tag">规划中</div>
+          </div>
+          <div class="rm-name">数据同步与备份</div>
+          <div class="rm-desc">书签 / 笔记 / 脚本端到端加密同步，支持自托管 WebDAV</div>
+        </div>
+      </div>
+
+      <div class="rm-item future">
+        <div class="rm-node"></div>
+        <div class="rm-arm"></div>
+        <div class="rm-card">
+          <div class="rm-meta">
+            <div class="rm-version">v4.0</div>
+            <div class="rm-tag">远期愿景</div>
+          </div>
+          <div class="rm-name">扩展生态 · 跨平台</div>
+          <div class="rm-desc">兼容 Chrome 扩展生态、主题商店、macOS 版本、Android 探索</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="rm-footer-glow"></div>
+</aside>
+
+<!-- Hero -->
+<section class="hero" id="hero">
+  <div class="hero-content">
+    <div class="hero-badge">
+      <span class="dot"></span>
+      <span id="version-badge">当前版本 · 个人 AI 浏览器</span>
+    </div>
+    <h1>下一代<br><span class="grad">个人 AI 浏览器</span></h1>
+    <p class="hero-sub">
+      Zhi Browser 是面向个人长期自用的 Windows AI 浏览器，基于 Electron + React + TypeScript 构建。AI 深度绑定、阅读模式、用户脚本、资源嗅探、侧边栏、鼠标手势、分屏浏览…… 25 项核心能力，为你带来极致的浏览体验。
+    </p>
+    <div class="hero-actions">
+      <button class="btn-primary" onclick="openLatestRelease()">⬇️ 下载安装包</button>
+      <button class="btn-secondary" onclick="window.open('https://github.com/dzejy/zhi-browser', '_blank')">⭐ 给项目 Star</button>
+    </div>
+  </div>
+</section>
+
+<section class="stats">
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-num">25</div><div class="stat-label">核心功能</div><div class="stat-desc">完整的浏览器能力矩阵</div></div>
+    <div class="stat-card"><div class="stat-num">5</div><div class="stat-label">大功能区</div><div class="stat-desc">基础 / AI / 工具 / 资源 / 数据</div></div>
+    <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">技术模块</div><div class="stat-desc">Electron + React + TypeScript</div></div>
+    <div class="stat-card"><div class="stat-num">100%</div><div class="stat-label">开源</div><div class="stat-desc">完全开源，自由使用</div></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- 区域 1：浏览基础 -->
+<div class="region" id="region-basics">
+  <div class="region-bg basics"></div>
+  <section class="section">
+    <div class="section-header">
+      <div class="section-tag">🧭 浏览基础</div>
+      <h2 class="section-title">为效率而生的<span class="grad">浏览器核心</span></h2>
+      <p class="section-desc">从标签到分屏，从工作区到主题——浏览器最基础的体验，也是最关键的体验。</p>
+    </div>
+
+    <div class="feature-detail" id="tabs">
+      <div class="feature-header">
+        <div class="feature-icon-box">📑</div>
+        <div class="feature-info">
+          <div class="feature-cat">浏览器核心</div>
+          <h2>标签系统</h2>
+          <p class="feature-desc">完整的多标签浏览体验，支持标签页的创建、关闭、拖拽、预览等功能</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>标签系统</strong>是 Zhi Browser 的核心，提供了现代浏览器应有的完整标签页管理能力。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>新建标签页</strong>：支持点击按钮或快捷键快速创建新标签页</li>
+            <li><strong>关闭标签页</strong>：点击标签页关闭按钮、中键点击或快捷键关闭</li>
+            <li><strong>标签页切换</strong>：点击标签或使用快捷键快速在标签之间切换</li>
+            <li><strong>标签页标题 & 图标</strong>：实时显示网页标题和 favicon 图标</li>
+            <li><strong>拖拽排序</strong>：拖拽标签页可以重新排列标签顺序</li>
+            <li><strong>中键关闭</strong>：中键点击标签快速关闭</li>
+            <li><strong>标签页预览</strong>：鼠标悬停标签栏时显示标签页预览缩略图</li>
+          </ul>
+          <h3>常用快捷键</h3>
+          <ul>
+            <li>Ctrl + T：新建标签页</li>
+            <li>Ctrl + W：关闭当前标签页</li>
+            <li>Ctrl + Tab：切换到下一个标签页</li>
+            <li>Ctrl + Shift + Tab：切换到上一个标签页</li>
+            <li>Ctrl + L：聚焦地址栏</li>
+            <li>Ctrl + R：刷新页面</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📑</span>
+              <h4>标签系统</h4>
+              <p>多标签浏览 · 拖拽排序 · 中键关闭</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>多标签</span><span>拖拽</span><span>预览</span><span>快捷键</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="splitview">
+      <div class="feature-header">
+        <div class="feature-icon-box">🪟</div>
+        <div class="feature-info">
+          <div class="feature-cat">多窗口</div>
+          <h2>分屏浏览</h2>
+          <p class="feature-desc">同时查看两个网页，提高对比阅读和资料整理效率</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>分屏浏览</strong>让你可以在同一个窗口中同时查看两个网页，左右并排显示，方便对比阅读和资料整理。</div>
+          <h3>适用场景</h3>
+          <ul>
+            <li><strong>一边看资料一边看 AI</strong>：左侧看网页资料，右侧与 AI 对话</li>
+            <li><strong>一边读网页一边查文档</strong>：对照阅读文档和教程</li>
+            <li><strong>两个网页内容对照</strong>：对比两篇文章或两个页面</li>
+            <li><strong>学习、写作、开发辅助</strong>：多屏协同工作</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>左右分屏布局</li>
+            <li>可调整分屏比例</li>
+            <li>每个分屏都可独立操作</li>
+            <li>一键退出分屏模式</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🪟</span>
+              <h4>分屏浏览</h4>
+              <p>左右分屏 · 同时查看 · 效率加倍</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>左右分屏</span><span>对比阅读</span><span>双网页</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="workspaces">
+      <div class="feature-header">
+        <div class="feature-icon-box">🗂️</div>
+        <div class="feature-info">
+          <div class="feature-cat">空间管理</div>
+          <h2>工作区</h2>
+          <p class="feature-desc">用工作区隔离不同场景的浏览，工作、学习、娱乐互不打扰</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>工作区</strong>把你的标签页按场景分组管理，每个工作区都是独立的标签集合，切换工作区就像切换"另一个你"。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>多工作区</strong>：可创建多个工作区，例如"工作"、"学习"、"娱乐"</li>
+            <li><strong>独立标签集</strong>：每个工作区有独立的标签页</li>
+            <li><strong>一键切换</strong>：从工作区切换器中快速切换</li>
+            <li><strong>自定义图标和颜色</strong>：每个工作区可设置专属图标</li>
+            <li><strong>标签迁移</strong>：可将标签从一个工作区移到另一个</li>
+          </ul>
+          <h3>适用场景</h3>
+          <ul>
+            <li>白天上班 → 工作工作区，晚上学习 → 学习工作区</li>
+            <li>多项目并行，每个项目独立工作区</li>
+            <li>个人和工作账号隔离</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🗂️</span>
+              <h4>工作区</h4>
+              <p>场景隔离 · 标签分组 · 一键切换</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>多场景</span><span>隔离</span><span>分组</span><span>切换</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="fullscreen">
+      <div class="feature-header">
+        <div class="feature-icon-box">⛶</div>
+        <div class="feature-info">
+          <div class="feature-cat">显示模式</div>
+          <h2>全屏模式</h2>
+          <p class="feature-desc">隐藏所有界面元素，让网页内容铺满整个屏幕</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>全屏模式</strong>用于沉浸式浏览：观看视频、阅读长文、做演示时，让屏幕只剩下内容。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>F11 快捷键</strong>：一键进入/退出全屏</li>
+            <li><strong>沉浸阅读</strong>：阅读模式 + 全屏，专注度拉满</li>
+            <li><strong>视频全屏</strong>：自动适配视频网站的全屏</li>
+            <li><strong>顶部唤起</strong>：鼠标移到屏幕顶部时唤回工具栏</li>
+            <li><strong>多显示器</strong>：在指定显示器全屏</li>
+          </ul>
+          <h3>使用场景</h3>
+          <ul>
+            <li>视频观看、网页演示</li>
+            <li>长文章沉浸阅读</li>
+            <li>开发调试时最大化网页区域</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">⛶</span>
+              <h4>全屏模式</h4>
+              <p>沉浸浏览 · F11 切换 · 鼠标唤起</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>F11</span><span>沉浸</span><span>无干扰</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="dark">
+      <div class="feature-header">
+        <div class="feature-icon-box">🌙</div>
+        <div class="feature-info">
+          <div class="feature-cat">外观主题</div>
+          <h2>暗色主题</h2>
+          <p class="feature-desc">护眼的深色界面，长时间使用也不疲劳</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>暗色主题</strong>是 Zhi Browser 的默认主题，黑红配色不仅好看，更对长时间用眼友好。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>暗色 UI</strong>：浏览器整体界面采用深色配色</li>
+            <li><strong>跟随系统</strong>：可选自动跟随 Windows 主题切换</li>
+            <li><strong>网页强制暗色</strong>：可对亮色网页应用暗色滤镜</li>
+            <li><strong>主题强度调节</strong>：暗色滤镜的强度可调</li>
+            <li><strong>白名单</strong>：对部分网站不应用暗色滤镜</li>
+          </ul>
+          <h3>设计理念</h3>
+          <ul>
+            <li>黑红配色，主色 #ff3a5a</li>
+            <li>玻璃拟态 + 渐变光斑</li>
+            <li>关键操作有明确的视觉反馈</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🌙</span>
+              <h4>暗色主题</h4>
+              <p>黑红配色 · 网页强制暗色 · 护眼</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>暗色</span><span>护眼</span><span>滤镜</span><span>白名单</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- 区域 2：AI · 阅读 -->
+<div class="region" id="region-ai">
+  <div class="region-bg ai"></div>
+  <section class="section">
+    <div class="section-header">
+      <div class="section-tag">🤖 AI · 阅读</div>
+      <h2 class="section-title">让 AI 真正成为<span class="grad">浏览助手</span></h2>
+      <p class="section-desc">从网页内容理解到多轮对话，从沉浸阅读到一键翻译——AI 与浏览深度结合。</p>
+    </div>
+
+    <div class="feature-detail" id="ai-sidebar">
+      <div class="feature-header">
+        <div class="feature-icon-box">🤖</div>
+        <div class="feature-info">
+          <div class="feature-cat">AI 能力</div>
+          <h2>AI 侧边栏</h2>
+          <p class="feature-desc">深度集成的 AI 侧边栏，围绕当前网页提供多种快捷 AI 操作模式</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>AI 侧边栏</strong>是 Zhi Browser 最核心的功能，让 AI 真正与网页内容结合，成为你的浏览助手。</div>
+          <h3>AI 模式</h3>
+          <ul>
+            <li><strong>省流模式</strong>：总结当前网页内容，快速获取核心要点和关键信息</li>
+            <li><strong>丁真一下</strong>：检查网页内容是否存在事实错误、虚假信息或逻辑问题</li>
+            <li><strong>全网通缉</strong>：围绕当前网页主题进行联网搜索与补充信息</li>
+            <li><strong>大司马模式</strong>：站在反方角度分析网页中的逻辑漏洞和忽略因素</li>
+          </ul>
+          <h3>AI 能力</h3>
+          <ul>
+            <li><strong>当前网页内容提取</strong>：自动分析和提取当前网页的正文内容</li>
+            <li><strong>选中文本交互</strong>：选中网页中的任意文本，直接与 AI 对话</li>
+            <li><strong>AI 侧边栏对话</strong>：随时与 AI 进行多轮对话</li>
+            <li><strong>AI Provider 配置</strong>：支持配置多个 AI 服务提供商</li>
+            <li><strong>OpenAI-compatible API</strong>：兼容标准的 OpenAI API 格式</li>
+            <li><strong>快捷键呼出</strong>：一键呼出 AI 侧边栏</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🤖</span>
+              <h4>AI 侧边栏</h4>
+              <p>省流 · 丁真 · 全网 · 大司马</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>AI 总结</span><span>事实检查</span><span>联网搜索</span><span>逻辑分析</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="reading">
+      <div class="feature-header">
+        <div class="feature-icon-box">📖</div>
+        <div class="feature-info">
+          <div class="feature-cat">阅读体验</div>
+          <h2>阅读模式</h2>
+          <p class="feature-desc">清理网页中的干扰元素，让文章阅读更加纯净舒适</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>阅读模式</strong>会自动分析网页结构，移除广告、侧边栏、推荐等干扰内容，只保留文章正文，让阅读更加专注。</div>
+          <h3>适用场景</h3>
+          <ul>
+            <li><strong>新闻文章</strong>：阅读新闻资讯时，过滤广告和推荐内容</li>
+            <li><strong>博客内容</strong>：专注阅读博客文章，不受页面干扰</li>
+            <li><strong>文档页面</strong>：阅读技术文档、教程等资料</li>
+            <li><strong>长文本网页</strong>：阅读小说、论文等长篇内容</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>自动识别文章正文区域</li>
+            <li>保留图片和代码块</li>
+            <li>优化排版和字体</li>
+            <li>可调整字体大小和主题</li>
+            <li>一键切换，即时生效</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📖</span>
+              <h4>阅读模式</h4>
+              <p>纯净阅读 · 广告过滤 · 专注体验</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>广告过滤</span><span>排版优化</span><span>纯净阅读</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="translate">
+      <div class="feature-header">
+        <div class="feature-icon-box">🌐</div>
+        <div class="feature-info">
+          <div class="feature-cat">语言工具</div>
+          <h2>翻译功能</h2>
+          <p class="feature-desc">划词翻译与整页翻译，让外文网页不再是阅读障碍</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>翻译功能</strong>支持选中文本的快速翻译，也支持整页翻译，让你看外文资料毫无压力。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>划词翻译</strong>：选中文本后弹出翻译气泡</li>
+            <li><strong>整页翻译</strong>：一键翻译当前网页全部内容</li>
+            <li><strong>双语对照</strong>：翻译后保留原文，上下对照阅读</li>
+            <li><strong>多翻译引擎</strong>：可选 Google、DeepL、AI 翻译等</li>
+            <li><strong>语言自动识别</strong>：自动识别原文语言</li>
+            <li><strong>常用语种</strong>：中英日韩法德西俄等</li>
+          </ul>
+          <h3>翻译质量</h3>
+          <ul>
+            <li>AI 翻译：调用 LLM 提供更自然的翻译</li>
+            <li>专业术语保留：技术词汇、品牌名等不强制翻译</li>
+            <li>语境感知：根据上下文调整翻译</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🌐</span>
+              <h4>翻译功能</h4>
+              <p>划词 · 整页 · 双语对照</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>划词翻译</span><span>整页翻译</span><span>AI 翻译</span><span>双语</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="notes">
+      <div class="feature-header">
+        <div class="feature-icon-box">📝</div>
+        <div class="feature-info">
+          <div class="feature-cat">记录工具</div>
+          <h2>快捷笔记</h2>
+          <p class="feature-desc">浏览中随手记录灵感、摘录段落、整理信息</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>快捷笔记</strong>是浏览过程中的随手记录工具——看到好句子直接划线收藏，想到想法立即记下，所有笔记自动关联来源网页。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>侧边栏笔记面板</strong>：随时打开，随手记录</li>
+            <li><strong>选中段落收藏</strong>：选中网页文本一键存为笔记</li>
+            <li><strong>来源链接</strong>：每条笔记自动记录来自哪个网页</li>
+            <li><strong>富文本支持</strong>：支持加粗、列表、代码块等格式</li>
+            <li><strong>标签分类</strong>：用标签管理笔记</li>
+            <li><strong>搜索笔记</strong>：全文搜索所有笔记</li>
+            <li><strong>导出 Markdown</strong>：导出为 Markdown 文件</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📝</span>
+              <h4>快捷笔记</h4>
+              <p>随手记录 · 来源关联 · 标签管理</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>笔记</span><span>摘录</span><span>标签</span><span>导出</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- 区域 3：效率工具 -->
+<div class="region" id="region-tools">
+  <div class="region-bg tools"></div>
+  <section class="section">
+    <div class="section-header">
+      <div class="section-tag">🛠️ 效率工具</div>
+      <h2 class="section-title">让操作更<span class="grad">流畅快速</span></h2>
+      <p class="section-desc">手势、快捷键、侧边栏、截图、休眠——把每一次操作都做到最短路径。</p>
+    </div>
+
+    <div class="feature-detail" id="gestures">
+      <div class="feature-header">
+        <div class="feature-icon-box">🖱️</div>
+        <div class="feature-info">
+          <div class="feature-cat">快捷操作</div>
+          <h2>鼠标手势</h2>
+          <p class="feature-desc">通过鼠标手势快捷执行常用操作，一只手就能掌控浏览器</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>鼠标手势</strong>让你通过按住鼠标右键并移动鼠标，画出特定轨迹，即可快速执行各种浏览器操作。</div>
+          <h3>支持的手势</h3>
+          <ul>
+            <li><strong>← 向左</strong>：后退到上一页</li>
+            <li><strong>→ 向右</strong>：前进到下一页</li>
+            <li><strong>↑ 向上</strong>：刷新当前页面</li>
+            <li><strong>↓ 向下</strong>：关闭当前标签页</li>
+            <li><strong>↑↓ 上下</strong>：新建标签页</li>
+            <li><strong>→← 右左</strong>：恢复关闭的标签页</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>实时显示手势轨迹</li>
+            <li>支持自定义手势</li>
+            <li>可视化手势设置界面</li>
+            <li>可开关手势功能</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🖱️</span>
+              <h4>鼠标手势</h4>
+              <p>快捷操作 · 手势识别 · 效率提升</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>后退</span><span>前进</span><span>刷新</span><span>关闭</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="shortcuts">
+      <div class="feature-header">
+        <div class="feature-icon-box">⌨️</div>
+        <div class="feature-info">
+          <div class="feature-cat">键盘操作</div>
+          <h2>快捷键系统</h2>
+          <p class="feature-desc">完善的快捷键体系，键盘党的福音</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>快捷键系统</strong>覆盖了浏览器的几乎所有操作。不用碰鼠标，键盘就能完成全部浏览。</div>
+          <h3>常用快捷键</h3>
+          <ul>
+            <li><strong>Ctrl + T</strong>：新建标签页</li>
+            <li><strong>Ctrl + W</strong>：关闭标签页</li>
+            <li><strong>Ctrl + Shift + T</strong>：恢复关闭的标签</li>
+            <li><strong>Ctrl + L</strong>：聚焦地址栏</li>
+            <li><strong>Ctrl + F</strong>：页内查找</li>
+            <li><strong>Ctrl + D</strong>：添加书签</li>
+            <li><strong>Ctrl + H</strong>：打开历史</li>
+            <li><strong>Ctrl + J</strong>：打开下载</li>
+            <li><strong>Ctrl + Shift + I</strong>：打开开发者工具</li>
+            <li><strong>F11</strong>：全屏切换</li>
+          </ul>
+          <h3>自定义</h3>
+          <ul>
+            <li>所有快捷键可在设置中自定义</li>
+            <li>支持组合键：Ctrl / Alt / Shift</li>
+            <li>冲突检测，避免重复绑定</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">⌨️</span>
+              <h4>快捷键系统</h4>
+              <p>覆盖全功能 · 完全可定制</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>Ctrl+T</span><span>Ctrl+W</span><span>F11</span><span>自定义</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="webpanel">
+      <div class="feature-header">
+        <div class="feature-icon-box">📌</div>
+        <div class="feature-info">
+          <div class="feature-cat">侧边栏</div>
+          <h2>侧边栏网页面板</h2>
+          <p class="feature-desc">支持侧边栏网页面板，固定常用网站，随时快速访问</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>侧边栏网页面板</strong>让你可以把常用网站固定在侧边栏，随时快速访问，不用新开标签页。</div>
+          <h3>适用场景</h3>
+          <ul>
+            <li><strong>AI 聊天页面</strong>：ChatGPT、Claude、通义千问等</li>
+            <li><strong>翻译工具</strong>：Google 翻译、DeepL、有道翻译等</li>
+            <li><strong>搜索页面</strong>：Google、百度、Bing 等</li>
+            <li><strong>文档页面</strong>：文档、笔记、知识库</li>
+            <li><strong>常用站点</strong>：常用的工具网站、论坛等</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>可添加多个网站到侧边栏</li>
+            <li>快速切换查看</li>
+            <li>支持刷新和关闭</li>
+            <li>可调整侧边栏宽度</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📌</span>
+              <h4>侧边栏网页</h4>
+              <p>快速访问 · 常用网站 · AI 工具</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>AI 聊天</span><span>翻译</span><span>搜索</span><span>文档</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="screenshot">
+      <div class="feature-header">
+        <div class="feature-icon-box">📷</div>
+        <div class="feature-info">
+          <div class="feature-cat">截屏标注</div>
+          <h2>截图工具</h2>
+          <p class="feature-desc">网页截图 + 标注 + 一键保存或分享</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>截图工具</strong>专为网页设计，支持区域截图、可视区域截图、整页长截图三种模式，截完直接标注。</div>
+          <h3>截图模式</h3>
+          <ul>
+            <li><strong>区域截图</strong>：自由拖拽选区</li>
+            <li><strong>可视截图</strong>：当前可见区域</li>
+            <li><strong>整页长截图</strong>：自动滚动整个网页拼接成长图</li>
+            <li><strong>元素截图</strong>：自动识别网页元素边界</li>
+          </ul>
+          <h3>标注工具</h3>
+          <ul>
+            <li>矩形 / 椭圆 / 箭头 / 画笔</li>
+            <li>文字标注 / 高亮 / 马赛克</li>
+            <li>颜色与粗细可调</li>
+          </ul>
+          <h3>保存与分享</h3>
+          <ul>
+            <li>保存到本地文件夹</li>
+            <li>复制到剪贴板</li>
+            <li>固定到桌面（贴图）</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📷</span>
+              <h4>截图工具</h4>
+              <p>区域 · 整页 · 标注 · 贴图</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>区域</span><span>长截图</span><span>标注</span><span>贴图</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="hibernate">
+      <div class="feature-header">
+        <div class="feature-icon-box">💤</div>
+        <div class="feature-info">
+          <div class="feature-cat">性能优化</div>
+          <h2>标签休眠</h2>
+          <p class="feature-desc">长时间未活动的标签自动休眠，释放内存</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>标签休眠</strong>会自动检测长时间未使用的标签页，释放它们占用的内存与 CPU 资源，再次切换回时无缝唤醒。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>自动休眠</strong>：超过设定时间未访问的标签自动休眠</li>
+            <li><strong>休眠图标</strong>：休眠标签 favicon 变淡，一目了然</li>
+            <li><strong>瞬时唤醒</strong>：点击休眠标签立即恢复</li>
+            <li><strong>白名单保护</strong>：常用网站可加入白名单，永不休眠</li>
+            <li><strong>休眠时长</strong>：可配置 5 分钟 / 30 分钟 / 1 小时等</li>
+            <li><strong>状态保留</strong>：休眠不丢失页面状态（表单、滚动位置）</li>
+          </ul>
+          <h3>性能收益</h3>
+          <ul>
+            <li>开 50+ 标签时仍流畅</li>
+            <li>显著降低内存占用</li>
+            <li>降低后台 CPU 消耗</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">💤</span>
+              <h4>标签休眠</h4>
+              <p>自动休眠 · 节省内存 · 瞬时唤醒</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>休眠</span><span>省内存</span><span>白名单</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- 区域 4：资源 · 下载 -->
+<div class="region" id="region-resource">
+  <div class="region-bg resource"></div>
+  <section class="section">
+    <div class="section-header">
+      <div class="section-tag">📦 资源 · 下载</div>
+      <h2 class="section-title">完整的<span class="grad">资源处理链路</span></h2>
+      <p class="section-desc">从嗅探发现到外部下载，从下载管理到脚本扩展，把网页资源彻底掌握。</p>
+    </div>
+
+    <div class="feature-detail" id="sniffing">
+      <div class="feature-header">
+        <div class="feature-icon-box">🔍</div>
+        <div class="feature-info">
+          <div class="feature-cat">资源工具</div>
+          <h2>资源嗅探</h2>
+          <p class="feature-desc">帮助发现网页中的媒体资源和下载资源，辅助下载</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>资源嗅探</strong>功能会监控网页加载的资源，识别并列出页面中的图片、视频、音频等媒体资源。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>图片资源检测</strong>：识别页面中的图片资源，支持预览和下载</li>
+            <li><strong>视频资源检测</strong>：检测视频文件，获取视频地址</li>
+            <li><strong>音频资源检测</strong>：发现音频文件资源</li>
+            <li><strong>其他资源检测</strong>：识别文档、压缩包等下载资源</li>
+            <li><strong>辅助外部下载器调用</strong>：一键调用外部下载器</li>
+            <li><strong>分析网页加载内容</strong>：查看页面加载的所有资源</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🔍</span>
+              <h4>资源嗅探</h4>
+              <p>媒体检测 · 资源列表 · 辅助下载</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>图片</span><span>视频</span><span>音频</span><span>资源</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="downloader">
+      <div class="feature-header">
+        <div class="feature-icon-box">💾</div>
+        <div class="feature-info">
+          <div class="feature-cat">下载工具</div>
+          <h2>外部下载器对接</h2>
+          <p class="feature-desc">支持与 IDM、FDM、NDM 等外部下载器配合使用</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>外部下载器对接</strong>让你可以方便地调用本地下载工具，享受专业下载软件的加速能力。</div>
+          <h3>支持的下载器</h3>
+          <ul>
+            <li><strong>IDM</strong>：Internet Download Manager</li>
+            <li><strong>FDM</strong>：Free Download Manager</li>
+            <li><strong>NDM</strong>：Neat Download Manager</li>
+            <li><strong>其他本地下载工具</strong>：自定义下载器路径</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>一键调用外部下载器</li>
+            <li>自动传递下载链接</li>
+            <li>可配置默认下载器</li>
+            <li>支持选择调用哪个下载器</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">💾</span>
+              <h4>外部下载器</h4>
+              <p>IDM · FDM · NDM · 更多</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>IDM</span><span>FDM</span><span>NDM</span><span>下载</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="download">
+      <div class="feature-header">
+        <div class="feature-icon-box">📥</div>
+        <div class="feature-info">
+          <div class="feature-cat">下载管理</div>
+          <h2>下载管理</h2>
+          <p class="feature-desc">完整下载管理：列表、暂停、继续、删除、打开文件等</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>下载管理</strong>提供了完整的下载任务管理功能，你可以查看、暂停、继续、删除下载任务。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>下载列表查看</strong>：查看当前和历史下载任务</li>
+            <li><strong>暂停/继续</strong>：暂停下载，随时继续</li>
+            <li><strong>删除任务</strong>：删除不需要的下载任务</li>
+            <li><strong>打开文件</strong>：快速打开已下载的文件</li>
+            <li><strong>打开文件夹</strong>：打开下载文件所在目录</li>
+            <li><strong>下载进度显示</strong>:实时显示下载进度和速度</li>
+          </ul>
+          <h3>功能特点</h3>
+          <ul>
+            <li>显示文件名和大小</li>
+            <li>显示下载进度条</li>
+            <li>显示下载速度</li>
+            <li>记录下载历史</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📥</span>
+              <h4>下载管理</h4>
+              <p>暂停继续 · 进度显示 · 文件管理</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>下载</span><span>暂停</span><span>继续</span><span>管理</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="scripts">
+      <div class="feature-header">
+        <div class="feature-icon-box">🎭</div>
+        <div class="feature-info">
+          <div class="feature-cat">扩展增强</div>
+          <h2>用户脚本引擎</h2>
+          <p class="feature-desc">内置类 Tampermonkey 的用户脚本能力，支持网页增强和自动化操作</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>用户脚本引擎</strong>让你可以安装和运行各种用户脚本，增强特定网站的功能，实现自动化操作。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>网页增强</strong>：为特定网站添加额外功能和便利操作</li>
+            <li><strong>自动化操作</strong>：自动完成重复任务，如表单填写、签到等</li>
+            <li><strong>页面样式修改</strong>：自定义网页的外观和布局</li>
+            <li><strong>特定网站功能扩展</strong>：为常用网站添加专属功能</li>
+            <li><strong>个人脚本管理</strong>：管理自己安装的用户脚本</li>
+          </ul>
+          <h3>脚本能力</h3>
+          <ul>
+            <li>兼容主流用户脚本格式</li>
+            <li>支持脚本注入和执行</li>
+            <li>提供 GM API 接口</li>
+            <li>脚本权限控制</li>
+            <li>按网站匹配规则</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🎭</span>
+              <h4>用户脚本</h4>
+              <p>Tampermonkey 兼容 · 网页增强</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>脚本管理</span><span>自动化</span><span>网站增强</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<!-- 区域 5：数据 · 隐私 -->
+<div class="region" id="region-data">
+  <div class="region-bg data"></div>
+  <section class="section">
+    <div class="section-header">
+      <div class="section-tag">🔐 数据 · 隐私</div>
+      <h2 class="section-title">数据掌握在<span class="grad">你自己手里</span></h2>
+      <p class="section-desc">书签、历史、密码、代理、无痕、广告拦截、扩展——全套数据与隐私管理能力。</p>
+    </div>
+
+    <div class="feature-detail" id="bookmarks">
+      <div class="feature-header">
+        <div class="feature-icon-box">📚</div>
+        <div class="feature-info">
+          <div class="feature-cat">收藏管理</div>
+          <h2>书签管理</h2>
+          <p class="feature-desc">支持收藏和整理你喜欢的网页，提供书签页面管理</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>书签管理</strong>让你可以收藏喜欢的网页，创建文件夹整理书签，快速访问常用网站。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>添加书签</strong>：一键收藏当前网页</li>
+            <li><strong>文件夹管理</strong>：创建文件夹整理书签</li>
+            <li><strong>编辑书签</strong>：修改书签名称和网址</li>
+            <li><strong>删除书签</strong>：删除不需要的书签</li>
+            <li><strong>拖拽排序</strong>：调整书签顺序</li>
+            <li><strong>导入导出</strong>：备份和恢复书签</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">📚</span>
+              <h4>书签管理</h4>
+              <p>收藏 · 整理 · 快速访问</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>收藏</span><span>文件夹</span><span>编辑</span><span>导入</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="history">
+      <div class="feature-header">
+        <div class="feature-icon-box">⏰</div>
+        <div class="feature-info">
+          <div class="feature-cat">历史管理</div>
+          <h2>历史记录</h2>
+          <p class="feature-desc">快速回溯你的浏览历史，按时间或站点查看</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>历史记录</strong>让你可以查看所有浏览过的网页，方便重新访问之前看到的内容。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>按时间查看</strong>：按日期分组显示历史记录</li>
+            <li><strong>按站点查看</strong>：按网站域名组织历史记录</li>
+            <li><strong>搜索历史</strong>：快速搜索浏览历史</li>
+            <li><strong>删除历史</strong>：删除单条或清空全部历史</li>
+            <li><strong>历史预览</strong>：鼠标悬停显示缩略图</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">⏰</span>
+              <h4>历史记录</h4>
+              <p>回溯浏览 · 按时间查看</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>历史</span><span>搜索</span><span>删除</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="passwords">
+      <div class="feature-header">
+        <div class="feature-icon-box">🔑</div>
+        <div class="feature-info">
+          <div class="feature-cat">凭证管理</div>
+          <h2>密码管理</h2>
+          <p class="feature-desc">本地加密保存账号密码，登录时自动填充</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>密码管理</strong>使用本地加密存储账号密码，所有数据都在你自己的电脑上，不上云、不联网，安全可控。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>自动保存</strong>：登录后询问是否保存密码</li>
+            <li><strong>自动填充</strong>：再次访问时自动填入账号密码</li>
+            <li><strong>密码列表</strong>：管理所有已保存的凭证</li>
+            <li><strong>本地加密</strong>：使用系统级加密 API 保存数据</li>
+            <li><strong>查看密码</strong>：需系统验证后才能查看明文</li>
+            <li><strong>导入导出</strong>：与其他浏览器互通</li>
+          </ul>
+          <h3>安全特性</h3>
+          <ul>
+            <li>数据本地存储，绝不上云</li>
+            <li>使用 DPAPI 等系统加密</li>
+            <li>主密码二次保护（可选）</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🔑</span>
+              <h4>密码管理</h4>
+              <p>本地加密 · 自动填充 · 安全可控</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>本地</span><span>加密</span><span>自动填充</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="proxy">
+      <div class="feature-header">
+        <div class="feature-icon-box">🌍</div>
+        <div class="feature-info">
+          <div class="feature-cat">网络配置</div>
+          <h2>代理管理</h2>
+          <p class="feature-desc">灵活的代理配置，支持 HTTP / SOCKS5 / PAC</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>代理管理</strong>提供独立于系统的代理配置，让浏览器走自己的代理通道，不影响其他应用。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>HTTP 代理</strong>：支持 HTTP / HTTPS 代理</li>
+            <li><strong>SOCKS5 代理</strong>：支持 SOCKS5 协议</li>
+            <li><strong>PAC 脚本</strong>：通过 PAC 文件实现规则代理</li>
+            <li><strong>多配置切换</strong>：保存多组代理，一键切换</li>
+            <li><strong>规则模式</strong>：按域名走不同代理</li>
+            <li><strong>认证支持</strong>：用户名密码认证</li>
+            <li><strong>状态指示</strong>：地址栏显示当前代理状态</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🌍</span>
+              <h4>代理管理</h4>
+              <p>HTTP · SOCKS5 · PAC 规则</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>HTTP</span><span>SOCKS5</span><span>PAC</span><span>规则</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="incognito">
+      <div class="feature-header">
+        <div class="feature-icon-box">🕶️</div>
+        <div class="feature-info">
+          <div class="feature-cat">隐私保护</div>
+          <h2>无痕模式</h2>
+          <p class="feature-desc">不留下任何浏览痕迹的临时浏览模式</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>无痕模式</strong>下浏览的内容不会写入历史、Cookie、缓存、密码等任何本地数据，关闭即彻底清除。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>独立会话</strong>：与正常会话完全隔离</li>
+            <li><strong>不记历史</strong>：浏览过的网页不进入历史记录</li>
+            <li><strong>不存 Cookie</strong>：会话级 Cookie，关闭即清</li>
+            <li><strong>不存缓存</strong>：不留下页面缓存</li>
+            <li><strong>不留密码</strong>：不询问保存密码</li>
+            <li><strong>差异化界面</strong>：无痕窗口有明显视觉标识</li>
+          </ul>
+          <h3>使用场景</h3>
+          <ul>
+            <li>临时登录他人账号</li>
+            <li>测试网站不带缓存的状态</li>
+            <li>个人隐私浏览</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🕶️</span>
+              <h4>无痕模式</h4>
+              <p>不留痕迹 · 独立会话 · 隐私保护</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>无痕</span><span>隐私</span><span>独立</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="adblock">
+      <div class="feature-header">
+        <div class="feature-icon-box">🛡️</div>
+        <div class="feature-info">
+          <div class="feature-cat">广告防护</div>
+          <h2>广告拦截</h2>
+          <p class="feature-desc">基于规则的广告与追踪器拦截，让网页清爽起来</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>广告拦截</strong>使用主流过滤规则（EasyList / EasyPrivacy 等），拦截广告、追踪器、弹窗，提升加载速度并保护隐私。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>规则订阅</strong>：内置主流广告过滤规则</li>
+            <li><strong>自定义规则</strong>：自己写规则拦截特定元素</li>
+            <li><strong>统计面板</strong>：显示已拦截数量、节省流量</li>
+            <li><strong>白名单</strong>：信任的网站不拦截</li>
+            <li><strong>元素拾取</strong>：右键选择"拦截此元素"</li>
+            <li><strong>追踪器拦截</strong>：阻止跨站追踪</li>
+          </ul>
+          <h3>性能影响</h3>
+          <ul>
+            <li>拦截规则在底层执行，性能影响小</li>
+            <li>页面加载速度通常更快</li>
+            <li>降低带宽消耗</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🛡️</span>
+              <h4>广告拦截</h4>
+              <p>规则订阅 · 元素拾取 · 追踪保护</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>规则</span><span>白名单</span><span>统计</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-detail" id="extensions">
+      <div class="feature-header">
+        <div class="feature-icon-box">🧩</div>
+        <div class="feature-info">
+          <div class="feature-cat">生态扩展</div>
+          <h2>扩展管理</h2>
+          <p class="feature-desc">本地扩展测试版，统一管理已安装扩展</p>
+        </div>
+      </div>
+      <div class="feature-content">
+        <div class="feature-text">
+          <h3>功能介绍</h3>
+          <div class="highlight"><strong>扩展管理</strong>提供扩展安装、启用 / 禁用、卸载、权限查看等完整能力，未来计划兼容 Chrome 扩展生态。</div>
+          <h3>主要功能</h3>
+          <ul>
+            <li><strong>扩展列表</strong>：所有已安装扩展一目了然</li>
+            <li><strong>启用 / 禁用</strong>：随时开关扩展</li>
+            <li><strong>卸载扩展</strong>：彻底删除不需要的扩展</li>
+            <li><strong>权限查看</strong>：清楚每个扩展请求了哪些权限</li>
+            <li><strong>开发者模式</strong>：加载本地未打包扩展</li>
+            <li><strong>更新检测</strong>：自动检查扩展更新</li>
+          </ul>
+          <h3>未来计划</h3>
+          <ul>
+            <li>兼容 Chrome Web Store 扩展（路线图 v4.0）</li>
+            <li>本地扩展商店</li>
+            <li>扩展隔离与沙箱</li>
+          </ul>
+        </div>
+        <div class="feature-preview">
+          <div class="preview-title">🖼️ 功能预览</div>
+          <div class="preview-demo">
+            <div class="preview-inner">
+              <span class="icon-large">🧩</span>
+              <h4>扩展管理</h4>
+              <p>统一管理 · 权限可见 · 兼容计划</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>扩展</span><span>权限</span><span>开发者</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="divider"></div>
+
+<section class="section">
+  <div class="section-header">
+    <div class="section-tag">🤖 AI 深度集成</div>
+    <h2 class="section-title">四种模式，<span class="grad">一键切换</span></h2>
+    <p class="section-desc">围绕当前网页内容，AI 提供四种快捷处理方式</p>
+  </div>
+
+  <div class="features-grid-4">
+    <div class="feat-card"><div class="feat-icon">🎯</div><h4>省流模式</h4><p>快速总结网页内容，提取核心要点，节省阅读时间</p></div>
+    <div class="feat-card"><div class="feat-icon">🔍</div><h4>丁真一下</h4><p>检查网页内容是否存在事实错误或逻辑问题</p></div>
+    <div class="feat-card"><div class="feat-icon">🌐</div><h4>全网通缉</h4><p>围绕当前网页主题进行联网搜索与补充信息</p></div>
+    <div class="feat-card"><div class="feat-icon">💭</div><h4>大司马模式</h4><p>站在反方角度分析网页中的逻辑漏洞</p></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="tech">
+  <div class="section-header">
+    <div class="section-tag">💻 技术栈</div>
+    <h2 class="section-title">现代、稳定、可扩展的<span class="grad">技术架构</span></h2>
+    <p class="section-desc">基于成熟的开源技术栈构建，持续迭代优化</p>
+  </div>
+
+  <div class="tech-list">
+    <div class="tech-card"><h4>Electron</h4><p>跨平台桌面应用框架，提供稳定的浏览器内核支持</p><div class="tech-items"><span>Chromium</span><span>Node.js</span></div></div>
+    <div class="tech-card"><h4>React</h4><p>现代化前端框架，组件化开发，性能优秀</p><div class="tech-items"><span>Hooks</span><span>State Management</span></div></div>
+    <div class="tech-card"><h4>TypeScript</h4><p>类型安全的 JavaScript，提高代码可维护性</p><div class="tech-items"><span>类型检查</span><span>类型提示</span></div></div>
+    <div class="tech-card"><h4>WebContentsView</h4><p>基于 Electron Chromium 内核的多视图浏览架构，兼顾桌面能力与现代网页兼容性</p><div class="tech-items"><span>Chromium</span><span>GPU 加速</span></div></div>
+    <div class="tech-card"><h4>Build Tools</h4><p>现代化的构建工具链，提高开发效率</p><div class="tech-items"><span>Vite</span><span>ESBuild</span></div></div>
+    <div class="tech-card"><h4>Packaging</h4><p>专业的打包工具，生成 Windows 安装包</p><div class="tech-items"><span>electron-builder</span><span>NSIS</span></div></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="section" id="roadmap">
+  <div class="section-header">
+    <div class="section-tag">🚀 开发路线图</div>
+    <h2 class="section-title">持续迭代的<span class="grad">开发计划</span></h2>
+    <p class="section-desc">从 v1.0 到 v4.0，Zhi Browser 正在持续进化</p>
+  </div>
+
+  <div class="roadmap">
+    <div class="roadmap-item done"><div class="roadmap-dot"></div><div class="roadmap-date">2024 Q1</div><div class="roadmap-title">v1.0 - 基础版本</div><div class="roadmap-desc">基础的浏览器功能：多标签页、地址栏、下载管理、书签管理、历史记录</div></div>
+    <div class="roadmap-item done"><div class="roadmap-dot"></div><div class="roadmap-date">2024 Q2</div><div class="roadmap-title">v2.0 - AI 集成</div><div class="roadmap-desc">AI 侧边栏、网页内容理解、多种 AI 模式、用户脚本引擎、资源嗅探</div></div>
+    <div class="roadmap-item done"><div class="roadmap-dot"></div><div class="roadmap-date">2024 Q4</div><div class="roadmap-title">v3.0 - 功能完善</div><div class="roadmap-desc">鼠标手势、分屏浏览、侧边栏网页、阅读模式、高级工具、性能优化</div></div>
+    <div class="roadmap-item done"><div class="roadmap-dot"></div><div class="roadmap-date">2025 Q3</div><div class="roadmap-title">v3.2 - 体验打磨</div><div class="roadmap-desc">25 项核心功能矩阵稳定，体验细节打磨，性能与稳定性持续优化</div></div>
+    <div class="roadmap-item current"><div class="roadmap-dot"></div><div class="roadmap-date">2026 Q2</div><div class="roadmap-title">v3.3 - 当前版本</div><div class="roadmap-desc">统一 zhi://all 功能中心，重构超级菜单、独立页面入口与扩展测试版，设置、书签、历史、下载、快捷键、命令和扩展能力收束为产品级控制台</div></div>
+    <div class="roadmap-item"><div class="roadmap-dot"></div><div class="roadmap-date">2027 Q1</div><div class="roadmap-title">v4.0 - 生态扩展</div><div class="roadmap-desc">兼容 Chrome 扩展生态、更多 AI 能力、跨平台支持、同步功能、主题商店</div></div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="https://github.com/dzejy/zhi-browser" target="_blank">GitHub</a>
+    <a href="https://github.com/dzejy/zhi-browser/issues" target="_blank">反馈问题</a>
+    <a href="https://github.com/dzejy/zhi-browser/blob/main/LICENSE" target="_blank">许可证</a>
+    <a href="#">隐私政策</a>
+  </div>
+  <div class="footer-copy">
+    Made with <span class="heart">❤️</span> by Zhi Browser Team · Built on Electron
+  </div>
+</footer>
+
+<script>
+/* ============= 粒子背景 ============= */
+const canvas = document.getElementById('particles-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+let width, height;
+let rafId = null;
+let running = true;
+function resize() {
+  width = window.innerWidth; height = window.innerHeight;
+  canvas.width = width; canvas.height = height;
+}
+window.addEventListener('resize', resize); resize();
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * width; this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.5; this.vy = (Math.random() - 0.5) * 0.5;
+    this.radius = Math.random() * 2 + 1;
+    this.opacity = Math.random() * 0.5 + 0.2;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    if (this.x < 0 || this.x > width) this.vx *= -1;
+    if (this.y < 0 || this.y > height) this.vy *= -1;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 58, 90, ${this.opacity})`;
+    ctx.fill();
+  }
+}
+for (let i = 0; i < 70; i++) particles.push(new Particle());
+function drawConnections() {
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < 120) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(255, 58, 90, ${0.1 * (1 - distance / 120)})`;
+        ctx.lineWidth = 1;
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+function animate() {
+  if (!running) return;
+  ctx.clearRect(0, 0, width, height);
+  particles.forEach(p => { p.update(); p.draw(); });
+  drawConnections();
+  rafId = requestAnimationFrame(animate);
+}
+animate();
+document.addEventListener('visibilitychange', () => {
+  running = !document.hidden;
+  if (running && !rafId) animate();
+  else if (!running && rafId) { cancelAnimationFrame(rafId); rafId = null; }
+});
+
+/* ============= 导航栏滚动效果 ============= */
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 50) navbar.classList.add('scrolled');
+  else navbar.classList.remove('scrolled');
+}, { passive: true });
+
+/* =========================================================
+   ============= 统一 Active 状态机（核心修复） =============
+   ========================================================= */
+/**
+ * 设计：
+ * - 单一数据源 currentActiveId
+ * - 用 IntersectionObserver + 滚动校准 共同决定当前 active
+ * - 点击跳转：标记 isProgrammaticScroll，立即写入预期 active，不再被滚动事件抢走
+ * - active 切换 → 同步 toc / 顶部 nav / 弧形指示条 / 高亮分组
+ * - hover 永远不参与 active 计算（只通过 CSS 视觉反馈）
+ */
+
+const tocFeatureIds = [
+  'tabs','splitview','workspaces','fullscreen','dark',
+  'ai-sidebar','reading','translate','notes',
+  'gestures','shortcuts','webpanel','screenshot','hibernate',
+  'sniffing','downloader','download','scripts',
+  'bookmarks','history','passwords','proxy','incognito','adblock','extensions'
+];
+
+const topRegionIds = ['hero','region-basics','region-ai','region-tools','region-resource','region-data','tech','roadmap'];
+
+const tocLinks = Array.from(document.querySelectorAll('.toc a'));
+const tocItems = tocLinks.map(a => {
+  const id = a.getAttribute('href').slice(1);
+  return { id, link: a, li: a.parentElement, group: a.closest('.toc-group'), el: document.getElementById(id) };
+}).filter(t => t.el);
+
+const topLinks = Array.from(document.querySelectorAll('.nav-links a'));
+
+let currentActiveId = null;
+let lockUntil = 0;          // 程序化滚动时锁定一段时间
+let isProgrammatic = false;
+
+function setActive(id, { fromClick = false } = {}) {
+  if (!id || id === currentActiveId) {
+    if (fromClick) updateRail(); // 点击同 id 时也刷新一次
+    return;
+  }
+  currentActiveId = id;
+
+  // toc
+  tocItems.forEach(t => {
+    if (t.id === id) t.li.classList.add('is-active');
+    else t.li.classList.remove('is-active');
+  });
+  // 高亮所属分组
+  document.querySelectorAll('.toc-group').forEach(g => g.classList.remove('has-active'));
+  const activeItem = tocItems.find(t => t.id === id);
+  if (activeItem && activeItem.group) activeItem.group.classList.add('has-active');
+
+  // 顶部 nav：根据 region 或区段确定
+  const topId = mapToTopRegion(id);
+  topLinks.forEach(a => a.classList.toggle('active', a.dataset.target === topId));
+
+  // 弧形指示条
+  updateRail();
+}
+
+function mapToTopRegion(id) {
+  // feature id -> region id
+  const inRegion = (rid) => {
+    const rEl = document.getElementById(rid);
+    const fEl = document.getElementById(id);
+    if (!rEl || !fEl) return false;
+    return rEl.contains(fEl);
+  };
+  for (const rid of topRegionIds) {
+    if (rid === id) return rid;
+    if (inRegion(rid)) return rid;
+  }
+  return id;
+}
+
+/* 计算"当前正在浏览"的 feature id —— 用于滚动同步 */
+function computeCurrentFeatureId() {
+  const probe = window.scrollY + window.innerHeight * 0.32;
+  let best = null;
+  let bestTop = -Infinity;
+  for (const id of tocFeatureIds) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    if (top <= probe && top > bestTop) {
+      bestTop = top;
+      best = id;
+    }
+  }
+  return best;
+}
+
+/* 计算"当前 region/区段"——用于顶部 nav（在没有具体 feature 时使用，比如 hero / tech / roadmap） */
+function computeCurrentTopId() {
+  const probe = window.scrollY + 160;
+  let cur = topRegionIds[0];
+  for (const rid of topRegionIds) {
+    const el = document.getElementById(rid);
+    if (el && el.offsetTop <= probe) cur = rid;
+  }
+  return cur;
+}
+
+let scrollTicking = false;
+function onScroll() {
+  if (scrollTicking) return;
+  scrollTicking = true;
+  requestAnimationFrame(() => {
+    scrollTicking = false;
+    if (Date.now() < lockUntil) {
+      // 程序化滚动锁定期，不抢 active
+      return;
+    }
+    const fid = computeCurrentFeatureId();
+    const topId = computeCurrentTopId();
+
+    // 如果当前在功能区域内（有匹配的 feature），用 feature 决定 toc
+    if (fid && isFeatureVisible(fid)) {
+      setActive(fid);
+    } else {
+      // 不在功能区，比如 hero / stats / tech / roadmap：清掉 toc 高亮，只更新顶部 nav
+      if (currentActiveId !== null) {
+        currentActiveId = null;
+        tocItems.forEach(t => t.li.classList.remove('is-active'));
+        document.querySelectorAll('.toc-group').forEach(g => g.classList.remove('has-active'));
+        updateRail();
+      }
+      topLinks.forEach(a => a.classList.toggle('active', a.dataset.target === topId));
+    }
+  });
+}
+window.addEventListener('scroll', onScroll, { passive: true });
+
+function isFeatureVisible(id) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  const rect = el.getBoundingClientRect();
+  // 只要 feature 块的顶部已经过了视口 30% 以上、底部还没完全过去
+  return rect.top < window.innerHeight * 0.55 && rect.bottom > 80;
+}
+
+/* ============= 点击跳转：统一锁定 active ============= */
+tocLinks.forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    isProgrammatic = true;
+    lockUntil = Date.now() + 900; // 锁 0.9s，覆盖 smooth 滚动
+    setActive(id, { fromClick: true });
+
+    const target = el.getBoundingClientRect().top + window.scrollY - 100;
+    window.scrollTo({ top: target, behavior: 'smooth' });
+
+    setTimeout(() => { isProgrammatic = false; }, 950);
+  });
+});
+
+topLinks.forEach(link => {
+  link.addEventListener('click', (e) => {
+    const id = link.dataset.target;
+    if (!id) return;
+    e.preventDefault();
+    const el = document.getElementById(id);
+    if (!el) return;
+    isProgrammatic = true;
+    lockUntil = Date.now() + 900;
+    topLinks.forEach(a => a.classList.toggle('active', a === link));
+    const target = el.getBoundingClientRect().top + window.scrollY - 90;
+    window.scrollTo({ top: target, behavior: 'smooth' });
+    setTimeout(() => { isProgrammatic = false; }, 950);
+  });
+});
+
+/* =========================================================
+   ============= 弧形指示条（SVG 动态绘制） =============
+   ========================================================= */
+const tocInner = document.getElementById('tocInner');
+const railSvg = document.getElementById('tocRailSvg');
+const railTrack = document.getElementById('railTrack');
+const railActive = document.getElementById('railActive');
+const railDot = document.getElementById('railDot');
+const railDotPulse = document.getElementById('railDotPulse');
+
+function buildRailPath() {
+  if (!tocInner) return null;
+  const innerRect = tocInner.getBoundingClientRect();
+  const W = 14;
+  const H = innerRect.height;
+  // 弧形主路径：从顶到底，带轻微 S 形偏移（克制的弧度）
+  // 用三段贝塞尔曲线，让左侧有一点流动感
+  const x = 7;
+  const amp = 4; // 弧度幅度（很克制）
+  const seg = H / 4;
+  const d =
+    `M ${x} 0 ` +
+    `C ${x + amp} ${seg * 0.6}, ${x - amp} ${seg * 1.3}, ${x} ${seg * 2} ` +
+    `S ${x + amp} ${seg * 3.3}, ${x} ${H}`;
+  return { d, H };
+}
+
+let cachedRail = null;
+function refreshRailGeometry() {
+  if (!railSvg) return;
+  cachedRail = buildRailPath();
+  if (!cachedRail) return;
+  railSvg.setAttribute('viewBox', `0 0 14 ${cachedRail.H}`);
+  railSvg.style.height = cachedRail.H + 'px';
+  railTrack.setAttribute('d', cachedRail.d);
+  railActive.setAttribute('d', cachedRail.d);
+  // 设置 pathLength 便于按比例 dasharray
+  const pathLen = railActive.getTotalLength ? railActive.getTotalLength() : 1;
+  railActive.dataset.len = pathLen;
+  railActive.setAttribute('stroke-dasharray', `0 ${pathLen}`);
+}
+
+function updateRail() {
+  if (!cachedRail) refreshRailGeometry();
+  if (!cachedRail || !railActive) return;
+  const pathLen = parseFloat(railActive.dataset.len || railActive.getTotalLength());
+
+  if (!currentActiveId) {
+    railActive.setAttribute('stroke-dasharray', `0 ${pathLen}`);
+    railDot.style.opacity = '0';
+    railDotPulse.style.opacity = '0';
+    return;
+  }
+
+  const activeItem = tocItems.find(t => t.id === currentActiveId);
+  if (!activeItem) return;
+
+  const linkRect = activeItem.link.getBoundingClientRect();
+  const innerRect = tocInner.getBoundingClientRect();
+  const yCenter = (linkRect.top + linkRect.height / 2) - innerRect.top;
+  // 找到路径上 y ≈ yCenter 的长度
+  const len = findLengthAtY(railActive, yCenter, pathLen);
+  // 激活段：从顶部到该长度（绘制为可见，剩余隐藏）
+  railActive.setAttribute('stroke-dasharray', `${len} ${pathLen}`);
+
+  // 圆点位置
+  const pt = railActive.getPointAtLength(len);
+  railDot.setAttribute('cx', pt.x);
+  railDot.setAttribute('cy', pt.y);
+  railDotPulse.setAttribute('cx', pt.x);
+  railDotPulse.setAttribute('cy', pt.y);
+  railDot.style.opacity = '1';
+  railDotPulse.style.opacity = '1';
+}
+
+function findLengthAtY(pathEl, targetY, totalLen) {
+  // 二分查找：路径总长度上找到 y ≈ targetY 的点
+  let lo = 0, hi = totalLen, mid, pt;
+  for (let i = 0; i < 18; i++) {
+    mid = (lo + hi) / 2;
+    pt = pathEl.getPointAtLength(mid);
+    if (pt.y < targetY) lo = mid;
+    else hi = mid;
+  }
+  return mid;
+}
+
+window.addEventListener('resize', () => {
+  refreshRailGeometry();
+  updateRail();
+});
+
+/* =========================================================
+   ============= 流动 hover：弧形跟随鼠标的张力反馈 =============
+   ========================================================= */
+(function flowHover() {
+  if (!tocInner) return;
+  let mouseY = null;
+  let raf = null;
+
+  const refreshLinks = () => Array.from(document.querySelectorAll('.toc a'));
+
+  function tick() {
+    raf = null;
+    const links = refreshLinks();
+    if (mouseY === null) {
+      links.forEach(a => {
+        a.style.setProperty('--flow-x', '0px');
+        a.style.setProperty('--flow-scale', '1');
+      });
+      return;
+    }
+    links.forEach(a => {
+      const r = a.getBoundingClientRect();
+      const center = r.top + r.height / 2;
+      const dy = Math.abs(mouseY - center);
+      const reach = 140; // 影响范围
+      const t = Math.max(0, 1 - dy / reach);
+      // 张力曲线：越靠近鼠标，越向右"鼓"出来一点
+      const ease = t * t * (3 - 2 * t);
+      const x = ease * 10;        // 最大右移 10px
+      const scale = 1 + ease * 0.04;
+      a.style.setProperty('--flow-x', x.toFixed(2) + 'px');
+      a.style.setProperty('--flow-scale', scale.toFixed(3));
+    });
+  }
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(tick); };
+
+  tocInner.addEventListener('mousemove', (e) => {
+    mouseY = e.clientY;
+    schedule();
+  });
+  tocInner.addEventListener('mouseleave', () => {
+    mouseY = null;
+    schedule();
+  });
+})();
+
+/* ============= 初始化 ============= */
+function init() {
+  refreshRailGeometry();
+  // 首屏初始 active
+  const fid = computeCurrentFeatureId();
+  if (fid && isFeatureVisible(fid)) {
+    setActive(fid);
+  } else {
+    const topId = computeCurrentTopId();
+    topLinks.forEach(a => a.classList.toggle('active', a.dataset.target === topId));
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+// 等图片/字体加载完成再校准一次（高度可能变化）
+window.addEventListener('load', () => {
+  refreshRailGeometry();
+  updateRail();
+});
+
+/* ============= 鼠标轨迹 ============= */
+(function() {
+  const trails = [];
+  const MAX_TRAILS = 25;
+  let hue = 0;
+  let lastTime = 0;
+  const THROTTLE = 16;
+
+  document.addEventListener('mousemove', e => {
+    const now = performance.now();
+    if (now - lastTime < THROTTLE) return;
+    lastTime = now;
+
+    hue = (hue + 4) % 360;
+    const trail = document.createElement('div');
+    trail.className = 'mouse-trail';
+    trail.style.left = e.clientX - 4 + 'px';
+    trail.style.top = e.clientY - 4 + 'px';
+
+    let themeHue = (hue < 180) ? (hue * 280 / 180) : (280 + (hue - 180) * 80 / 180);
+    themeHue = themeHue % 360;
+
+    trail.style.background = `hsl(${themeHue}, 100%, 60%)`;
+    trail.style.boxShadow = `0 0 10px hsl(${themeHue}, 100%, 60%), 0 0 20px hsl(${themeHue}, 100%, 50%)`;
+    document.body.appendChild(trail);
+    trails.push(trail);
+
+    setTimeout(() => {
+      trail.style.opacity = '0';
+      trail.style.transform = 'scale(0.4)';
+    }, 60);
+    setTimeout(() => {
+      trail.remove();
+      trails.shift();
+    }, 600);
+
+    if (trails.length > MAX_TRAILS) {
+      const old = trails.shift();
+      old && old.remove();
+    }
+  });
+})();
+
+/* =========================================================
+   ============= 动态版本管理与 GitHub Releases 集成 =============
+   ========================================================= */
+const CURRENT_VERSION = 'v3.3.0'; // 只需要修改这里即可更新所有显示的版本
+const GITHUB_REPO = 'dzejy/zhi-browser';
+
+function openLatestRelease() {
+  window.open(`https://github.com/${GITHUB_REPO}/releases/latest`, '_blank');
+}
+
+// 更新页面上所有显示版本号的地方
+function updateVersionDisplay() {
+  // 导航栏下载按钮
+  const downloadBtn = document.getElementById('download-btn');
+  if (downloadBtn) {
+    downloadBtn.textContent = `下载 ${CURRENT_VERSION}`;
+  }
+
+  // Hero 区域版本徽章
+  const versionBadge = document.getElementById('version-badge');
+  if (versionBadge) {
+    versionBadge.textContent = `当前版本 ${CURRENT_VERSION} · 个人 AI 浏览器`;
+  }
+
+  // 页面标题
+  document.title = `Zhi Browser ${CURRENT_VERSION} · 个人 AI 浏览器`;
+}
+
+// 页面加载时更新版本显示
+document.addEventListener('DOMContentLoaded', updateVersionDisplay);
+if (document.readyState !== 'loading') {
+  updateVersionDisplay();
+}
+</script>
+</body>
+</html>

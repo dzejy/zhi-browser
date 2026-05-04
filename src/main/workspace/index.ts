@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import {
   loadWorkspaceState,
   getState,
@@ -18,22 +18,27 @@ import { Workspace } from './types'
 
 interface WorkspaceHandlerOptions {
   onLayoutChanged?: () => void
+  validateSender?: (event: IpcMainInvokeEvent) => boolean
 }
 
 export function registerWorkspaceHandlers(options: WorkspaceHandlerOptions = {}): void {
   loadWorkspaceState()
+  const isAllowed = (event: IpcMainInvokeEvent): boolean => options.validateSender?.(event) ?? true
 
   const notifyLayoutChanged = (): void => {
     options.onLayoutChanged?.()
   }
 
-  ipcMain.handle('workspace:getState', () => getState())
-  ipcMain.handle('workspace:getAll', () => getState().workspaces)
-  ipcMain.handle('workspace:getActive', () => getActiveWorkspace())
+  ipcMain.handle('workspace:getState', (event) => (isAllowed(event) ? getState() : null))
+  ipcMain.handle('workspace:getAll', (event) => (isAllowed(event) ? getState().workspaces : []))
+  ipcMain.handle('workspace:getActive', (event) =>
+    isAllowed(event) ? getActiveWorkspace() : null
+  )
 
   ipcMain.handle(
     'workspace:add',
-    (_e, data: { name: string; icon: string; color: string }) => {
+    (event, data: { name: string; icon: string; color: string }) => {
+      if (!isAllowed(event)) return { success: false }
       const workspace: Workspace = {
         id: `ws_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: data.name,
@@ -49,53 +54,61 @@ export function registerWorkspaceHandlers(options: WorkspaceHandlerOptions = {})
     }
   )
 
-  ipcMain.handle('workspace:remove', (_e, id: string) => ({
-    success: removeWorkspace(id)
+  ipcMain.handle('workspace:remove', (event, id: string) => ({
+    success: isAllowed(event) ? removeWorkspace(id) : false
   }))
   ipcMain.handle(
     'workspace:update',
-    (_e, id: string, updates: Partial<Workspace>) => ({
-      success: updateWorkspace(id, updates)
+    (event, id: string, updates: Partial<Workspace>) => ({
+      success: isAllowed(event) ? updateWorkspace(id, updates) : false
     })
   )
-  ipcMain.handle('workspace:switch', (_e, id: string) => ({
-    success: switchWorkspace(id)
+  ipcMain.handle('workspace:switch', (event, id: string) => ({
+    success: isAllowed(event) ? switchWorkspace(id) : false
   }))
-  ipcMain.handle('workspace:addTab', (_e, wsId: string, tabId: string) => {
+  ipcMain.handle('workspace:addTab', (event, wsId: string, tabId: string) => {
+    if (!isAllowed(event)) return { success: false }
     addTabToWorkspace(wsId, tabId)
     return { success: true }
   })
-  ipcMain.handle('workspace:removeTab', (_e, wsId: string, tabId: string) => {
+  ipcMain.handle('workspace:removeTab', (event, wsId: string, tabId: string) => {
+    if (!isAllowed(event)) return { success: false }
     removeTabFromWorkspace(wsId, tabId)
     return { success: true }
   })
-  ipcMain.handle('workspace:pinTab', (_e, wsId: string, tabId: string) => {
+  ipcMain.handle('workspace:pinTab', (event, wsId: string, tabId: string) => {
+    if (!isAllowed(event)) return { success: false }
     pinTab(wsId, tabId)
     return { success: true }
   })
-  ipcMain.handle('workspace:unpinTab', (_e, wsId: string, tabId: string) => {
+  ipcMain.handle('workspace:unpinTab', (event, wsId: string, tabId: string) => {
+    if (!isAllowed(event)) return { success: false }
     unpinTab(wsId, tabId)
     return { success: true }
   })
   ipcMain.handle(
     'workspace:setLayout',
-    (_e, layout: 'horizontal' | 'vertical') => {
+    (event, layout: 'horizontal' | 'vertical') => {
+      if (!isAllowed(event)) return { success: false }
       setTabLayout(layout)
       notifyLayoutChanged()
       return { success: true }
     }
   )
-  ipcMain.handle('workspace:setSidebarWidth', (_e, w: number) => {
+  ipcMain.handle('workspace:setSidebarWidth', (event, w: number) => {
+    if (!isAllowed(event)) return { success: false }
     setState({ sidebarWidth: w })
     notifyLayoutChanged()
     return { success: true }
   })
-  ipcMain.handle('workspace:setSidebarCollapsed', (_e, v: boolean) => {
+  ipcMain.handle('workspace:setSidebarCollapsed', (event, v: boolean) => {
+    if (!isAllowed(event)) return { success: false }
     setState({ sidebarCollapsed: v })
     notifyLayoutChanged()
     return { success: true }
   })
-  ipcMain.handle('workspace:setAutoCollapse', (_e, v: boolean) => {
+  ipcMain.handle('workspace:setAutoCollapse', (event, v: boolean) => {
+    if (!isAllowed(event)) return { success: false }
     setState({ autoCollapse: v })
     return { success: true }
   })

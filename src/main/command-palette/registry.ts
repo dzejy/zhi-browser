@@ -24,7 +24,9 @@ export function loadCustomCommands(): CustomCommand[] {
 export function saveCustomCommands(): void {
   try {
     fs.writeFileSync(FILE, JSON.stringify(cache, null, 2), 'utf-8')
-  } catch {}
+  } catch {
+    /* custom commands are optional; keep the browser running if persistence fails */
+  }
 }
 
 export function addCustomCommand(cmd: Omit<CustomCommand, 'id' | 'createdAt'>): CustomCommand {

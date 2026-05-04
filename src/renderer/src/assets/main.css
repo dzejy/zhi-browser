@@ -4328,7 +4328,7 @@ input[type='checkbox'] {
   inset: 0;
   background:
     linear-gradient(rgba(20, 28, 42, 0.28), rgba(20, 28, 42, 0.3)),
-    url('../images/snow.jpg') center/cover no-repeat;
+    url('./images/snow.jpg') center/cover no-repeat;
   filter: saturate(0.95);
 }
 

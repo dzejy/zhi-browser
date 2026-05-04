@@ -291,18 +291,16 @@ export class TabManager {
     const isNewTab =
       !targetUrl || targetUrl === 'about:blank' || /^zhi:\/\/newtab\/?$/i.test(targetUrl)
     const isIncognito = Boolean(options?.incognito && options.session)
-    const isFileUrl = Boolean(targetUrl && targetUrl.startsWith('file://'))
-
     const view = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: !isFileUrl,
-        webSecurity: !isFileUrl,
+        sandbox: true,
+        webSecurity: true,
         ...(options?.session
           ? { session: options.session }
-          : isFileUrl
+          : targetUrl?.startsWith('file://')
             ? { session: session.fromPartition('persist:local-files') }
             : {})
       }
@@ -853,6 +851,7 @@ export class TabManager {
   }
 
   setLayout(layout: BrowserLayout): void {
+    if (!this.isWindowAlive() || !this.isViewAlive(this.uiView)) return
     const uiViewWidth = layout.uiViewWidth ?? null
     if (
       this.uiViewHeight === layout.uiViewHeight &&
@@ -868,7 +867,16 @@ export class TabManager {
   }
 
   updateLayout(): void {
-    const { width, height } = this.win.getContentBounds()
+    if (!this.isWindowAlive() || !this.isViewAlive(this.uiView)) return
+
+    let width = 0
+    let height = 0
+    try {
+      ;({ width, height } = this.win.getContentBounds())
+    } catch {
+      return
+    }
+
     const activeTab = this.tabs.get(this.activeTabId)
     const usesRendererOverlay = Boolean(
       activeTab?.isNewTab ||
@@ -878,9 +886,13 @@ export class TabManager {
     const uiHeight = usesRendererOverlay ? height : Math.max(0, Math.min(this.uiViewHeight, height))
     const uiWidth =
       this.uiViewWidth === null ? width : Math.max(0, Math.min(this.uiViewWidth, width))
-    this.uiView.setBounds({ x: 0, y: 0, width: uiWidth, height: uiHeight })
+    try {
+      this.uiView.setBounds({ x: 0, y: 0, width: uiWidth, height: uiHeight })
+    } catch {
+      return
+    }
 
-    if (activeTab) {
+    if (activeTab && this.isViewAlive(activeTab.view)) {
       const pageHeight = Math.max(0, height - this.pageTop)
       const pageBounds = {
         x: 0,
@@ -888,8 +900,12 @@ export class TabManager {
         width,
         height: pageHeight
       }
-      activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
-      activeTab.view.setVisible(!usesRendererOverlay && !activeTab.darkModeHiddenUntilReady)
+      try {
+        activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
+        activeTab.view.setVisible(!usesRendererOverlay && !activeTab.darkModeHiddenUntilReady)
+      } catch {
+        return
+      }
     }
 
     if (this.pageTop === 0 || usesRendererOverlay || this.modalOverlayActive) {
@@ -898,14 +914,36 @@ export class TabManager {
       } catch {
         // may not be attached yet
       }
-      this.win.contentView.addChildView(this.uiView)
+      try {
+        this.win.contentView.addChildView(this.uiView)
+      } catch {
+        /* window/view may have been destroyed while the overlay state changed */
+      }
     }
   }
 
   setModalOverlayActive(active: boolean): void {
+    if (!this.isWindowAlive() || !this.isViewAlive(this.uiView)) return
     this.modalOverlayActive = active
     this.updateLayout()
     this.pushState()
+  }
+
+  private isWindowAlive(): boolean {
+    try {
+      return Boolean(this.win) && !this.win.isDestroyed()
+    } catch {
+      return false
+    }
+  }
+
+  private isViewAlive(view: WebContentsView | null | undefined): boolean {
+    try {
+      if (!view) return false
+      return !view.webContents.isDestroyed()
+    } catch {
+      return false
+    }
   }
 
   // ===== Cleanup =====

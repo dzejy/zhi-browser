@@ -1089,6 +1089,21 @@ function BrowserApp(): React.ReactElement {
   }, [])
 
   const activeTab = browserState.tabs.find((t) => t.id === browserState.activeTabId)
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId)
+  const visibleTabs = (() => {
+    if (!activeWorkspace) return browserState.tabs
+    const workspaceTabIds = new Set(activeWorkspace.tabIds)
+    const assignedTabs =
+      workspaceTabIds.size > 0
+        ? browserState.tabs.filter((tab) => workspaceTabIds.has(tab.id))
+        : activeWorkspace.isDefault
+          ? browserState.tabs
+          : []
+    if (activeTab && !assignedTabs.some((tab) => tab.id === activeTab.id)) {
+      return [activeTab, ...assignedTabs]
+    }
+    return assignedTabs
+  })()
 
   const showToast = useCallback((text: string, tone: ToastTone = 'success', duration = 2200) => {
     setToast({ id: `${Date.now()}`, text, duration, tone })
@@ -2580,7 +2595,7 @@ function BrowserApp(): React.ReactElement {
               </div>
             )}
             <div className="tabs-container">
-              {browserState.tabs.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <div
                   key={tab.id}
                   className={`tab ${tab.id === browserState.activeTabId ? 'active' : ''} ${tab.isPinned ? 'pinned' : ''} ${tab.isIncognito ? 'incognito' : ''} ${tab.isLoading ? 'tab-loading' : ''} ${tab.isHibernated ? 'is-hibernated' : ''} ${loadedTabIds.has(tab.id) ? 'tab-loaded' : ''} ${tab.isAudible && !tab.isMuted ? 'tab-audible' : ''} ${enteringTabIds.has(tab.id) ? 'tab-entering' : ''} ${closingTabIds.has(tab.id) ? 'tab-exiting' : ''} ${dragTabId === tab.id ? 'dragging' : ''} ${dragOverTabId === tab.id ? 'drag-over' : ''}`}

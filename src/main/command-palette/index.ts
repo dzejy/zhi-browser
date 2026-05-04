@@ -100,12 +100,16 @@ export function registerCommandPaletteHandlers(): void {
       } else if (cmd.type === 'launch-app') {
         try {
           await shell.openPath(cmd.payload)
-        } catch {}
+        } catch {
+          /* external application launch failures should not crash the palette */
+        }
       } else if (cmd.type === 'set-pref') {
         try {
           const patch = JSON.parse(cmd.payload) as Record<string, unknown>
           updatePreferences(patch)
-        } catch {}
+        } catch {
+          /* ignore invalid custom preference payloads */
+        }
       }
       if (paletteWindow && !paletteWindow.isDestroyed()) paletteWindow.close()
       return { success: true }

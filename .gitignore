@@ -12,7 +12,9 @@ yarn-error.log*
 Thumbs.db
 tmp_font_dl/
 tmp/
+tmp-qa/
 temp/
 .cache/
+.eslintcache
 .vite/
 pnpm-debug.log*
