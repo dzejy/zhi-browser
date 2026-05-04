@@ -89,7 +89,13 @@ import { registerPasswordHandlers } from './passwords'
 import { getIncognitoSession, registerIncognitoHandlers } from './incognito'
 import { registerWorkspaceHandlers } from './workspace'
 import { getEffectiveSidebarWidth } from './workspace/store'
-import { initShortcuts, registerShortcutHandlers, startShortcuts, registerAction } from './shortcuts'
+import {
+  initShortcuts,
+  registerShortcutHandlers,
+  startShortcuts,
+  registerAction,
+  dispatchAppShortcut
+} from './shortcuts'
 import {
   captureLongScreenshotToClipboard,
   registerScreenshotHandlers,
@@ -103,6 +109,7 @@ import {
 import { registerHibernationHandlers, initHibernation, hibernateOthers } from './hibernation'
 import { initQuickNote, registerQuickNoteHandlers, toggleQuickNote } from './quick-note'
 import { registerPasswordHandlers as registerPasswordAutoHandlers } from './password'
+import { getExtensionSystem } from './extensions'
 
 let win: BaseWindow
 let uiView: WebContentsView
@@ -374,9 +381,7 @@ function createWindow(): void {
     () => {
       pushBrowserState()
     },
-    openSidePanelFromShortcut,
     openAIPanelFromAction,
-    toggleBookmarkBarVisible,
     (payload) => {
       sendToUi('userscript:installed', payload)
       sendToPanel('userscript:installed', payload)
@@ -480,6 +485,134 @@ function createWindow(): void {
       }
     }).catch(() => {})
   })
+
+  // App-scope shortcut actions (window-local, dispatched via before-input-event)
+  registerAction('tab:new', () => {
+    tabManager.createTab()
+    sendToUi('browser:focus-address-bar')
+  })
+  registerAction('tab:close', () => tabManager.closeTab(tabManager.getActiveTabId()))
+  registerAction('tab:restore', () => tabManager.restoreClosed())
+  registerAction('tab:next', () => {
+    const order = tabManager.getTabOrder()
+    if (order.length === 0) return
+    const idx = order.indexOf(tabManager.getActiveTabId())
+    const next = idx >= order.length - 1 ? 0 : idx + 1
+    tabManager.switchTab(order[next])
+  })
+  registerAction('tab:prev', () => {
+    const order = tabManager.getTabOrder()
+    if (order.length === 0) return
+    const idx = order.indexOf(tabManager.getActiveTabId())
+    const prev = idx <= 0 ? order.length - 1 : idx - 1
+    tabManager.switchTab(order[prev])
+  })
+  for (let i = 1; i <= 8; i++) {
+    const targetIndex = i - 1
+    registerAction(`tab:switch:${i}`, () => {
+      const order = tabManager.getTabOrder()
+      if (targetIndex < order.length) tabManager.switchTab(order[targetIndex])
+    })
+  }
+  registerAction('tab:switch:last', () => {
+    const order = tabManager.getTabOrder()
+    if (order.length > 0) tabManager.switchTab(order[order.length - 1])
+  })
+  registerAction('tab:incognito-new', () => {
+    tabManager.createTab(undefined, { session: getIncognitoSession(), incognito: true })
+    sendToUi('browser:focus-address-bar')
+  })
+
+  registerAction('nav:back', () => tabManager.goBack(tabManager.getActiveTabId()))
+  registerAction('nav:forward', () => tabManager.goForward(tabManager.getActiveTabId()))
+  registerAction('nav:reload', () => tabManager.reload(tabManager.getActiveTabId()))
+  registerAction('nav:reload-alt', () => tabManager.reload(tabManager.getActiveTabId()))
+  registerAction('nav:hard-reload', () => {
+    const wc = tabManager.getActiveWebContents()
+    if (wc) wc.reloadIgnoringCache()
+  })
+  registerAction('nav:stop', () => tabManager.stop(tabManager.getActiveTabId()))
+  registerAction('nav:home', () => {
+    const homepage = (getPreferences().startup.homepageUrl || '').trim() || 'zhi://newtab'
+    tabManager.loadUrl(tabManager.getActiveTabId(), homepage)
+  })
+
+  registerAction('page:find', () => sendToUi('browser:focus-find'))
+  registerAction('page:zoom-in', () => {
+    const id = tabManager.getActiveTabId()
+    tabManager.zoomIn(id)
+    const tab = tabManager.getActiveTab()
+    if (tab) {
+      sendToUi('browser:toast', {
+        id: 'zoom',
+        text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
+        duration: 2000
+      })
+    }
+  })
+  registerAction('page:zoom-out', () => {
+    const id = tabManager.getActiveTabId()
+    tabManager.zoomOut(id)
+    const tab = tabManager.getActiveTab()
+    if (tab) {
+      sendToUi('browser:toast', {
+        id: 'zoom',
+        text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
+        duration: 2000
+      })
+    }
+  })
+  registerAction('page:zoom-reset', () => {
+    tabManager.zoomReset(tabManager.getActiveTabId())
+    sendToUi('browser:toast', { id: 'zoom', text: '缩放：100%', duration: 2000 })
+  })
+  registerAction('page:fullscreen', () => {
+    win.setFullScreen(!win.isFullScreen())
+  })
+  registerAction('page:print', () => {
+    const wc = tabManager.getActiveWebContents()
+    if (wc) {
+      try {
+        wc.print({ silent: false, printBackground: true })
+      } catch {
+        /* user cancelled */
+      }
+    }
+  })
+  registerAction('page:view-source', () => {
+    const url = tabManager.getActiveTabUrl()
+    if (url && /^https?:\/\//i.test(url)) {
+      tabManager.createTab(`view-source:${url}`)
+    }
+  })
+
+  registerAction('address:focus', () => sendToUi('browser:focus-address-bar'))
+  registerAction('address:focus-alt', () => sendToUi('browser:focus-address-bar'))
+
+  registerAction('bookmark:add', () => sendToUi('browser:toggle-bookmark'))
+  registerAction('bookmark:manage', () => openPanelFromCommand('bookmarks'))
+  registerAction('bookmark:bar-toggle', () => {
+    toggleBookmarkBarVisible()
+  })
+
+  registerAction('devtools:toggle', () => tabManager.toggleDevTools(tabManager.getActiveTabId()))
+  registerAction('devtools:toggle-alt', () =>
+    tabManager.toggleDevTools(tabManager.getActiveTabId())
+  )
+  registerAction('devtools:console', () => {
+    const wc = tabManager.getActiveWebContents()
+    if (!wc) return
+    if (wc.isDevToolsOpened()) wc.devToolsWebContents?.focus()
+    else wc.openDevTools({ mode: 'right' })
+  })
+
+  registerAction('browser:history', () => openSidePanelFromShortcut('history'))
+  registerAction('browser:downloads', () => openSidePanelFromShortcut('downloads'))
+  registerAction('browser:settings', () => tabManager.createTab('zhi://settings'))
+  registerAction('browser:shortcuts', () => tabManager.createTab('zhi://shortcuts'))
+
+  registerAction('ai:toggle', () => sendToUi('browser:toggle-ai-panel'))
+
   registerScreenshotHandlers(() => tabManager.getActiveWebContents())
   registerCommandPaletteHandlers()
   registerHibernationHandlers()
@@ -596,118 +729,10 @@ function createWindow(): void {
     })
   }
 
-  // Handle keyboard shortcuts from uiView (address bar, panels, etc.)
+  // Handle keyboard shortcuts from uiView via the central shortcut registry.
   uiView.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
-    const ctrl = input.control || input.meta
-    const shift = input.shift
-    const key = input.key.toLowerCase()
-
-    if (input.alt && !input.control && !input.meta && !input.shift && key === 'i') {
+    if (dispatchAppShortcut(input)) {
       event.preventDefault()
-      sendToUi('browser:toggle-ai-panel')
-      return
-    }
-
-    if (ctrl && key === 'w') {
-      event.preventDefault()
-      tabManager.closeTab(tabManager.getActiveTabId())
-      return
-    }
-    if (ctrl && !shift && key === 't') {
-      event.preventDefault()
-      tabManager.createTab()
-      uiView.webContents.send('browser:focus-address-bar')
-      return
-    }
-    if (ctrl && shift && key === 'n') {
-      event.preventDefault()
-      tabManager.createTab(undefined, { session: getIncognitoSession(), incognito: true })
-      uiView.webContents.send('browser:focus-address-bar')
-      return
-    }
-    if (ctrl && shift && key === 't') {
-      event.preventDefault()
-      tabManager.restoreClosed()
-      return
-    }
-    if (ctrl && key === 'l') {
-      event.preventDefault()
-      uiView.webContents.send('browser:focus-address-bar')
-      return
-    }
-    if ((ctrl && key === 'r') || key === 'f5') {
-      event.preventDefault()
-      tabManager.reload(tabManager.getActiveTabId())
-      return
-    }
-    if (ctrl && key === 'f') {
-      event.preventDefault()
-      uiView.webContents.send('browser:focus-find')
-      return
-    }
-    if (ctrl && key === 'd') {
-      event.preventDefault()
-      uiView.webContents.send('browser:toggle-bookmark')
-      return
-    }
-    if (ctrl && shift && !input.alt && key === 'b') {
-      event.preventDefault()
-      toggleBookmarkBarVisible()
-      return
-    }
-    if (ctrl && key === 'h') {
-      event.preventDefault()
-      openSidePanelFromShortcut('history')
-      return
-    }
-    if (ctrl && key === 'j') {
-      event.preventDefault()
-      openSidePanelFromShortcut('downloads')
-      return
-    }
-    if (ctrl && key === ',') {
-      event.preventDefault()
-      tabManager.createTab('zhi://settings')
-      return
-    }
-    if (ctrl && (key === '+' || key === '=' || key === 'add')) {
-      event.preventDefault()
-      tabManager.zoomIn(tabManager.getActiveTabId())
-      return
-    }
-    if (ctrl && (key === '-' || key === 'subtract')) {
-      event.preventDefault()
-      tabManager.zoomOut(tabManager.getActiveTabId())
-      return
-    }
-    if (ctrl && key === '0') {
-      event.preventDefault()
-      tabManager.zoomReset(tabManager.getActiveTabId())
-      return
-    }
-    if (ctrl && key === 'tab') {
-      event.preventDefault()
-      const tabOrder = tabManager.getTabOrder()
-      const currentIdx = tabOrder.indexOf(tabManager.getActiveTabId())
-      if (shift) {
-        const prevIdx = currentIdx <= 0 ? tabOrder.length - 1 : currentIdx - 1
-        tabManager.switchTab(tabOrder[prevIdx])
-      } else {
-        const nextIdx = currentIdx >= tabOrder.length - 1 ? 0 : currentIdx + 1
-        tabManager.switchTab(tabOrder[nextIdx])
-      }
-      return
-    }
-    if (key === 'escape') {
-      event.preventDefault()
-      tabManager.stop(tabManager.getActiveTabId())
-      return
-    }
-    if (key === 'f12') {
-      event.preventDefault()
-      tabManager.toggleDevTools(tabManager.getActiveTabId())
-      return
     }
   })
 
@@ -1810,6 +1835,8 @@ app.whenReady().then(async () => {
   })
   setupIPC()
   createWindow()
+  const extensionSystem = getExtensionSystem()
+  await extensionSystem.initialize()
   await proxyAutoStart(getPreferences)
 })
 

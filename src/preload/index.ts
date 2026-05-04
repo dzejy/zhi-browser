@@ -209,6 +209,15 @@ const api = {
   ): Promise<{ success: boolean; newVersion?: string; error?: string }> =>
     ipcRenderer.invoke('userscript:update', id),
 
+  // ===== Extensions =====
+  extensionsGetAll: () => ipcRenderer.invoke('ext:getAll'),
+  extensionsInstallLocal: () => ipcRenderer.invoke('ext:installLocal'),
+  extensionsInstallWebStore: (urlOrId: string) => ipcRenderer.invoke('ext:installWebStore', urlOrId),
+  extensionsUninstall: (id: string) => ipcRenderer.invoke('ext:uninstall', id),
+  extensionsEnable: (id: string) => ipcRenderer.invoke('ext:enable', id),
+  extensionsDisable: (id: string) => ipcRenderer.invoke('ext:disable', id),
+  extensionsReload: (id: string) => ipcRenderer.invoke('ext:reload', id),
+
   // ===== Reader mode =====
   readerEnter: () => ipcRenderer.invoke('reader:enter'),
   readerExit: () => ipcRenderer.invoke('reader:exit'),
@@ -503,8 +512,15 @@ proxyStatus: () => ipcRenderer.invoke('proxy:status'),
     ipcRenderer.invoke('shortcuts:update', id, newKey),
   shortcutsToggle: (id: string, enabled: boolean) =>
     ipcRenderer.invoke('shortcuts:toggle', id, enabled),
+  shortcutsReset: (id: string) => ipcRenderer.invoke('shortcuts:reset', id),
+  shortcutsResetAll: () => ipcRenderer.invoke('shortcuts:reset-all'),
   shortcutsOpenSettings: () => ipcRenderer.invoke('shortcuts:open-settings'),
   shortcutsCloseSettings: () => ipcRenderer.invoke('shortcuts:close-settings'),
+  onShortcutsChanged: (callback: (list: unknown) => void): (() => void) => {
+    const handler = (_e: unknown, list: unknown) => callback(list)
+    ipcRenderer.on('shortcuts:changed', handler)
+    return () => ipcRenderer.removeListener('shortcuts:changed', handler)
+  },
 
   // ===== Screenshot =====
   screenshotOpen: () => ipcRenderer.invoke('screenshot:open'),

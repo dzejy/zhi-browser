@@ -13,8 +13,11 @@ export function classifyInput(input: string): ClassifiedUrl {
     return { type: 'newtab', value: 'zhi://newtab' }
   }
 
-  if (/^zhi:\/\/settings\/?$/i.test(trimmed)) {
-    return { type: 'url', value: 'zhi://settings' }
+  const internalMatch = trimmed.match(
+    /^zhi:\/\/(settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i
+  )
+  if (internalMatch) {
+    return { type: 'url', value: `zhi://${internalMatch[1].toLowerCase()}` }
   }
 
   const normalized = normalizeUrl(trimmed)

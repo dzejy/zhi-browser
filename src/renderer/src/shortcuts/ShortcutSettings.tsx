@@ -4,9 +4,11 @@ import './styles.css'
 interface ShortcutItem {
   id: string
   label: string
+  category: string
   defaultKey: string
   currentKey: string
   enabled: boolean
+  scope: 'global' | 'app'
 }
 
 function normalizeKey(e: React.KeyboardEvent<HTMLInputElement>): string {
@@ -47,7 +49,7 @@ export default function ShortcutSettings(): React.JSX.Element {
     if (!key) return
     const result = await window.api.shortcutsUpdate(item.id, key)
     if (!result.success) {
-      setMessage(`与「${result.conflict || '其他快捷键'}」冲突`)
+      setMessage(`与「${result.conflict?.label || '其他快捷键'}」冲突`)
       return
     }
     setMessage('快捷键已保存')

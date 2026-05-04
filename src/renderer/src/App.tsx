@@ -9,6 +9,12 @@ import duckduckgoIcon from './assets/icons/duckduckgo.ico'
 import githubIcon from './assets/icons/github.ico'
 import youtubeIcon from './assets/icons/youtube.ico'
 import { NewTabPage } from './pages/newtab/NewTabPage'
+import { BookmarksPage } from './pages/bookmarks/BookmarksPage'
+import { HistoryPage } from './pages/history/HistoryPage'
+import { DownloadsPage } from './pages/downloads/DownloadsPage'
+import { ShortcutsPage } from './pages/shortcuts/ShortcutsPage'
+import { CommandsPage } from './pages/commands/CommandsPage'
+import { ExtensionsPage } from './pages/extensions/ExtensionsPage'
 
 // ===== Types (mirrored from shared/types for renderer use) =====
 interface TabState {
@@ -2213,45 +2219,6 @@ function BrowserApp(): React.ReactElement {
     setFindResult(null)
   }
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent): void {
-      const ctrl = e.ctrlKey || e.metaKey
-      const key = e.key.toLowerCase()
-      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && key === 'i') {
-        e.preventDefault()
-        toggleAIPanel()
-      } else if (ctrl && key === 'l') {
-        e.preventDefault()
-        urlInputRef.current?.focus()
-        urlInputRef.current?.select()
-      } else if (ctrl && key === 'f') {
-        e.preventDefault()
-        setShowFind(true)
-        setTimeout(() => {
-          findInputRef.current?.focus()
-          findInputRef.current?.select()
-        }, 50)
-      } else if (ctrl && key === 'd') {
-        e.preventDefault()
-        handleToggleBookmark()
-      } else if (ctrl && e.shiftKey && key === 'n') {
-        e.preventDefault()
-        handleNewIncognitoTab()
-      } else if (ctrl && key === 'h') {
-        e.preventDefault()
-        openPanel('history')
-      } else if (ctrl && key === 'j') {
-        e.preventDefault()
-        openPanel('downloads')
-      } else if (ctrl && key === ',') {
-        e.preventDefault()
-        window.api.openUrl('zhi://settings', true)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleNewIncognitoTab, handleToggleBookmark, toggleAIPanel])
-
   const isCurrentBookmarked = bookmarks.some((b) => activeTab && b.url === activeTab.url)
   const activeSnifferCount = activeTab?.webContentsId
     ? snifferCounts[activeTab.webContentsId] || 0
@@ -3661,6 +3628,12 @@ function BrowserApp(): React.ReactElement {
             }}
           />
         )}
+        {activeTab?.url === 'zhi://bookmarks' && <BookmarksPage />}
+        {activeTab?.url === 'zhi://history' && <HistoryPage />}
+        {activeTab?.url === 'zhi://downloads' && <DownloadsPage />}
+        {activeTab?.url === 'zhi://shortcuts' && <ShortcutsPage />}
+        {activeTab?.url === 'zhi://commands' && <CommandsPage />}
+        {activeTab?.url === 'zhi://extensions' && <ExtensionsPage />}
 
         {/* ===== Add Panel Dialog ===== */}
         {showAddPanelDialog && (
@@ -4087,35 +4060,6 @@ function App_PanelOnly(): React.ReactElement {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      const ctrl = e.ctrlKey || e.metaKey
-      const key = e.key.toLowerCase()
-
-      if (ctrl && e.shiftKey && !e.altKey && key === 'b') {
-        e.preventDefault()
-        window.api
-          .toggleBookmarkBar()
-          .then((visible) => {
-            setShowBookmarkBar(visible)
-            showToast(visible ? '已显示书签栏' : '已隐藏书签栏')
-          })
-          .catch(console.error)
-        return
-      }
-
-      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && key === 'i') {
-        e.preventDefault()
-        setAiShowSettings(false)
-        if (panelType === 'ai') {
-          setAiError(null)
-          window.api.hidePanel()
-        } else {
-          setPanelType('ai')
-          setAiError(null)
-          window.api.showPanel('ai')
-        }
-        return
-      }
-
       if (e.key !== 'Escape') return
       if (editingBookmark) {
         setEditingBookmark(null)
@@ -4131,7 +4075,7 @@ function App_PanelOnly(): React.ReactElement {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editingBookmark, confirmDialog, panelType, showToast])
+  }, [editingBookmark, confirmDialog])
 
   useEffect(() => {
     if (panelType === 'bookmarks') {

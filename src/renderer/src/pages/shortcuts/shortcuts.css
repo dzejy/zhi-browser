@@ -1,0 +1,360 @@
+.shortcuts-page {
+  --page-bg-primary: var(--bg-primary, var(--bg-base));
+  --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
+  --page-bg-tertiary: var(--bg-tertiary, var(--bg-input));
+  --page-text-primary: var(--text-primary);
+  --page-text-secondary: var(--text-secondary);
+  --page-accent: var(--accent, var(--color-accent));
+  --page-danger: var(--danger, var(--color-danger));
+  --page-border: var(--border-color, var(--border-subtle));
+  --page-radius-sm: var(--radius-sm, var(--radius-s));
+  --page-radius-md: var(--radius-md, var(--radius-m));
+  position: absolute;
+  inset: var(--chrome-height) 0 0 0;
+  z-index: 2;
+  min-height: calc(100vh - var(--chrome-height));
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% -12%, color-mix(in srgb, var(--page-accent) 18%, transparent), transparent 35%),
+    linear-gradient(180deg, var(--page-bg-primary), var(--page-bg-secondary));
+  color: var(--page-text-primary);
+  pointer-events: auto;
+}
+
+.shortcuts-shell {
+  width: min(820px, calc(100% - 40px));
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcuts-topbar {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--page-border);
+  background: rgba(var(--bg-secondary-rgb, 31, 33, 39), 0.8);
+  backdrop-filter: blur(20px);
+}
+
+.shortcuts-topbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shortcuts-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shortcuts-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--page-text-secondary);
+  font-size: 12px;
+}
+
+.shortcuts-topbar h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.shortcuts-search {
+  width: min(320px, 40vw);
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-tertiary);
+  color: var(--page-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.shortcuts-search:focus-within {
+  border-color: color-mix(in srgb, var(--page-accent) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--page-accent) 18%, transparent);
+}
+
+.shortcuts-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--page-text-primary);
+  font-size: 14px;
+}
+
+.shortcuts-search input::placeholder {
+  color: var(--page-text-secondary);
+}
+
+.shortcuts-button {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-tertiary);
+  color: var(--page-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.shortcuts-button:hover {
+  border-color: color-mix(in srgb, var(--page-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 10%, var(--page-bg-tertiary));
+}
+
+.shortcuts-button.is-danger:hover {
+  border-color: color-mix(in srgb, var(--page-danger) 50%, transparent);
+  background: color-mix(in srgb, var(--page-danger) 12%, var(--page-bg-tertiary));
+  color: var(--page-text-primary);
+}
+
+.shortcuts-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 0 34px;
+}
+
+.shortcuts-group {
+  margin-bottom: 18px;
+  animation: shortcutsFadeInUp 0.28s ease both;
+  animation-delay: var(--delay, 0ms);
+}
+
+.shortcuts-group h2 {
+  margin: 0 0 10px;
+  color: var(--page-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shortcuts-card {
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-tertiary);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.shortcuts-card:hover {
+  border-color: color-mix(in srgb, var(--page-accent) 30%, transparent);
+}
+
+.shortcuts-row {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--page-border);
+  color: var(--page-text-primary);
+  font-size: 14px;
+}
+
+.shortcuts-row:last-child {
+  border-bottom: 0;
+}
+
+.shortcuts-row.is-disabled .shortcuts-row-label {
+  color: var(--page-text-secondary);
+  text-decoration: line-through;
+}
+
+.shortcuts-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shortcuts-row-label .shortcuts-label-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.shortcuts-row-label .shortcuts-label-meta {
+  font-size: 11px;
+  color: var(--page-text-secondary);
+}
+
+.shortcuts-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.shortcuts-key-display {
+  min-width: 140px;
+  height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--page-border);
+  border-radius: var(--page-radius-sm);
+  background: var(--page-bg-secondary);
+  color: var(--page-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.shortcuts-key-display:hover {
+  border-color: color-mix(in srgb, var(--page-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 8%, var(--page-bg-secondary));
+}
+
+.shortcuts-key-display.is-empty {
+  color: var(--page-text-secondary);
+  font-style: italic;
+}
+
+.shortcuts-key-display.is-recording {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--page-accent) 80%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 12%, var(--page-bg-secondary));
+  color: var(--page-text-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--page-accent) 22%, transparent);
+}
+
+.shortcuts-key-display.is-conflict {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--page-danger) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--page-danger) 22%, transparent);
+}
+
+.shortcuts-icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-sm);
+  background: var(--page-bg-secondary);
+  color: var(--page-text-secondary);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-size: 14px;
+}
+
+.shortcuts-icon-button:hover {
+  border-color: color-mix(in srgb, var(--page-accent) 50%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 10%, var(--page-bg-secondary));
+  color: var(--page-text-primary);
+}
+
+.shortcuts-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.shortcuts-icon-button.is-toggle.is-on {
+  background: color-mix(in srgb, var(--page-accent) 18%, var(--page-bg-secondary));
+  color: var(--page-text-primary);
+  border-color: color-mix(in srgb, var(--page-accent) 50%, transparent);
+}
+
+.shortcuts-icon-button.is-toggle.is-off {
+  opacity: 0.6;
+}
+
+.shortcuts-conflict {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--page-danger);
+}
+
+.shortcuts-banner {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--page-accent) 40%, transparent);
+  border-radius: var(--page-radius-md);
+  background: color-mix(in srgb, var(--page-accent) 10%, transparent);
+  color: var(--page-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.shortcuts-empty {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: var(--page-text-secondary);
+  text-align: center;
+}
+
+.shortcuts-empty div {
+  font-size: 46px;
+}
+
+.shortcuts-empty p {
+  font-size: 14px;
+}
+
+.shortcuts-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.shortcuts-list::-webkit-scrollbar-track {
+  background: var(--page-bg-tertiary);
+  border-radius: 999px;
+}
+
+.shortcuts-list::-webkit-scrollbar-thumb {
+  background: var(--page-text-secondary);
+  border-radius: 999px;
+}
+
+@keyframes shortcutsFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 700px) {
+  .shortcuts-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shortcuts-search {
+    width: 100%;
+  }
+
+  .shortcuts-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shortcuts-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

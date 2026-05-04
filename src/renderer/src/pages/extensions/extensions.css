@@ -1,0 +1,499 @@
+.ext-page {
+  --page-bg-primary: var(--bg-primary, var(--bg-base));
+  --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
+  --page-bg-tertiary: var(--bg-tertiary, var(--bg-input));
+  --page-text-primary: var(--text-primary);
+  --page-text-secondary: var(--text-secondary);
+  --page-accent: var(--accent, var(--color-accent));
+  --page-danger: var(--danger, var(--color-danger));
+  --page-border: var(--border-color, var(--border-subtle));
+  --page-radius-sm: var(--radius-sm, var(--radius-s));
+  --page-radius-md: var(--radius-md, var(--radius-m));
+  position: absolute;
+  inset: var(--chrome-height) 0 0 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--chrome-height));
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 80% 10%, color-mix(in srgb, var(--page-accent) 16%, transparent), transparent 30%),
+    linear-gradient(150deg, var(--page-bg-primary), var(--page-bg-secondary));
+  color: var(--page-text-primary);
+  pointer-events: auto;
+}
+
+.ext-header,
+.ext-install-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 36px;
+  border-bottom: 1px solid var(--page-border);
+  background: color-mix(in srgb, var(--page-bg-secondary) 80%, transparent);
+  background: rgba(var(--bg-secondary-rgb), 0.8);
+  backdrop-filter: blur(20px);
+}
+
+.ext-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.ext-header p {
+  margin: 6px 0 0;
+  color: var(--page-text-secondary);
+  font-size: 12px;
+}
+
+.ext-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--page-text-secondary);
+  font-size: 12px;
+}
+
+.ext-primary-btn,
+.ext-secondary-btn,
+.ext-danger-btn,
+.ext-card-actions button,
+.ext-icon-btn,
+.ext-filters button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ext-primary-btn,
+.ext-secondary-btn,
+.ext-danger-btn {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: var(--page-radius-sm);
+  font-size: 13px;
+}
+
+.ext-primary-btn {
+  border: 1px solid transparent;
+  background: var(--page-accent);
+  color: var(--page-text-primary);
+}
+
+.ext-primary-btn:hover,
+.ext-danger-btn:hover {
+  filter: brightness(1.12);
+}
+
+.ext-secondary-btn {
+  border: 1px solid var(--page-border);
+  background: transparent;
+  color: var(--page-text-secondary);
+}
+
+.ext-secondary-btn:hover,
+.ext-card-actions button:hover,
+.ext-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--page-accent) 30%, transparent);
+  color: var(--page-text-primary);
+}
+
+.ext-secondary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ext-danger-btn {
+  border: 1px solid transparent;
+  background: var(--page-danger);
+  color: var(--page-text-primary);
+}
+
+.ext-install-bar {
+  justify-content: flex-start;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.ext-search {
+  width: min(560px, 60vw);
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-tertiary);
+  color: var(--page-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.ext-search:focus-within {
+  border-color: color-mix(in srgb, var(--page-accent) 55%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--page-accent) 18%, transparent);
+}
+
+.ext-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--page-text-primary);
+  font-size: 14px;
+}
+
+.ext-search input::placeholder {
+  color: var(--page-text-secondary);
+}
+
+.ext-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 36px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--page-danger) 30%, transparent);
+  border-radius: var(--page-radius-md);
+  background: color-mix(in srgb, var(--page-danger) 12%, transparent);
+  color: var(--page-danger);
+  font-size: 13px;
+}
+
+.ext-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.ext-filters {
+  display: flex;
+  gap: 6px;
+  padding: 14px 36px 0;
+}
+
+.ext-filters button {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--page-radius-sm);
+  background: transparent;
+  color: var(--page-text-secondary);
+  font-size: 13px;
+}
+
+.ext-filters button:hover,
+.ext-filters button.active {
+  border-color: color-mix(in srgb, var(--page-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--page-accent) 12%, transparent);
+  color: var(--page-text-primary);
+}
+
+.ext-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+  padding: 16px 36px 28px;
+  overflow: hidden;
+}
+
+.ext-list {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.ext-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 76px;
+  margin-bottom: 10px;
+  padding: 14px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-tertiary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ext-card:hover,
+.ext-card.is-selected {
+  border-color: color-mix(in srgb, var(--page-accent) 30%, transparent);
+  transform: translateY(-1px);
+}
+
+.ext-card.is-selected {
+  background: color-mix(in srgb, var(--page-accent) 10%, var(--page-bg-tertiary));
+}
+
+.ext-card.is-disabled {
+  opacity: 0.55;
+}
+
+.ext-card-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  border-radius: var(--page-radius-md);
+  background: var(--page-bg-secondary);
+  color: var(--page-text-secondary);
+  overflow: hidden;
+  font-weight: 700;
+}
+
+.ext-card-icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.ext-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.ext-card-title-row strong {
+  color: var(--page-text-primary);
+  font-size: 14px;
+}
+
+.ext-card-title-row em,
+.ext-card p,
+.ext-detail-grid span {
+  color: var(--page-text-secondary);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.ext-card-title-row span,
+.ext-tags span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--page-accent) 13%, transparent);
+  color: var(--page-text-secondary);
+  font-size: 12px;
+}
+
+.ext-card p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 40px;
+}
+
+.ext-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ext-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--page-bg-secondary);
+  border: 1px solid var(--page-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ext-switch span::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 2px;
+  border-radius: 50%;
+  background: var(--page-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.ext-switch input:checked + span {
+  background: var(--page-accent);
+}
+
+.ext-switch input:checked + span::after {
+  transform: translateX(17px);
+  background: var(--page-text-primary);
+}
+
+.ext-detail {
+  width: 330px;
+  flex: 0 0 330px;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-md);
+  background: color-mix(in srgb, var(--page-bg-secondary) 80%, transparent);
+  background: rgba(var(--bg-secondary-rgb), 0.8);
+  backdrop-filter: blur(20px);
+  animation: extDetailIn 0.22s ease both;
+}
+
+.ext-detail-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.ext-detail h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ext-icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--page-border);
+  border-radius: var(--page-radius-sm);
+  background: transparent;
+  color: var(--page-text-secondary);
+  font-size: 18px;
+}
+
+.ext-detail-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 10px;
+  margin-bottom: 18px;
+}
+
+.ext-detail-grid strong,
+.ext-detail-grid code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--page-text-primary);
+  font-size: 12px;
+}
+
+.ext-detail-grid code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+}
+
+.ext-detail-section {
+  margin-bottom: 16px;
+}
+
+.ext-detail-section h3 {
+  margin: 0 0 8px;
+  color: var(--page-text-secondary);
+  font-size: 12px;
+}
+
+.ext-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ext-detail-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--page-border);
+}
+
+.ext-empty {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--page-text-secondary);
+  text-align: center;
+}
+
+.ext-empty div {
+  font-size: 44px;
+}
+
+.ext-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ext-empty span {
+  font-size: 12px;
+}
+
+.ext-list::-webkit-scrollbar,
+.ext-detail::-webkit-scrollbar,
+.ext-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ext-list::-webkit-scrollbar-track,
+.ext-detail::-webkit-scrollbar-track,
+.ext-nav::-webkit-scrollbar-track {
+  background: var(--page-bg-tertiary);
+  border-radius: 999px;
+}
+
+.ext-list::-webkit-scrollbar-thumb,
+.ext-detail::-webkit-scrollbar-thumb,
+.ext-nav::-webkit-scrollbar-thumb {
+  background: var(--page-text-secondary);
+  border-radius: 999px;
+}
+
+@keyframes extDetailIn {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .ext-header,
+  .ext-install-bar,
+  .ext-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ext-search {
+    width: 100%;
+  }
+
+  .ext-body {
+    flex-direction: column;
+  }
+
+  .ext-detail {
+    width: 100%;
+    flex-basis: auto;
+    max-height: 42vh;
+  }
+}
+

@@ -62,6 +62,23 @@ interface WebPanelItem {
   order: number
 }
 
+interface ExtensionInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  enabled: boolean
+  path: string
+  url: string
+  icons: Record<string, string>
+  hasPopup: boolean
+  hasOptions: boolean
+  permissions: string[]
+  hostPermissions: string[]
+  installedAt: number
+  source: 'local' | 'crx' | 'webstore'
+}
+
 type BuiltinDownloadTask = Record<string, unknown>
 type DownloadProgress = Record<string, unknown>
 
@@ -256,6 +273,15 @@ export interface PreloadAPI {
   userscriptRemove(id: string): Promise<boolean>
   userscriptToggle(id: string, enabled: boolean): Promise<boolean>
   userscriptUpdate(id: string): Promise<{ success: boolean; newVersion?: string; error?: string }>
+
+  // Extensions
+  extensionsGetAll(): Promise<ExtensionInfo[]>
+  extensionsInstallLocal(): Promise<ExtensionInfo | null>
+  extensionsInstallWebStore(urlOrId: string): Promise<ExtensionInfo>
+  extensionsUninstall(id: string): Promise<{ success: boolean }>
+  extensionsEnable(id: string): Promise<{ success: boolean }>
+  extensionsDisable(id: string): Promise<{ success: boolean }>
+  extensionsReload(id: string): Promise<{ success: boolean }>
 
   // Reader mode
   readerEnter(): Promise<{ success: boolean; article?: unknown; error?: string }>
@@ -476,18 +502,46 @@ export interface PreloadAPI {
     Array<{
       id: string
       label: string
+      category: string
       defaultKey: string
       currentKey: string
       enabled: boolean
+      scope: 'global' | 'app'
     }>
   >
   shortcutsUpdate(
     id: string,
     newKey: string
-  ): Promise<{ success: boolean; conflict?: string }>
+  ): Promise<{ success: boolean; conflict?: { id: string; label: string } }>
   shortcutsToggle(id: string, enabled: boolean): Promise<{ success: boolean }>
+  shortcutsReset(id: string): Promise<{
+    success: boolean
+    item?: {
+      id: string
+      label: string
+      category: string
+      defaultKey: string
+      currentKey: string
+      enabled: boolean
+      scope: 'global' | 'app'
+    }
+  }>
+  shortcutsResetAll(): Promise<{ success: boolean }>
   shortcutsOpenSettings(): Promise<{ success: boolean }>
   shortcutsCloseSettings(): Promise<{ success: boolean }>
+  onShortcutsChanged(
+    callback: (
+      list: Array<{
+        id: string
+        label: string
+        category: string
+        defaultKey: string
+        currentKey: string
+        enabled: boolean
+        scope: 'global' | 'app'
+      }>
+    ) => void
+  ): () => void
 
   // Screenshot
   screenshotOpen(): Promise<{ success: boolean }>

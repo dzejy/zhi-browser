@@ -7,7 +7,10 @@ import {
   registerAction,
   updateShortcut,
   toggleShortcut,
-  getShortcuts
+  resetShortcut,
+  resetAllShortcuts,
+  getShortcuts,
+  dispatchAppShortcut
 } from './registry'
 
 let shortcutWindow: BrowserWindow | null = null
@@ -27,10 +30,10 @@ export function openShortcutSettingsWindow(): void {
   }
 
   shortcutWindow = new BrowserWindow({
-    width: 620,
-    height: 520,
-    minWidth: 520,
-    minHeight: 420,
+    width: 720,
+    height: 600,
+    minWidth: 560,
+    minHeight: 460,
     title: '快捷键设置',
     backgroundColor: '#15161d',
     autoHideMenuBar: true,
@@ -56,8 +59,12 @@ export function registerShortcutHandlers(): void {
   ipcMain.handle('shortcuts:update', (_e, id: string, newKey: string) =>
     updateShortcut(id, newKey)
   )
-  ipcMain.handle('shortcuts:toggle', (_e, id: string, enabled: boolean) => {
+  ipcMain.handle('shortcuts:toggle', (_e, id: string, enabled: boolean) =>
     toggleShortcut(id, enabled)
+  )
+  ipcMain.handle('shortcuts:reset', (_e, id: string) => resetShortcut(id))
+  ipcMain.handle('shortcuts:reset-all', () => {
+    resetAllShortcuts()
     return { success: true }
   })
   ipcMain.handle('shortcuts:open-settings', () => {
@@ -71,4 +78,4 @@ export function registerShortcutHandlers(): void {
   })
 }
 
-export { registerAction }
+export { registerAction, dispatchAppShortcut, getShortcuts }

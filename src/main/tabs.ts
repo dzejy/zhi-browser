@@ -7,15 +7,13 @@ import {
   Session
 } from 'electron'
 import { join } from 'path'
-import type { Input, Event } from 'electron'
 import {
   TabState,
   BrowserState,
   LoadError,
   FindState,
   RecentlyClosedTab,
-  BrowserLayout,
-  SidePanelType
+  BrowserLayout
 } from '../shared/types'
 import type { AISelectionAction } from '../shared/aiTypes'
 import { classifyInput, getWwwFallbackUrl } from './navigation'
@@ -33,7 +31,7 @@ import { setupScriptInjection } from './userscript/injector'
 import { setupInstallInterceptor } from './userscript/install-interceptor'
 import { resourceSniffer } from './sniffer'
 import { clearTabPreview } from './tab-preview'
-import { getIncognitoSession, noteIncognitoTabCreated, noteIncognitoTabClosed } from './incognito'
+import { noteIncognitoTabCreated, noteIncognitoTabClosed } from './incognito'
 import {
   getHibernatedTabState,
   hibernateTab,
@@ -43,11 +41,41 @@ import {
   wakeTab
 } from './hibernation/manager'
 import { bindPasswordDetection } from './password'
+import { dispatchAppShortcut } from './shortcuts'
 
 const UI_SCALE = 1.5
 const DEFAULT_UI_VIEW_HEIGHT = Math.round(92 * UI_SCALE)
 const NEW_TAB_FAVICON =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='18' fill='%23171a22'/><path d='M20 18c8-3 19-3 25 0M21 22h23L20 47h24' fill='none' stroke='%23f3f6ff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/><path d='M17 15c8-5 23-6 32 0' fill='none' stroke='%23dc2626' stroke-width='3' stroke-linecap='round' opacity='.85'/></svg>"
+
+type InternalPage =
+  | ''
+  | 'settings'
+  | 'bookmarks'
+  | 'history'
+  | 'downloads'
+  | 'shortcuts'
+  | 'commands'
+  | 'extensions'
+
+const INTERNAL_PAGE_TITLES: Record<Exclude<InternalPage, ''>, string> = {
+  settings: '设置 - Zhi Browser',
+  bookmarks: '书签管理 - Zhi Browser',
+  history: '历史记录 - Zhi Browser',
+  downloads: '下载管理 - Zhi Browser',
+  shortcuts: '快捷键 - Zhi Browser',
+  commands: '命令 DIY - Zhi Browser',
+  extensions: '扩展程序 - Zhi Browser'
+}
+
+function getInternalPageFromUrl(url?: string): InternalPage {
+  const match = url?.match(/^zhi:\/\/(settings|bookmarks|history|downloads|shortcuts|commands|extensions)\/?$/i)
+  return (match?.[1]?.toLowerCase() as InternalPage) || ''
+}
+
+function isOverlayInternalPage(page: InternalPage): boolean {
+  return Boolean(page && page !== 'settings')
+}
 
 interface ManagedTab {
   id: string
@@ -67,7 +95,7 @@ interface ManagedTab {
   isMuted: boolean
   isIncognito: boolean
   wwwFallbackAttempted: boolean
-  internalPage: '' | 'settings'
+  internalPage: InternalPage
 }
 
 interface CreateTabOptions {
@@ -108,9 +136,7 @@ export class TabManager {
   private recentlyClosed: RecentlyClosedTab[] = []
   private lastAccessedTabId: string = ''
   private onStateChange: () => void
-  private onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void
   private onAIAction?: (action: AISelectionAction) => void
-  private onToggleBookmarkBar?: () => void
   private onUserScriptInstalled?: (payload: { name: string }) => void
   private pageBoundsProvider: ((bounds: PageBounds) => PageBounds) | null = null
 
@@ -118,17 +144,13 @@ export class TabManager {
     win: BaseWindow,
     uiView: WebContentsView,
     onStateChange: () => void,
-    onOpenPanel?: (type: Extract<SidePanelType, 'history' | 'downloads'>) => void,
     onAIAction?: (action: AISelectionAction) => void,
-    onToggleBookmarkBar?: () => void,
     onUserScriptInstalled?: (payload: { name: string }) => void
   ) {
     this.win = win
     this.uiView = uiView
     this.onStateChange = onStateChange
-    this.onOpenPanel = onOpenPanel
     this.onAIAction = onAIAction
-    this.onToggleBookmarkBar = onToggleBookmarkBar
     this.onUserScriptInstalled = onUserScriptInstalled
   }
 
@@ -253,7 +275,7 @@ export class TabManager {
     tab.isLoading = true
     tab.error = null
     tab.url = 'zhi://settings'
-    tab.title = '设置 - Zhi Browser'
+    tab.title = INTERNAL_PAGE_TITLES.settings
     tab.isNewTab = false
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       await tab.view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/settings-page`)
@@ -273,7 +295,7 @@ export class TabManager {
       targetUrl = classifyInput(prefs.startup.newTabUrl).value
     }
 
-    const isInternalPage = typeof targetUrl === 'string' && /^zhi:\/\/settings\/?$/i.test(targetUrl)
+    const internalPage = getInternalPageFromUrl(targetUrl)
     const isNewTab =
       !targetUrl || targetUrl === 'about:blank' || /^zhi:\/\/newtab\/?$/i.test(targetUrl)
     const isIncognito = Boolean(options?.incognito && options.session)
@@ -293,10 +315,12 @@ export class TabManager {
     const tab: ManagedTab = {
       id,
       view,
-      darkModeHiddenUntilReady: Boolean(!isNewTab && targetUrl && prefs.webDarkMode),
+      darkModeHiddenUntilReady: Boolean(
+        !isNewTab && targetUrl && prefs.webDarkMode && !internalPage
+      ),
       url: targetUrl || 'about:blank',
-      title: isInternalPage ? '设置 - Zhi Browser' : isNewTab ? '新标签页' : '',
-      favicon: isNewTab ? NEW_TAB_FAVICON : '',
+      title: internalPage ? INTERNAL_PAGE_TITLES[internalPage] : isNewTab ? '新标签页' : '',
+      favicon: isNewTab || internalPage ? NEW_TAB_FAVICON : '',
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
@@ -308,7 +332,7 @@ export class TabManager {
       isMuted: false,
       isIncognito,
       wwwFallbackAttempted: false,
-      internalPage: isInternalPage ? 'settings' : ''
+      internalPage
     }
 
     this.tabs.set(id, tab)
@@ -362,6 +386,13 @@ export class TabManager {
         }
         this.pushState()
       })
+    } else if (isOverlayInternalPage(tab.internalPage)) {
+      tab.isLoading = false
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(false)
+      applyViewBackgroundColor(tab.view)
+      this.updateLayout()
+      this.pushState()
     } else if (!isNewTab && targetUrl) {
       this.prepareDarkModeForNavigation(tab)
       view.webContents.loadURL(targetUrl, options?.loadURLOptions).catch(() => {
@@ -590,10 +621,28 @@ export class TabManager {
     if (!tab) return
 
     const classified = classifyInput(input)
+    const internalPage = getInternalPageFromUrl(classified.value)
 
-    if (/^zhi:\/\/settings\/?$/i.test(classified.value)) {
+    if (internalPage === 'settings') {
       tab.internalPage = 'settings'
       this.loadInternalSettingsPage(tab).catch(() => {})
+      this.pushState()
+      return
+    }
+
+    if (isOverlayInternalPage(internalPage)) {
+      clearTabPreview(tab.view.webContents.id)
+      tab.isNewTab = false
+      tab.internalPage = internalPage
+      tab.url = `zhi://${internalPage}`
+      tab.title = INTERNAL_PAGE_TITLES[internalPage]
+      tab.favicon = NEW_TAB_FAVICON
+      tab.error = null
+      tab.isLoading = false
+      tab.darkModeHiddenUntilReady = false
+      tab.view.setVisible(false)
+      applyViewBackgroundColor(tab.view)
+      this.updateLayout()
       this.pushState()
       return
     }
@@ -605,6 +654,7 @@ export class TabManager {
       tab.title = '新标签页'
       tab.favicon = NEW_TAB_FAVICON
       tab.error = null
+      tab.internalPage = ''
       tab.darkModeHiddenUntilReady = false
       tab.view.setVisible(false)
       applyViewBackgroundColor(tab.view)
@@ -646,6 +696,11 @@ export class TabManager {
     if (tab) {
       tab.error = null
       tab.wwwFallbackAttempted = false
+      if (isOverlayInternalPage(tab.internalPage)) {
+        this.updateLayout()
+        this.pushState()
+        return
+      }
       this.prepareDarkModeForNavigation(tab)
       tab.view.webContents.reload()
       this.pushState()
@@ -832,8 +887,12 @@ export class TabManager {
   updateLayout(): void {
     const { width, height } = this.win.getContentBounds()
     const activeTab = this.tabs.get(this.activeTabId)
-    const isActiveNewTab = Boolean(activeTab?.isNewTab || activeTab?.url === 'zhi://newtab')
-    const uiHeight = isActiveNewTab ? height : Math.max(0, Math.min(this.uiViewHeight, height))
+    const usesRendererOverlay = Boolean(
+      activeTab?.isNewTab ||
+        activeTab?.url === 'zhi://newtab' ||
+        isOverlayInternalPage(activeTab?.internalPage || '')
+    )
+    const uiHeight = usesRendererOverlay ? height : Math.max(0, Math.min(this.uiViewHeight, height))
     const uiWidth =
       this.uiViewWidth === null ? width : Math.max(0, Math.min(this.uiViewWidth, width))
     this.uiView.setBounds({ x: 0, y: 0, width: uiWidth, height: uiHeight })
@@ -847,10 +906,10 @@ export class TabManager {
         height: pageHeight
       }
       activeTab.view.setBounds(this.pageBoundsProvider?.(pageBounds) || pageBounds)
-      activeTab.view.setVisible(!isActiveNewTab && !activeTab.darkModeHiddenUntilReady)
+      activeTab.view.setVisible(!usesRendererOverlay && !activeTab.darkModeHiddenUntilReady)
     }
 
-    if (this.pageTop === 0 || isActiveNewTab) {
+    if (this.pageTop === 0 || usesRendererOverlay) {
       try {
         this.win.contentView.removeChildView(this.uiView)
       } catch {
@@ -1013,7 +1072,7 @@ button.primary:hover{background:#4d6faa}
         tab.isLoading = false
         tab.isNewTab = false
         tab.url = 'zhi://settings'
-        tab.title = '设置 - Zhi Browser'
+        tab.title = INTERNAL_PAGE_TITLES.settings
         this.pushState()
         return
       }
@@ -1046,7 +1105,7 @@ button.primary:hover{background:#4d6faa}
     })
 
     wc.on('page-title-updated', (_event, title) => {
-      tab.title = tab.internalPage === 'settings' ? '设置 - Zhi Browser' : title || tab.title
+      tab.title = tab.internalPage === 'settings' ? INTERNAL_PAGE_TITLES.settings : title || tab.title
       this.pushState()
 
       if (!tab.isIncognito && tab.url && tab.url !== 'about:blank') {
@@ -1153,19 +1212,7 @@ button.primary:hover{background:#4d6faa}
     })
 
     wc.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown') return
-      if (
-        input.alt &&
-        !input.control &&
-        !input.meta &&
-        !input.shift &&
-        input.key.toLowerCase() === 'i'
-      ) {
-        event.preventDefault()
-        this.uiView.webContents.send('browser:toggle-ai-panel')
-        return
-      }
-      if (this.handlePageKeyboard(event, input)) {
+      if (dispatchAppShortcut(input)) {
         event.preventDefault()
       }
     })
@@ -1406,166 +1453,6 @@ button.primary:hover{background:#4d6faa}
     })
   }
 
-  private handlePageKeyboard(_event: Event, input: Input): boolean {
-    const ctrl = input.control || input.meta
-    const shift = input.shift
-    const alt = input.alt
-    const key = input.key.toLowerCase()
-
-    if (ctrl && key === 'l') {
-      this.uiView.webContents.send('browser:focus-address-bar')
-      return true
-    }
-
-    if (ctrl && !shift && key === 't') {
-      this.createTab()
-      this.uiView.webContents.send('browser:focus-address-bar')
-      return true
-    }
-
-    if (ctrl && shift && key === 'n') {
-      this.createTab(undefined, { session: getIncognitoSession(), incognito: true })
-      this.uiView.webContents.send('browser:focus-address-bar')
-      return true
-    }
-
-    if (ctrl && key === 'w') {
-      this.closeTab(this.activeTabId)
-      return true
-    }
-
-    if ((ctrl && key === 'r') || key === 'f5') {
-      this.reload(this.activeTabId)
-      return true
-    }
-
-    if (key === 'escape') {
-      if (this.findState) {
-        this.findStop(this.activeTabId, 'clearSelection')
-      } else {
-        this.stop(this.activeTabId)
-      }
-      return true
-    }
-
-    if (alt && key === 'arrowleft') {
-      this.goBack(this.activeTabId)
-      return true
-    }
-
-    if (alt && key === 'arrowright') {
-      this.goForward(this.activeTabId)
-      return true
-    }
-
-    if (ctrl && key === 'tab') {
-      const currentIdx = this.tabOrder.indexOf(this.activeTabId)
-      if (shift) {
-        const prevIdx = currentIdx <= 0 ? this.tabOrder.length - 1 : currentIdx - 1
-        this.switchTab(this.tabOrder[prevIdx])
-      } else {
-        const nextIdx = currentIdx >= this.tabOrder.length - 1 ? 0 : currentIdx + 1
-        this.switchTab(this.tabOrder[nextIdx])
-      }
-      return true
-    }
-
-    if (ctrl && /^[1-9]$/.test(input.key)) {
-      const idx = parseInt(input.key) - 1
-      if (input.key === '9') {
-        this.switchTab(this.tabOrder[this.tabOrder.length - 1])
-      } else if (idx < this.tabOrder.length) {
-        this.switchTab(this.tabOrder[idx])
-      }
-      return true
-    }
-
-    if (ctrl && key === 'f') {
-      this.uiView.webContents.send('browser:focus-find')
-      return true
-    }
-
-    if (ctrl && key === 'd') {
-      this.uiView.webContents.send('browser:toggle-bookmark')
-      return true
-    }
-
-    if (ctrl && shift && !alt && key === 'b') {
-      this.onToggleBookmarkBar?.()
-      return true
-    }
-
-    if (ctrl && key === 'h') {
-      if (this.onOpenPanel) {
-        this.onOpenPanel('history')
-      } else {
-        this.uiView.webContents.send('browser:open-panel', 'history')
-      }
-      return true
-    }
-
-    if (ctrl && key === 'j') {
-      if (this.onOpenPanel) {
-        this.onOpenPanel('downloads')
-      } else {
-        this.uiView.webContents.send('browser:open-panel', 'downloads')
-      }
-      return true
-    }
-
-    if (ctrl && key === ',') {
-      this.createTab('zhi://settings')
-      return true
-    }
-
-    if (ctrl && (key === '+' || key === '=' || key === 'add')) {
-      this.zoomIn(this.activeTabId)
-      const tab = this.getActiveTab()
-      if (tab) {
-        this.uiView.webContents.send('browser:toast', {
-          id: 'zoom',
-          text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
-          duration: 2000
-        })
-      }
-      return true
-    }
-
-    if (ctrl && (key === '-' || key === 'subtract')) {
-      this.zoomOut(this.activeTabId)
-      const tab = this.getActiveTab()
-      if (tab) {
-        this.uiView.webContents.send('browser:toast', {
-          id: 'zoom',
-          text: `缩放：${Math.round(tab.zoomFactor * 100)}%`,
-          duration: 2000
-        })
-      }
-      return true
-    }
-
-    if (ctrl && key === '0') {
-      this.zoomReset(this.activeTabId)
-      this.uiView.webContents.send('browser:toast', {
-        id: 'zoom',
-        text: '缩放：100%',
-        duration: 2000
-      })
-      return true
-    }
-
-    if (key === 'f12') {
-      this.toggleDevTools(this.activeTabId)
-      return true
-    }
-
-    if (ctrl && shift && key === 't') {
-      this.restoreClosed()
-      return true
-    }
-
-    return false
-  }
 
   private pushState(): void {
     this.onStateChange()
