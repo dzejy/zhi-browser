@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/shortcuts/shortcuts.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .shortcuts-page {
   --page-bg-primary: var(--bg-primary, var(--bg-base));
   --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
@@ -338,6 +340,55 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.shortcuts-shell {
+  width: min(800px, calc(100% - 44px));
+}
+
+.shortcuts-topbar {
+  min-height: 78px;
+  padding-block: 16px;
+}
+
+.shortcuts-search {
+  width: min(300px, 36vw);
+  height: 36px;
+}
+
+.shortcuts-list {
+  padding-top: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.shortcuts-group {
+  margin-bottom: 16px;
+}
+
+.shortcuts-row {
+  min-height: 52px;
+  padding: 9px 12px;
+}
+
+.shortcuts-key-display {
+  min-width: 132px;
+  height: 30px;
+}
+
+.shortcuts-icon-button {
+  width: 30px;
+  height: 30px;
+}
+
+.shortcuts-banner {
+  margin-block: 14px;
+  padding: 10px 12px;
+}
+
+.shortcuts-empty {
+  color: color-mix(in srgb, var(--page-text-secondary) 84%, transparent);
+}
+
 @media (max-width: 700px) {
   .shortcuts-topbar {
     align-items: stretch;
@@ -359,213 +410,105 @@
   }
 }
 
-/* Embedded inside zhi://all */
-.all-embedded-page .shortcuts-page {
-  position: relative;
-  inset: auto;
-  z-index: auto;
-  min-height: 100%;
-  overflow: visible;
-  background: transparent;
-}
-
-.all-embedded-page .shortcuts-shell {
-  width: min(1280px, 100%);
-  height: 100%;
-  margin: 0;
-  padding: 0 36px 32px;
-  box-sizing: border-box;
-}
-
-.all-embedded-page .shortcuts-topbar {
-  min-height: 78px;
-  padding: 18px 0 14px;
-  background: transparent;
-  border-bottom-color: var(--border-subtle);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-.all-embedded-page .shortcuts-topbar-left {
-  min-width: 0;
-}
-
-.all-embedded-page .shortcuts-eyebrow {
-  margin-bottom: 4px;
-  font-size: 11px;
-}
-
-.all-embedded-page .shortcuts-topbar h1 {
-  font-size: 18px;
-  line-height: 1.2;
-}
-
-.all-embedded-page .shortcuts-topbar-actions {
-  flex: 0 0 auto;
-  gap: 10px;
-}
-
-.all-embedded-page .shortcuts-search {
-  width: clamp(280px, 28vw, 430px);
-  height: 36px;
-  border-radius: 8px;
-}
-
-.all-embedded-page .shortcuts-button {
-  height: 36px;
-  border-radius: 8px;
-}
-
-.all-embedded-page .shortcuts-list {
-  padding: 18px 0 0;
-}
-
-.all-embedded-page .shortcuts-group {
-  margin-bottom: 22px;
-}
-
-.all-embedded-page .shortcuts-group h2 {
-  margin: 0 0 8px;
-  padding-left: 2px;
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.all-embedded-page .shortcuts-card {
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
-    rgba(34, 39, 51, 0.74);
-}
-
-.all-embedded-page .shortcuts-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) max-content;
-  min-height: 52px;
-  gap: 18px;
-  padding: 9px 14px;
-}
-
-.all-embedded-page .shortcuts-row-label {
-  justify-content: center;
-}
-
-.all-embedded-page .shortcuts-row-label .shortcuts-label-text {
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.all-embedded-page .shortcuts-row-label .shortcuts-label-meta {
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 1.2;
-}
-
-.all-embedded-page .shortcuts-row-actions {
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.all-embedded-page .shortcuts-key-display {
-  width: 150px;
-  min-width: 150px;
-  height: 30px;
-  border-radius: 7px;
-  font-size: 11px;
-}
-
-.all-embedded-page .shortcuts-icon-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-}
-
-@media (max-width: 980px) {
-  .all-embedded-page .shortcuts-shell {
-    padding: 0 22px 28px;
-  }
-
-  .all-embedded-page .shortcuts-topbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .all-embedded-page .shortcuts-search {
-    width: 100%;
-  }
-
-  .all-embedded-page .shortcuts-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* ===== Lumen Page Treatment ===== */
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
 .shortcuts-page {
   --page-bg-primary: var(--bg-app);
   --page-bg-secondary: var(--bg-panel);
   --page-bg-tertiary: var(--bg-input);
-  --page-text-primary: var(--text-primary);
-  --page-text-secondary: var(--text-secondary);
-  --page-accent: var(--lumen-cool);
-  --page-danger: var(--color-danger);
-  --page-border: var(--border-subtle);
-  --page-radius-sm: var(--radius-2);
-  --page-radius-md: var(--radius-3);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 780px 300px at 50% 0%, rgba(108, 155, 210, 0.15), transparent 62%),
-    radial-gradient(ellipse 640px 260px at 86% 84%, rgba(180, 108, 210, 0.1), transparent 60%),
-    var(--bg-app);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
 }
 
-.shortcuts-topbar,
-.shortcuts-card {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
+.shortcuts-shell {
+  width: min(820px, calc(100% - 48px));
 }
 
-.shortcuts-topbar h1,
-.shortcuts-group h2 {
-  font-family: var(--font-display);
-  letter-spacing: 0;
+.shortcuts-topbar {
+  min-height: 64px;
+  padding-block: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-.shortcuts-search,
-.shortcuts-button,
-.shortcuts-card,
-.shortcuts-key-display,
-.shortcuts-icon-button {
-  transition:
-    background var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out),
-    box-shadow var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+.shortcuts-eyebrow {
+  display: none;
+}
+
+.shortcuts-topbar h1 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.shortcuts-search {
+  width: min(320px, 36vw);
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
 }
 
 .shortcuts-search:focus-within {
-  border-color: rgba(108, 155, 210, 0.7);
-  box-shadow: var(--glow-2);
-  transform: scale(1.01);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.shortcuts-button,
+.shortcuts-card,
+.shortcuts-key-display,
+.shortcuts-icon-button,
+.shortcuts-banner {
+  border-radius: var(--radius-2);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.shortcuts-group {
+  animation: none;
+}
+
+.shortcuts-card,
+.shortcuts-key-display,
+.shortcuts-icon-button {
+  background: var(--bg-input);
+}
+
+.shortcuts-card:hover {
+  border-color: var(--border-hard);
+}
+
+.shortcuts-row {
+  min-height: 52px;
+}
+
+.shortcuts-key-display {
+  border-style: solid;
 }
 
 .shortcuts-key-display:hover,
 .shortcuts-icon-button:hover,
 .shortcuts-button:hover {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.16), rgba(180, 108, 210, 0.09)),
-    var(--bg-hover);
-  border-color: rgba(108, 155, 210, 0.24);
-  box-shadow: var(--glow-1);
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  color: var(--fg-1);
 }
 
-.shortcuts-key-display.is-recording,
-.shortcuts-icon-button.is-toggle.is-on {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.22), rgba(180, 108, 210, 0.14)),
-    var(--bg-hover);
-  box-shadow: var(--glow-2);
+.shortcuts-key-display.is-recording {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.shortcuts-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
 }

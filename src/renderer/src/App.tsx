@@ -684,6 +684,15 @@ const DENSITY_VALUES = {
   spacious: { chrome: 100, tabbar: 44, toolbar: 56, tab: 40, address: 42 }
 } as const
 
+type UiVisualMode = 'elegant' | 'lumen'
+
+const UI_VISUAL_MODE_STORAGE_KEY = 'zhi.ui.visualMode'
+
+function readUiVisualMode(): UiVisualMode {
+  const saved = window.localStorage.getItem(UI_VISUAL_MODE_STORAGE_KEY)
+  return saved === 'elegant' || saved === 'lumen' ? saved : 'lumen'
+}
+
 function applyAppearance(settings: BrowserSettings | null): (() => void) | undefined {
   if (!settings) return undefined
   const root = document.documentElement
@@ -1009,6 +1018,7 @@ function BrowserApp(): React.ReactElement {
   const [newWorkspaceIcon, setNewWorkspaceIcon] = useState('📁')
   const [newWorkspaceColor, setNewWorkspaceColor] = useState('#6366f1')
   const [toolbarActionPage, setToolbarActionPage] = useState<0 | 1>(0)
+  const [uiVisualMode, setUiVisualMode] = useState<UiVisualMode>(() => readUiVisualMode())
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => {
     const saved = window.localStorage.getItem('zhi.theme.current')
     return (THEMES.find((theme) => theme.id === saved)?.id ?? 'void') as ThemeId
@@ -1117,9 +1127,18 @@ function BrowserApp(): React.ReactElement {
     window.localStorage.setItem('zhi.theme.current', themeId)
   }, [])
 
+  const handleToggleUiVisualMode = useCallback((): void => {
+    setUiVisualMode((current) => (current === 'lumen' ? 'elegant' : 'lumen'))
+  }, [])
+
   useEffect(() => {
     document.documentElement.setAttribute('data-app-theme', currentTheme)
   }, [currentTheme])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-ui-variant', uiVisualMode)
+    window.localStorage.setItem(UI_VISUAL_MODE_STORAGE_KEY, uiVisualMode)
+  }, [uiVisualMode])
 
   const handleOpenThemeMenu = useCallback(async (): Promise<void> => {
     const trigger = themeBtnRef.current
@@ -2686,6 +2705,15 @@ function BrowserApp(): React.ReactElement {
               title="新建无痕标签页 (Ctrl+Shift+N)"
             >
               ◐
+            </button>
+            <button
+              className={`menu-button tabbar-aux-btn ui-visual-mode-btn ui-visual-mode-btn-${uiVisualMode}`}
+              onClick={handleToggleUiVisualMode}
+              title={uiVisualMode === 'lumen' ? '当前：炫。点击切换到雅' : '当前：雅。点击切换到炫'}
+              aria-label={uiVisualMode === 'lumen' ? '当前视觉模式：炫' : '当前视觉模式：雅'}
+              aria-pressed={uiVisualMode === 'lumen'}
+            >
+              {uiVisualMode === 'lumen' ? '炫' : '雅'}
             </button>
             <div className="theme-switcher-wrapper">
               <button

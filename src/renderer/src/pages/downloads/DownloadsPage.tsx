@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import './downloads.css'
+import './downloads.elegant.css'
 
 type DownloadStatus = 'completed' | 'downloading' | 'paused' | 'failed'
 

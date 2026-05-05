@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import './shortcuts.css'
+import './shortcuts.elegant.css'
 
 interface ShortcutItem {
   id: string

@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/shortcuts/styles.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .shortcut-root {
   min-height: 100vh;
   padding: 18px;
@@ -144,43 +146,82 @@
   }
 }
 
-/* ===== Lumen Shortcut Window ===== */
+/* ===== Small Polish Pass ===== */
 .shortcut-root {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 520px 220px at 20% 0%, rgba(108, 155, 210, 0.14), transparent 62%),
-    radial-gradient(ellipse 420px 180px at 90% 90%, rgba(180, 108, 210, 0.1), transparent 62%),
-    var(--bg-app, #14171d);
-  color: var(--text-primary, #f2f5fb);
+  padding: 16px;
+}
+
+.shortcut-header {
+  margin-bottom: 12px;
+}
+
+.shortcut-list {
+  gap: 7px;
+}
+
+.shortcut-item {
+  min-height: 50px;
+  padding: 8px;
+  border-radius: 9px;
+}
+
+.shortcut-key {
+  height: 30px;
+}
+
+.shortcut-message {
+  border-radius: 9px;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Shortcut Window ===== */
+.shortcut-root {
+  background: var(--bg-panel, #21242b);
+  color: var(--fg-2, #c9ccd3);
+  font-family: inherit;
 }
 
 .shortcut-header h1 {
-  font-family: var(--font-display, "Segoe UI", sans-serif);
-  letter-spacing: 0;
+  color: var(--fg-1, #e8eaef);
+  font-size: var(--text-lg, 18px);
+  font-weight: 600;
 }
 
-.shortcut-item,
-.shortcut-key,
+.shortcut-header p,
+.shortcut-meta small {
+  color: var(--fg-3, #8a8f99);
+}
+
 .shortcut-close,
 .shortcut-reset,
+.shortcut-key,
+.shortcut-item,
 .shortcut-message {
-  border-color: rgba(205, 222, 255, 0.1);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel, rgba(33, 37, 48, 0.88));
-  -webkit-backdrop-filter: var(--glass-1, blur(8px) saturate(1.18));
-  backdrop-filter: var(--glass-1, blur(8px) saturate(1.18));
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-2, 6px);
+  background: var(--bg-input, #272a32);
+  color: var(--fg-2, #c9ccd3);
 }
 
 .shortcut-close:hover,
-.shortcut-reset:hover:not(:disabled),
-.shortcut-key:focus,
-.shortcut-key.recording {
-  border-color: rgba(108, 155, 210, 0.6);
-  box-shadow: var(--glow-2, 0 0 24px rgba(108, 155, 210, 0.32));
+.shortcut-reset:hover:not(:disabled) {
+  background: var(--bg-hover, #31353e);
+  color: var(--fg-1, #e8eaef);
 }
 
 .shortcut-enable input {
-  accent-color: var(--lumen-cool, #6c9bd2);
+  accent-color: var(--accent, #6c9bd2);
+}
+
+.shortcut-key:focus,
+.shortcut-key.recording {
+  border-color: var(--accent, #6c9bd2);
+  box-shadow: 0 0 0 2px var(--accent-ring, rgba(108, 155, 210, 0.35));
+}
+
+.shortcut-message {
+  background: var(--bg-active, #3b404a);
+  color: var(--fg-1, #e8eaef);
+  box-shadow: var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.38));
+}
+
 }

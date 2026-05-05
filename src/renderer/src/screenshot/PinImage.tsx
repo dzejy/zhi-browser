@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './styles.css'
+import './styles.elegant.css'
 
 export default function PinImage(): React.JSX.Element {
   const [src, setSrc] = useState<string | null>(null)

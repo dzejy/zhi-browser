@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/commands/commands.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .commands-page {
   --page-bg-primary: var(--bg-primary, var(--bg-base));
   --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
@@ -422,6 +424,50 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.commands-sidebar {
+  width: 208px;
+  flex-basis: 208px;
+}
+
+.commands-sidebar-header {
+  padding: 20px 16px;
+}
+
+.commands-nav,
+.commands-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.commands-nav button {
+  min-height: 46px;
+  margin-bottom: 6px;
+}
+
+.commands-topbar {
+  min-height: 78px;
+  padding-block: 16px;
+}
+
+.commands-search {
+  width: min(360px, 36vw);
+  height: 36px;
+}
+
+.commands-list {
+  padding-top: 18px;
+}
+
+.commands-card {
+  padding: 13px 14px;
+  margin-bottom: 8px;
+}
+
+.commands-card-actions {
+  gap: 6px;
+}
+
 @media (max-width: 860px) {
   .commands-page {
     flex-direction: column;
@@ -461,77 +507,118 @@
   }
 }
 
-/* ===== Lumen Page Treatment ===== */
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
 .commands-page {
   --page-bg-primary: var(--bg-app);
   --page-bg-secondary: var(--bg-panel);
   --page-bg-tertiary: var(--bg-input);
-  --page-text-primary: var(--text-primary);
-  --page-text-secondary: var(--text-secondary);
-  --page-accent: var(--lumen-cool);
-  --page-danger: var(--color-danger);
-  --page-border: var(--border-subtle);
-  --page-radius-sm: var(--radius-2);
-  --page-radius-md: var(--radius-3);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 820px 320px at 10% 8%, rgba(108, 155, 210, 0.16), transparent 62%),
-    radial-gradient(ellipse 720px 280px at 92% 18%, rgba(180, 108, 210, 0.1), transparent 60%),
-    var(--bg-app);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
 }
 
 .commands-sidebar,
 .commands-topbar,
 .commands-modal {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.commands-sidebar {
+  width: 220px;
+  flex-basis: 220px;
+}
+
+.commands-topbar {
+  min-height: 64px;
+  padding-block: 0;
+}
+
+.commands-eyebrow {
+  display: none;
 }
 
 .commands-sidebar h1,
 .commands-topbar h2 {
-  font-family: var(--font-display);
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 
-.commands-search,
-.commands-nav button,
-.commands-card,
-.commands-primary-btn,
-.commands-secondary-btn,
-.commands-card-actions button {
-  transition:
-    background var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out),
-    box-shadow var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+.commands-search {
+  width: min(320px, 36vw);
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
 }
 
 .commands-search:focus-within {
-  border-color: rgba(108, 155, 210, 0.7);
-  box-shadow: var(--glow-2);
-  transform: scale(1.01);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.commands-nav button,
+.commands-primary-btn,
+.commands-secondary-btn,
+.commands-card-actions button,
+.commands-card,
+.commands-modal,
+.commands-modal label > input,
+.commands-modal select,
+.commands-name-input,
+.commands-error {
+  border-radius: var(--radius-2);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .commands-nav button:hover,
-.commands-nav button.active,
-.commands-card:hover {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.16), rgba(180, 108, 210, 0.09)),
-    var(--bg-hover);
-  border-color: rgba(108, 155, 210, 0.24);
-  box-shadow: var(--glow-1);
+.commands-nav button.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg-1);
+}
+
+.commands-card {
+  min-height: 56px;
+  background: var(--bg-input);
+  animation: none;
 }
 
 .commands-card:hover {
-  transform: translateY(-2px) scale(1.004);
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  transform: none;
 }
 
-.commands-primary-btn {
-  background: var(--lumen-gradient);
-  box-shadow: var(--glow-1);
+.commands-tag {
+  background: var(--accent-soft);
 }
 
+.commands-modal-backdrop {
+  z-index: var(--z-modal);
+  background: var(--bg-overlay);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.commands-modal {
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+}
+
+.commands-nav,
+.commands-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
+
+}

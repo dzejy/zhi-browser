@@ -6,6 +6,7 @@ import { drawText } from './tools/Text'
 import { drawMosaic } from './tools/Mosaic'
 import { drawNumber } from './tools/NumberTag'
 import './styles.css'
+import './styles.elegant.css'
 
 const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#eab308', '#fff', '#000']
 

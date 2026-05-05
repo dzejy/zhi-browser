@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/bookmarks/bookmarks.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .bookmarks-page {
   --page-bg-primary: var(--bg-primary, var(--bg-base));
   --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
@@ -455,6 +457,54 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.bookmarks-sidebar {
+  width: 248px;
+  flex-basis: 248px;
+}
+
+.bookmarks-sidebar-header,
+.bookmarks-topbar {
+  min-height: 76px;
+  padding-block: 16px;
+}
+
+.bookmarks-folder-tree,
+.bookmarks-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.bookmarks-folder {
+  min-height: 36px;
+  margin-bottom: 2px;
+}
+
+.bookmarks-search {
+  width: min(380px, 42vw);
+  height: 36px;
+}
+
+.bookmarks-item {
+  grid-template-columns: 34px minmax(0, 1fr) 74px auto;
+  min-height: 60px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.bookmarks-favicon {
+  width: 32px;
+  height: 32px;
+}
+
+.bookmarks-actions {
+  gap: 6px;
+}
+
+.bookmarks-empty {
+  color: color-mix(in srgb, var(--page-text-secondary) 84%, transparent);
+}
+
 @media (max-width: 860px) {
   .bookmarks-page {
     flex-direction: column;
@@ -491,23 +541,19 @@
   }
 }
 
-/* ===== Lumen Page Treatment ===== */
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
 .bookmarks-page {
   --page-bg-primary: var(--bg-app);
   --page-bg-secondary: var(--bg-panel);
   --page-bg-tertiary: var(--bg-input);
-  --page-text-primary: var(--text-primary);
-  --page-text-secondary: var(--text-secondary);
-  --page-accent: var(--lumen-cool);
-  --page-danger: var(--color-danger);
-  --page-border: var(--border-subtle);
-  --page-radius-sm: var(--radius-2);
-  --page-radius-md: var(--radius-3);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 820px 320px at 18% 8%, rgba(108, 155, 210, 0.14), transparent 62%),
-    radial-gradient(ellipse 720px 280px at 82% 92%, rgba(180, 108, 210, 0.1), transparent 60%),
-    var(--bg-app);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
 }
 
 .bookmarks-sidebar,
@@ -515,58 +561,113 @@
 .bookmarks-topbar,
 .bookmarks-context-menu,
 .bookmarks-modal {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.bookmarks-sidebar {
+  width: 240px;
+  flex-basis: 240px;
+}
+
+.bookmarks-sidebar-header,
+.bookmarks-topbar {
+  min-height: 64px;
+  padding-block: 0;
+}
+
+.bookmarks-eyebrow {
+  display: none;
 }
 
 .bookmarks-sidebar h1,
 .bookmarks-topbar h2 {
-  font-family: var(--font-display);
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 
-.bookmarks-search,
-.bookmarks-item,
+.bookmarks-search {
+  width: min(320px, 42vw);
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+}
+
+.bookmarks-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
 .bookmarks-folder,
+.bookmarks-item,
 .bookmarks-actions button,
 .bookmarks-secondary-btn,
 .bookmarks-primary-btn,
 .bookmarks-context-menu button,
 .bookmarks-modal input,
 .bookmarks-modal select {
+  border-radius: var(--radius-2);
   transition:
-    background var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out),
-    box-shadow var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
-.bookmarks-search:focus-within {
-  border-color: rgba(108, 155, 210, 0.7);
-  box-shadow: var(--glow-2);
-  transform: scale(1.01);
+.bookmarks-folder {
+  min-height: var(--ctrl-md);
 }
 
 .bookmarks-folder:hover,
-.bookmarks-folder.active,
-.bookmarks-item:hover {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.16), rgba(180, 108, 210, 0.09)),
-    var(--bg-hover);
-  border-color: rgba(108, 155, 210, 0.24);
-  box-shadow: var(--glow-1);
+.bookmarks-folder.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg-1);
+}
+
+.bookmarks-item {
+  min-height: 56px;
+  background: var(--bg-input);
+  animation: none;
 }
 
 .bookmarks-item:hover {
-  transform: translateY(-2px) scale(1.004);
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  transform: none;
 }
 
-.bookmarks-primary-btn {
-  background: var(--lumen-gradient);
-  box-shadow: var(--glow-1);
+.bookmarks-favicon {
+  background: var(--bg-panel);
 }
 
+.bookmarks-context-menu {
+  z-index: var(--z-dropdown);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+}
+
+.bookmarks-context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.bookmarks-modal-backdrop {
+  z-index: var(--z-modal);
+  background: var(--bg-overlay);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.bookmarks-modal {
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+}
+
+.bookmarks-list,
+.bookmarks-folder-tree {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
+
+}

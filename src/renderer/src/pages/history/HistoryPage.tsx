@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import './history.css'
+import './history.elegant.css'
 
 interface HistoryEntry {
   id: string

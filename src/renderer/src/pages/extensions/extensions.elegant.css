@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/extensions/extensions.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .ext-page {
   --page-bg-primary: var(--bg-primary, var(--bg-base));
   --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
@@ -474,6 +476,65 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.ext-header,
+.ext-install-bar {
+  padding-inline: 32px;
+}
+
+.ext-header {
+  min-height: 76px;
+}
+
+.ext-install-bar {
+  padding-block: 12px;
+}
+
+.ext-search {
+  width: min(520px, 56vw);
+  height: 36px;
+}
+
+.ext-filters {
+  padding-top: 12px;
+}
+
+.ext-filters button {
+  padding-inline: 12px;
+}
+
+.ext-body {
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.ext-list,
+.ext-detail,
+.ext-nav {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.ext-card {
+  min-height: 70px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.ext-card-icon {
+  width: 38px;
+  height: 38px;
+  flex-basis: 38px;
+}
+
+.ext-detail {
+  border-radius: var(--page-radius-md);
+}
+
+.ext-empty {
+  color: color-mix(in srgb, var(--page-text-secondary) 84%, transparent);
+}
+
 @media (max-width: 900px) {
   .ext-header,
   .ext-install-bar,
@@ -497,80 +558,113 @@
   }
 }
 
-/* ===== Lumen Page Treatment ===== */
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
 .ext-page {
   --page-bg-primary: var(--bg-app);
   --page-bg-secondary: var(--bg-panel);
   --page-bg-tertiary: var(--bg-input);
-  --page-text-primary: var(--text-primary);
-  --page-text-secondary: var(--text-secondary);
-  --page-accent: var(--lumen-cool);
-  --page-danger: var(--color-danger);
-  --page-border: var(--border-subtle);
-  --page-radius-sm: var(--radius-2);
-  --page-radius-md: var(--radius-3);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 780px 300px at 80% 8%, rgba(108, 155, 210, 0.15), transparent 62%),
-    radial-gradient(ellipse 640px 260px at 14% 90%, rgba(180, 108, 210, 0.1), transparent 60%),
-    var(--bg-app);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
 }
 
 .ext-header,
 .ext-install-bar,
 .ext-detail {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-.ext-header h1,
-.ext-detail h2 {
-  font-family: var(--font-display);
-  letter-spacing: 0;
+.ext-header {
+  min-height: 64px;
+  padding-block: 0;
 }
 
-.ext-search,
-.ext-primary-btn,
-.ext-secondary-btn,
-.ext-danger-btn,
-.ext-card,
-.ext-icon-btn,
-.ext-filters button {
-  transition:
-    background var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out),
-    box-shadow var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+.ext-install-bar {
+  padding-block: var(--space-s);
+}
+
+.ext-eyebrow {
+  display: none;
+}
+
+.ext-header h1 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.ext-search {
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
 }
 
 .ext-search:focus-within {
-  border-color: rgba(108, 155, 210, 0.7);
-  box-shadow: var(--glow-2);
-  transform: scale(1.01);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.ext-primary-btn,
+.ext-secondary-btn,
+.ext-danger-btn,
+.ext-card-actions button,
+.ext-icon-btn,
+.ext-filters button,
+.ext-error,
+.ext-card,
+.ext-detail {
+  border-radius: var(--radius-2);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .ext-filters button:hover,
-.ext-filters button.active,
-.ext-card:hover,
-.ext-card.is-selected {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.16), rgba(180, 108, 210, 0.09)),
-    var(--bg-hover);
-  border-color: rgba(108, 155, 210, 0.24);
-  box-shadow: var(--glow-1);
+.ext-filters button.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg-1);
+}
+
+.ext-card {
+  min-height: 64px;
+  background: var(--bg-input);
 }
 
 .ext-card:hover,
 .ext-card.is-selected {
-  transform: translateY(-2px) scale(1.004);
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  transform: none;
 }
 
-.ext-primary-btn {
-  background: var(--lumen-gradient);
-  box-shadow: var(--glow-1);
+.ext-card.is-selected {
+  background: var(--accent-soft);
 }
 
+.ext-card-icon,
+.ext-switch span {
+  background: var(--bg-panel);
+}
+
+.ext-detail {
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+}
+
+.ext-list,
+.ext-detail,
+.ext-nav {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
+
+}

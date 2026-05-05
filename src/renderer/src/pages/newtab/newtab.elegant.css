@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/newtab/newtab.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
 
 /* ========== Base & Scope ========== */
@@ -481,6 +483,89 @@
   animation: clickSnowBurst 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ===== Small Polish Pass ===== */
+.newtab-page .search-section {
+  margin-top: 8vh;
+}
+
+.newtab-page .datetime-display {
+  margin-bottom: 30px;
+}
+
+.newtab-page .datetime-display .time {
+  font-size: 70px;
+  letter-spacing: 0;
+}
+
+.newtab-page .datetime-display .date {
+  letter-spacing: 0;
+}
+
+.newtab-page .search-container {
+  max-width: 780px;
+  gap: 14px;
+}
+
+.newtab-page .z-btn,
+.newtab-page .search-input-row {
+  height: 62px;
+}
+
+.newtab-page .z-btn {
+  width: 62px;
+}
+
+.newtab-page .search-input {
+  font-size: 19px;
+}
+
+.newtab-page .engine-selector {
+  padding-inline: 16px;
+  font-size: 16px;
+}
+
+.newtab-page .search-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.newtab-page .engine-dropdown {
+  width: 340px;
+}
+
+.newtab-page .engine-grid {
+  gap: 10px;
+}
+
+.newtab-page .engine-item {
+  padding-block: 10px;
+}
+
+.newtab-page .nav-area {
+  margin-top: 42px;
+  gap: 24px;
+}
+
+.newtab-page .nav-card {
+  border-radius: 18px;
+  padding: 24px;
+}
+
+.newtab-page .card-title {
+  font-size: 20px;
+  margin-bottom: 18px;
+}
+
+.newtab-page .card-link {
+  border-radius: 12px;
+  font-size: 17px;
+}
+
+.newtab-page .settings-drawer,
+.newtab-page .edit-dialog {
+  border-radius: 14px 0 0 14px;
+}
+
 /* ========== Responsive ========== */
 @media (max-width: 900px) {
   .newtab-page .nav-area { grid-template-columns: repeat(2, 1fr); }
@@ -494,45 +579,42 @@
   .newtab-page .settings-drawer { width: 100%; }
 }
 
-/* ===== Lumen New Tab Integration ===== */
-.newtab-page .search-input {
-  caret-color: var(--lumen-cool, #6c9bd2);
+/* ===== Third UI Pass: Light Integration Points ===== */
+.newtab-page .settings-btn {
+  top: calc(var(--chrome-height) - 28px);
+  color: rgba(255, 255, 255, 0.86);
 }
 
-.newtab-page .settings-btn,
-.newtab-page .z-btn,
-.newtab-page .search-bar-wrapper,
-.newtab-page .engine-item,
-.newtab-page .nav-card,
-.newtab-page .settings-drawer,
-.newtab-page .edit-dialog {
-  border-color: rgba(205, 222, 255, 0.12);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.035)),
-    rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 12px 34px rgba(0, 0, 0, 0.18),
-    0 0 22px rgba(108, 155, 210, 0.08);
-}
-
-.newtab-page .settings-btn:hover,
-.newtab-page .z-btn:hover,
+.newtab-page .settings-btn:focus-visible,
 .newtab-page .search-bar-wrapper:focus-within,
-.newtab-page .engine-item:hover,
-.newtab-page .nav-card:hover {
-  border-color: rgba(108, 155, 210, 0.36);
-  box-shadow:
-    0 18px 54px rgba(0, 0, 0, 0.2),
-    var(--glow-2, 0 0 24px rgba(108, 155, 210, 0.32));
+.newtab-page .edit-field input:focus {
+  border-color: var(--accent, #6c9bd2);
+  box-shadow: 0 0 0 2px var(--accent-ring, rgba(108, 155, 210, 0.35));
+}
+
+.newtab-page .search-input {
+  caret-color: var(--accent, #6c9bd2);
 }
 
 .newtab-page .card-title::before,
 .newtab-page .toggle-switch input:checked + .toggle-track,
 .newtab-page .btn-save {
-  background: var(--lumen-gradient, linear-gradient(135deg, #6c9bd2, #b46cd2));
+  background: var(--accent, #6c9bd2);
 }
 
 .newtab-page .btn-save:hover {
-  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+  background: var(--accent-hover, #7eaadb);
+}
+
+.newtab-page .engine-item.active,
+.newtab-page.edit-mode .card-link {
+  border-color: color-mix(in srgb, var(--accent, #6c9bd2) 46%, transparent);
+}
+
+.newtab-page .settings-drawer,
+.newtab-page .edit-dialog {
+  background: color-mix(in srgb, var(--bg-panel, #21242b) 92%, transparent);
+  border-color: var(--border-soft, rgba(255, 255, 255, 0.06));
+}
+
 }

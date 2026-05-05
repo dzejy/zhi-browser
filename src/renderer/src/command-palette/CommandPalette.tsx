@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fuzzyMatch } from './matcher'
 import './styles.css'
+import './styles.elegant.css'
 
 interface BuiltinCmd {
   id: string

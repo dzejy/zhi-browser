@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ExtensionCard, type ExtensionInfo } from './ExtensionCard'
 import { ExtensionDetail } from './ExtensionDetail'
 import './extensions.css'
+import './extensions.elegant.css'
 
 type ExtensionFilter = 'all' | 'enabled' | 'disabled'
 

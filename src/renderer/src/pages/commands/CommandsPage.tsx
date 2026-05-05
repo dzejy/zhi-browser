@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import './commands.css'
+import './commands.elegant.css'
 
 type CommandType = 'quick' | 'search' | 'system'
 type CommandSource = 'builtin' | 'custom'

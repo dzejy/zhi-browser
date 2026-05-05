@@ -123,3 +123,74 @@
   color: #888;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
+
+/* ===== Lumen Command Palette ===== */
+.cp-overlay {
+  background:
+    radial-gradient(ellipse 620px 260px at 50% 10%, rgba(108, 155, 210, 0.14), transparent 62%),
+    rgba(7, 9, 14, 0.5);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.cp-panel {
+  position: relative;
+  border-radius: var(--radius-4, 24px);
+  border: 1px solid rgba(205, 222, 255, 0.1);
+  background:
+    var(--lumen-noise) 0 0 / 4px 4px,
+    radial-gradient(ellipse 520px 180px at 20% 0%, rgba(108, 155, 210, 0.14), transparent 68%),
+    radial-gradient(ellipse 420px 160px at 90% 100%, rgba(180, 108, 210, 0.11), transparent 66%),
+    rgba(30, 34, 46, 0.86);
+  color: var(--text-primary, #f2f5fb);
+  box-shadow: var(--shadow-modal, 0 18px 64px rgba(0, 0, 0, 0.56));
+  -webkit-backdrop-filter: var(--glass-3, blur(28px) saturate(1.35));
+  backdrop-filter: var(--glass-3, blur(28px) saturate(1.35));
+  animation: lumen-pop var(--dur-2, 240ms) var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+.cp-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(108, 155, 210, 0.55), rgba(108, 155, 210, 0.06), rgba(180, 108, 210, 0.42));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.cp-mode-badge {
+  background: linear-gradient(90deg, rgba(108, 155, 210, 0.22), rgba(180, 108, 210, 0.15));
+  color: #dcecff;
+  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+}
+
+.cp-input {
+  color: var(--text-primary, #f2f5fb);
+  caret-color: var(--lumen-cool, #6c9bd2);
+}
+
+.cp-item {
+  border-radius: var(--radius-2, 8px);
+  transition:
+    background var(--dur-1, 120ms) var(--ease-out, ease),
+    transform var(--dur-1, 120ms) var(--ease-out, ease),
+    box-shadow var(--dur-1, 120ms) var(--ease-out, ease);
+}
+
+.cp-item:hover,
+.cp-item.active {
+  background:
+    linear-gradient(90deg, rgba(108, 155, 210, 0.18), rgba(180, 108, 210, 0.1)),
+    rgba(255, 255, 255, 0.045);
+  transform: translateY(-1px);
+  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+}
+
+.cp-item-shortcut {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(205, 222, 255, 0.08);
+}

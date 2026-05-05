@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/screenshot/styles.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .shot-root {
   position: fixed;
   inset: 0;
@@ -143,55 +145,97 @@
   -webkit-app-region: drag;
 }
 
-/* ===== Lumen Screenshot Tools ===== */
+/* ===== Small Polish Pass ===== */
+.shot-mask {
+  background: rgba(0, 0, 0, 0.32);
+}
+
 .shot-selection {
-  border-color: var(--lumen-cool, #6c9bd2);
+  border-color: #8ab4f8;
   box-shadow:
     0 0 0 9999px rgba(0, 0, 0, 0.32),
-    0 0 0 1px rgba(180, 108, 210, 0.28),
-    var(--glow-2, 0 0 24px rgba(108, 155, 210, 0.32));
+    0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .shot-toolbar {
-  border: 1px solid rgba(205, 222, 255, 0.12);
-  border-radius: var(--radius-3, 14px);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03)),
-    rgba(18, 21, 29, 0.92);
-  box-shadow: var(--shadow-modal, 0 18px 64px rgba(0, 0, 0, 0.56));
-  -webkit-backdrop-filter: var(--glass-2, blur(16px) saturate(1.25));
-  backdrop-filter: var(--glass-2, blur(16px) saturate(1.25));
+  gap: 5px;
+  padding: 6px;
+  border-radius: 9px;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
-.shot-tool-btn,
+.shot-tool-btn {
+  width: 30px;
+  height: 30px;
+}
+
 .shot-action-btn {
-  border-radius: var(--radius-2, 8px);
-  transition:
-    background var(--dur-1, 120ms) var(--ease-out, ease),
-    transform var(--dur-1, 120ms) var(--ease-out, ease),
-    box-shadow var(--dur-1, 120ms) var(--ease-out, ease);
-}
-
-.shot-tool-btn:hover {
-  background: rgba(108, 155, 210, 0.14);
-  transform: scale(1.04);
-  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
-}
-
-.shot-tool-btn.active,
-.shot-action-btn {
-  background: var(--lumen-gradient, linear-gradient(135deg, #6c9bd2, #b46cd2));
-  color: #fff;
-  box-shadow: var(--glow-2, 0 0 24px rgba(108, 155, 210, 0.32));
-}
-
-.shot-action-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  height: 30px;
+  border-radius: 7px;
 }
 
 .shot-text-input {
-  border-color: var(--lumen-cool, #6c9bd2);
-  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+  border-color: #8ab4f8;
+  border-radius: 6px;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Screenshot Tools ===== */
+.shot-selection {
+  border-color: var(--accent, #6c9bd2);
+}
+
+.shot-toolbar {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-3, 10px);
+  background: rgba(18, 20, 24, 0.94);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.48);
+}
+
+.shot-tool-btn {
+  width: var(--ctrl-sm, 28px);
+  height: var(--ctrl-sm, 28px);
+  border-radius: var(--radius-2, 6px);
+  color: rgba(232, 234, 239, 0.84);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shot-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.shot-tool-btn.active {
+  background: var(--accent-soft, rgba(108, 155, 210, 0.22));
+  color: #fff;
+}
+
+.shot-action-btn {
+  height: var(--ctrl-sm, 28px);
+  border-radius: var(--radius-2, 6px);
+  background: var(--accent, #6c9bd2);
+  color: #fff;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shot-action-btn:hover {
+  background: var(--accent-hover, #7eaadb);
+  filter: none;
+}
+
+.shot-action-btn.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(232, 234, 239, 0.84);
+}
+
+.shot-text-input {
+  border-color: var(--accent, #6c9bd2);
+  border-radius: var(--radius-2, 6px);
+}
+
 }

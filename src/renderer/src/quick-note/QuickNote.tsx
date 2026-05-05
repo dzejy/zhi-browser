@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './styles.css'
+import './styles.elegant.css'
 
 interface Note {
   id: string

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import './newtab.css';
+import './newtab.elegant.css';
 import { DEFAULT_CATEGORIES, Category } from './defaultLinks';
 import { DEFAULT_ENGINES, Engine } from './defaultEngines';
 import { SnowCanvas, SnowCanvasHandle } from './SnowCanvas';

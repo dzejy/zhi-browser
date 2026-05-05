@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/quick-note/styles.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .qn-root {
   position: fixed;
   inset: 0;
@@ -120,50 +122,89 @@
   justify-content: space-between;
 }
 
-/* ===== Lumen Quick Note ===== */
+/* ===== Small Polish Pass ===== */
 .qn-root {
-  border: 1px solid rgba(205, 222, 255, 0.1);
-  border-radius: var(--radius-4, 24px);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 360px 160px at 10% 0%, rgba(108, 155, 210, 0.14), transparent 68%),
-    radial-gradient(ellipse 320px 150px at 90% 100%, rgba(180, 108, 210, 0.12), transparent 66%),
-    rgba(28, 32, 44, 0.88);
-  color: var(--text-primary, #f2f5fb);
-  box-shadow: var(--shadow-modal, 0 18px 64px rgba(0, 0, 0, 0.56));
-  -webkit-backdrop-filter: var(--glass-3, blur(28px) saturate(1.35));
-  backdrop-filter: var(--glass-3, blur(28px) saturate(1.35));
+  border-radius: 10px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.34);
+}
+
+.qn-header {
+  padding: 7px 8px;
+}
+
+.qn-tab {
+  max-width: 132px;
+  height: 26px;
+}
+
+.qn-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.qn-title-input {
+  padding: 9px 12px;
+}
+
+.qn-content {
+  padding: 12px;
+  line-height: 1.55;
+}
+
+/* ===== Third UI Pass: Pragmatic Quiet Quick Note ===== */
+.qn-root {
+  border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-3, 10px);
+  background: var(--bg-panel, #21242b);
+  color: var(--fg-2, #c9ccd3);
+  box-shadow: var(--shadow-3, 0 8px 28px rgba(0, 0, 0, 0.38));
 }
 
 .qn-header,
 .qn-title-input,
 .qn-footer {
-  border-color: rgba(205, 222, 255, 0.08);
+  border-color: var(--border-soft, rgba(255, 255, 255, 0.06));
 }
 
 .qn-tab,
 .qn-btn {
-  border-radius: var(--radius-2, 8px);
+  border-radius: var(--radius-2, 6px);
+  color: var(--fg-3, #8a8f99);
   transition:
-    background var(--dur-1, 120ms) var(--ease-out, ease),
-    transform var(--dur-1, 120ms) var(--ease-out, ease),
-    box-shadow var(--dur-1, 120ms) var(--ease-out, ease);
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .qn-tab:hover,
 .qn-btn:hover {
-  background: rgba(108, 155, 210, 0.12);
-  transform: translateY(-1px);
-  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+  background: var(--bg-hover, #31353e);
+  color: var(--fg-1, #e8eaef);
 }
 
 .qn-tab.active {
-  background: linear-gradient(90deg, rgba(108, 155, 210, 0.24), rgba(180, 108, 210, 0.16));
-  color: #fff;
-  box-shadow: var(--glow-1, 0 0 12px rgba(108, 155, 210, 0.2));
+  background: var(--accent-soft, rgba(108, 155, 210, 0.14));
+  color: var(--fg-1, #e8eaef);
 }
 
 .qn-title-input,
 .qn-content {
-  caret-color: var(--lumen-cool, #6c9bd2);
+  background: transparent;
+  color: var(--fg-1, #e8eaef);
+  caret-color: var(--accent, #6c9bd2);
+}
+
+.qn-content {
+  color: var(--fg-2, #c9ccd3);
+}
+
+.qn-footer {
+  color: var(--fg-3, #8a8f99);
+}
+
+.qn-content {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active, #3b404a) transparent;
+}
+
 }

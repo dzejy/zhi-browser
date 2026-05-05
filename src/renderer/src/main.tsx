@@ -1,8 +1,15 @@
 import './assets/main.css'
+import './assets/main.elegant.css'
 
 import { StrictMode, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+
+const savedUiVisualMode = window.localStorage.getItem('zhi.ui.visualMode')
+document.documentElement.setAttribute(
+  'data-ui-variant',
+  savedUiVisualMode === 'elegant' || savedUiVisualMode === 'lumen' ? savedUiVisualMode : 'lumen'
+)
 
 const Screenshot = lazy(() => import('./screenshot/Screenshot'))
 const PinImage = lazy(() => import('./screenshot/PinImage'))

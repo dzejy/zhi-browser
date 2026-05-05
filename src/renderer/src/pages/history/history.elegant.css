@@ -1,3 +1,5 @@
+/* Generated from codex/ui-v3-polish:src/renderer/src/pages/history/history.css. Keep scoped to the in-app 雅 mode. */
+@scope (:root[data-ui-variant='elegant']) {
 .history-page {
   --page-bg-primary: var(--bg-primary, var(--bg-base));
   --page-bg-secondary: var(--bg-secondary, var(--bg-panel));
@@ -354,6 +356,46 @@
   }
 }
 
+/* ===== Small Polish Pass ===== */
+.history-shell {
+  width: min(920px, calc(100% - 44px));
+}
+
+.history-topbar {
+  min-height: 78px;
+  padding-block: 16px;
+}
+
+.history-search {
+  width: min(340px, 38vw);
+  height: 36px;
+}
+
+.history-list {
+  padding-top: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--page-text-secondary) 28%, transparent) transparent;
+}
+
+.history-group {
+  margin-bottom: 18px;
+}
+
+.history-item {
+  grid-template-columns: 20px 34px minmax(0, 1fr) 54px 30px;
+  min-height: 58px;
+  padding: 10px 12px;
+}
+
+.history-favicon {
+  width: 32px;
+  height: 32px;
+}
+
+.history-empty {
+  color: color-mix(in srgb, var(--page-text-secondary) 84%, transparent);
+}
+
 @media (max-width: 760px) {
   .history-topbar {
     align-items: stretch;
@@ -376,65 +418,103 @@
   }
 }
 
-/* ===== Lumen Page Treatment ===== */
+/* ===== Third UI Pass: Pragmatic Quiet Page System ===== */
 .history-page {
   --page-bg-primary: var(--bg-app);
   --page-bg-secondary: var(--bg-panel);
   --page-bg-tertiary: var(--bg-input);
-  --page-text-primary: var(--text-primary);
-  --page-text-secondary: var(--text-secondary);
-  --page-accent: var(--lumen-cool);
-  --page-danger: var(--color-danger);
-  --page-border: var(--border-subtle);
-  --page-radius-sm: var(--radius-2);
-  --page-radius-md: var(--radius-3);
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    radial-gradient(ellipse 760px 300px at 78% 0%, rgba(108, 155, 210, 0.15), transparent 62%),
-    radial-gradient(ellipse 620px 260px at 18% 100%, rgba(180, 108, 210, 0.1), transparent 60%),
-    var(--bg-app);
+  --page-text-primary: var(--fg-1);
+  --page-text-secondary: var(--fg-3);
+  --page-accent: var(--accent);
+  --page-danger: var(--danger);
+  --page-border: var(--border-soft);
+  --page-radius-sm: var(--radius-1);
+  --page-radius-md: var(--radius-2);
+  background: var(--bg-app);
 }
 
-.history-topbar,
-.history-modal {
-  background:
-    var(--lumen-noise) 0 0 / 4px 4px,
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    var(--bg-panel);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
+.history-shell {
+  width: min(920px, calc(100% - 48px));
+}
+
+.history-topbar {
+  min-height: 64px;
+  padding-block: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.history-eyebrow {
+  display: none;
 }
 
 .history-topbar h1 {
-  font-family: var(--font-display);
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 
-.history-search,
-.history-item,
-.history-danger-btn,
-.history-secondary-btn,
-.history-delete,
-.history-range-list label {
-  transition:
-    background var(--dur-1) var(--ease-out),
-    border-color var(--dur-1) var(--ease-out),
-    box-shadow var(--dur-1) var(--ease-out),
-    transform var(--dur-1) var(--ease-out);
+.history-search {
+  width: min(320px, 38vw);
+  height: var(--ctrl-md);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
 }
 
 .history-search:focus-within {
-  border-color: rgba(108, 155, 210, 0.7);
-  box-shadow: var(--glow-2);
-  transform: scale(1.01);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+.history-danger-btn,
+.history-secondary-btn,
+.history-item,
+.history-delete,
+.history-modal,
+.history-range-list label {
+  border-radius: var(--radius-2);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.history-item {
+  min-height: 56px;
+  background: var(--bg-input);
+  animation: none;
 }
 
 .history-item:hover {
-  background:
-    linear-gradient(90deg, rgba(108, 155, 210, 0.16), rgba(180, 108, 210, 0.09)),
-    var(--bg-hover);
-  border-color: rgba(108, 155, 210, 0.24);
-  box-shadow: var(--glow-1);
-  transform: translateY(-2px) scale(1.004);
+  border-color: var(--border-hard);
+  background: var(--bg-hover);
+  transform: none;
 }
 
+.history-favicon,
+.history-range-list label {
+  background: var(--bg-panel);
+}
+
+.history-modal-backdrop {
+  z-index: var(--z-modal);
+  background: var(--bg-overlay);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.history-modal {
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+}
+
+.history-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-active) transparent;
+}
+
+
+}

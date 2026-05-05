@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
 import './bookmarks.css'
+import './bookmarks.elegant.css'
 
 interface BookmarkItem {
   id: string
